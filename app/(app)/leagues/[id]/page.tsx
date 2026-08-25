@@ -1,7 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { AlertTriangle, ArrowLeft, Scale, Users } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowLeftRight,
+  Scale,
+  Users,
+} from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -196,6 +202,31 @@ export default async function LeaguePage({
           <Button asChild size="sm" variant="outline">
             <Link href={`/leagues/${league.id}/values`}>
               {valued ? "Browse" : "Details"}
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <ArrowLeftRight
+              className="mt-0.5 size-5 text-muted-foreground"
+              aria-hidden
+            />
+            <div className="space-y-0.5">
+              <p className="text-sm font-medium">Trade analyzer</p>
+              <p className="text-sm text-muted-foreground">
+                {valued === 0
+                  ? "Needs values — a sync prices every roster first."
+                  : `Build a deal between any two of these ${teams?.length ?? 0} teams and read the verdict off the beam.`}
+              </p>
+            </div>
+          </div>
+
+          <Button asChild size="sm" variant="outline">
+            <Link href={`/leagues/${league.id}/trade`}>
+              {valued ? "Open" : "Details"}
             </Link>
           </Button>
         </CardContent>

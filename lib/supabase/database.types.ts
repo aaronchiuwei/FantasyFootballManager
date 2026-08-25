@@ -381,6 +381,52 @@ export type Database = {
         >;
         Relationships: [];
       };
+      league_settings: {
+        Row: {
+          league_id: string;
+          alpha: number;
+          beta: number;
+          gamma: number;
+          lambda: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          league_id: string;
+          alpha?: number;
+          beta?: number;
+          gamma?: number;
+          lambda?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["league_settings"]["Insert"]
+        >;
+        Relationships: [];
+      };
+      saved_trades: {
+        Row: {
+          id: string;
+          user_id: string;
+          league_id: string;
+          payload: Json;
+          verdict: string;
+          note: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          league_id: string;
+          payload: Json;
+          verdict: string;
+          note?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["saved_trades"]["Insert"]>;
+        Relationships: [];
+      };
       sync_runs: {
         Row: {
           id: string;

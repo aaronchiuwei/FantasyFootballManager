@@ -62,6 +62,15 @@ const CONFIDENCE: Record<ValueSource, number> = {
 const EXTRAPOLATED_CONFIDENCE = 0.45;
 
 /**
+ * Narrows the `value_source` column, which Postgres hands back as plain text.
+ * A source this build does not recognize is not a source, and the callers
+ * treat it as unvalued rather than guessing at its trustworthiness.
+ */
+export function isValueSource(value: string): value is ValueSource {
+  return value in CONFIDENCE;
+}
+
+/**
  * §6: "a season-ending injury zeroes redraft value while barely denting
  * dynasty value." These multipliers apply to the **model tier only**. Market
  * values are left exactly as FantasyCalc reports them, because those come from

@@ -3,12 +3,14 @@
 Yahoo fantasy football league companion — market-grounded player values, trade
 analysis, waiver recommendations. See [PLAN.md](PLAN.md) for the full design.
 
-**Status: Phase 5 (stats) complete.** On top of Phases 0–4 (Supabase auth +
-RLS, Yahoo OAuth2 with encrypted tokens, league + team import, the
+**Status: Phase 6 (trade analyzer) complete.** On top of Phases 0–5 (Supabase
+auth + RLS, Yahoo OAuth2 with encrypted tokens, league + team import, the
 Sleeper/FantasyCalc/DynastyProcess adapters, the player-identity crosswalk, the
-value engine and the one-button sync): every player now has a page — identity,
-value with its provenance, season actuals against projections, and a
-week-by-week game log.
+value engine, the one-button sync and the stats surface): any two rosters in
+the league can now be put on a balance beam. Both packages are summed at their
+market value, adjusted for who holds the best player and how many roster spots
+the deal fills, and answered with one of four fairness bands — or with a refusal
+to answer, when a player in the deal has no resolved value.
 
 ## Stack
 
@@ -72,6 +74,7 @@ app/
   (app)/             signed-in shell — re-checks the user, not just middleware
     leagues/[id]/    league + teams, identity resolution, the values board
       players/[playerId]/  one player: value, stats, week-by-week
+      trade/           the trade analyzer, and the trades kept from it
   auth/callback/     code → session exchange (email links, future OAuth)
   api/yahoo/         OAuth authorize + callback
 components/
@@ -109,6 +112,10 @@ lib/sync/
   market.ts          sync stage 3 — the FantasyCalc board, persisted
   pipeline.ts        stage execution, HMAC-signed chaining
   use-sync-run.ts    the browser's Realtime subscription
+lib/trades/
+  analyze.ts         §6's bonus math and fairness bands — pure, runs in the browser
+  saved.ts           the frozen payload a saved trade stores, parsed with Zod
+  store.ts           league_settings and saved_trades, plus the analyzer's one read
 lib/players/
   master.ts          Sleeper player master → Postgres, 24h TTL
   stats.ts           sync stages 4 and 5 — season totals and the weekly grid
@@ -119,6 +126,7 @@ app/api/sync/          POST to start or resume; POST /[stage] to run one stage
 components/
   players/           identity resolution UI, the stat surface
   values/            value badges, the values board
+  trade/             the balance beam, the drop zones, the verdict
   sync/              the sync button, progress ring and staged checklist
 supabase/migrations/
 ```
@@ -327,6 +335,179 @@ is the handful of columns a box score actually uses; the other forty keys
 Sleeper ships per game are stored in the `stats` jsonb, where a later phase can
 reach them.
 
+## How the trade analyzer works
+
+Requirement 5 asks whether a trade is fair; Requirement 6 asks who is getting
+the best player. Both are arithmetic over the values Phase 3 already computed,
+which is why §11 calls this phase mechanical — the hard part was earning the
+right to sum those numbers.
+
+### The two sides
+
+```
+side_base     = Σ value(p)
+bonus         = α × value(best on this side)              α  0.08
+headline      = γ × (best in the deal − best on the other side)   γ  0.05
+depth_penalty = β × (n − 1) × median(side)                β  0.03
+side_total    = side_base + bonus + headline − depth_penalty
+
+Δ    = A_total − B_total
+pct  = |Δ| / max(A_total, B_total)
+```
+
+| `pct` | Verdict | Beam |
+|---|---|---|
+| < 3% | Even | level, `--verdict-fair` |
+| < 8% | Slight edge | `--verdict-fair` |
+| < 15% | Clear winner | `--verdict-tilted` |
+| ≥ 15% | Lopsided | `--verdict-lopsided` |
+
+Four bands, three color tokens, so one boundary carries the color change. It is
+the 8% one, because that is where the rest of the app already draws the line:
+§9's win-win search keeps `pct < 8%` and calls what survives *fair by value*. A
+slight edge is a fair trade that happens to have a direction.
+
+### The three knobs, and why α is not 0.15
+
+**α is 0.08.** §8's schema sketch says 0.15; §6 then measured the two candidate
+value curves against each other and concluded otherwise, and this is the number
+it landed on. FantasyCalc's curve is steeply top-heavy — its top 100 hold 92.3%
+of all league value, against KeepTradeCut's 53% — which means **the superstar
+premium is already inside the numbers being summed**. Charging 0.15 on top of
+that bills the same premium twice, and the analyzer starts approving every
+2-for-1. §6 calls this the single most important tuning decision in the app.
+
+**γ is charged on the margin, not the whole player.** §6 writes it as `γ ×
+value(top)` for the best player in the deal. Taken literally that quantity is
+zero when the two headliners are exactly equal and 5% of a first-rounder the
+moment one of them is a single point better — a discontinuity that gives two
+indistinguishable trades different verdicts. Charging it on the *gap* between
+the headliners keeps the property §6 argues for one paragraph earlier ("when
+both packages are headlined by comparable studs the effect largely cancels —
+which is correct"), still pays the side holding the genuine top asset, and is
+continuous everywhere. `analyze.test.ts` pins that continuity.
+
+**β is the counterweight**, and it earns its place exactly as §6 says: without
+it the calculator approves 4-for-1 packages no real manager would accept,
+because roster spots are finite. On this curve it is a small correction — the
+convex value curve does most of that work already — which is why the sliders
+exist. All three are per-league, stored in `league_settings`, and moving one
+re-prices the open trade in the same tick.
+
+The calibration mechanism is §13's: a golden-file table of hand-checked trades
+in `lib/trades/analyze.test.ts`, including the adversarial ones. Two of them are
+the whole requirement in miniature:
+
+| Trade | Verdict |
+|---|---|
+| 9,000 for four players summing to 9,000 | **Clear winner** — the side with the best player |
+| 9,000 for four players summing to 9,800 | **Even** — consolidating costs about a 9% premium |
+
+That premium *is* Requirement 6. If a knob's default ever moves, the
+expectation that changes in that table is the argument for or against moving it.
+
+### Refusing to answer
+
+`TradeAnalysis.verdict` is nullable, and that is not defensiveness — it is §4's
+non-negotiable rule made unrepresentable rather than merely documented. Two
+situations produce no verdict object at all:
+
+- **A player with no resolved value.** A `floor` value means the market has no
+  price and there is no projection to model from. Summing it as though it were a
+  real number is the worst failure this app has, because it is invisible; the
+  analyzer names the player and links to the identity screen instead. Rostered
+  players who never resolved are not on the board at all, and the page says how
+  many.
+- **An empty side.** A half-built trade is incomplete, not lopsided. Declaring
+  "LOPSIDED" at someone who has added one player and is reaching for the second
+  is a calculator arguing with its own loading state.
+
+Kickers and defenses are the case that looks similar and is not. They are
+flagged in the deal ("not a trade asset", §3) but they do not block anything,
+because the value engine already priced them at the market's own floor — adding
+two of them to a package moves the totals by less than a percent, which is the
+honest answer rather than a special case in the trade math.
+
+### Provenance survives into the verdict
+
+§5 says a trade built on model values is a fuzzier trade. That sentence is
+turned into arithmetic here rather than stopping at the badge: every value
+carries a plausible error as a share of itself, and the analyzer reports the
+margin those errors could account for on their own.
+
+| Provenance | Error |
+|---|---|
+| `market` | 0 |
+| `model` | 35% |
+| `model_capped` | 50% |
+| `floor` | — refuses a verdict |
+
+Market is zero on purpose. Not because FantasyCalc is perfect, but because on
+this app's terms the market *is* the scale (§5: market values are never
+adjusted, and the whole worth of the number is that it is quotable). So an
+all-market trade — which §5's coverage arithmetic says is every trade you would
+realistically propose — gets a firm verdict with no hedging, and the panel says
+so. A deal down in the modelled tail gets its band *and* a line admitting the
+gap is inside the error bars. The errors are added linearly rather than in
+quadrature because they are not independent: they come off one isotonic fit.
+
+### Where it runs
+
+§2 requires the analyzer to be "pure and fast enough to run on every keystroke
+against cached values", so it is: `lib/trades/analyze.ts` imports no transport,
+takes no client, and is generic over the asset so the page's own rows come back
+out of it with their names attached. The page hands the browser the league's
+entire rostered board — about 180 players — in one read, and every add, drag and
+slider nudge re-prices the deal locally. The server is asked for exactly two
+things: persist the knobs, and persist a saved trade.
+
+Saving is the one place the client's arithmetic is not trusted. The browser
+posts player ids and knob positions, never totals; the action re-reads the
+board, re-runs the same pure function, and stores *its* result. They agree
+because it is literally the same function.
+
+### Saved trades keep their own values
+
+`saved_trades.payload` freezes both sides, every player's value and provenance,
+the knobs in force and the resulting margin. Denormalized on purpose: values
+move on every sync, and a saved verdict that silently re-derives is not a record
+of anything. Loading one back into the analyzer re-prices it against today's
+board — which is the interesting comparison, and it needs yesterday's numbers to
+still be there to compare against. Players who have since changed teams are
+dropped from the reload, with a toast rather than a silent substitution.
+
+### The beam
+
+§10 calls this screen the centerpiece and names the interaction: two drop zones,
+a beam tipping by `pct`, values counting up, a verdict crossfade. The tilt is
+computed from the analysis rather than eyeballed, saturating at 30% — twice the
+lopsided threshold, so a trade that has only just crossed the line still has
+room to get worse. The heavier side goes *down*, the way a scale does, and the
+pans are solved to hang level rather than rotated with the arm. Dragging is the
+pleasant path; clicking is the one that works with a keyboard, a screen reader
+and a phone, so both do the same thing. Every animation is a CSS transform
+transition or a `requestAnimationFrame` that checks `prefers-reduced-motion`
+first — under reduced motion the beam is a still, equally readable diagram.
+
+### Where it falls short
+
+**There is no roster-context delta yet.** §6 asks for each team's starting
+lineup projected points before and after, alongside the value verdict — "what
+makes a trade *good for you* as opposed to merely *even*". It needs starters,
+positional strength and league means, which is precisely §7's needs vector and
+therefore Phase 7's. The value verdict is the primary one either way (§1.5), and
+the seam is clean: the analyzer is a pure function over assets, and a second
+scorer over the same two packages does not disturb it.
+
+**No bye weeks and no playoff schedule.** §6 wants both as redraft-specific
+signals. Nothing in the app maps a player to an NFL schedule — the bye-week data
+§6 cites ships from KeepTradeCut, which §3 dropped as a source for good reasons.
+That is a data acquisition problem, not a trade-math one.
+
+**The trade deadline is not enforced.** §6 wants it surfaced and the suggestion
+engines disabled past it. Yahoo reports it in league settings; nothing reads it
+yet, and there are no suggestion engines to disable until Phase 8.
+
 ## How the sync works
 
 One button, but not one request. Yahoo's pagination plus a 14.6 MB Sleeper
@@ -408,6 +589,11 @@ row that an authenticated owner created. That row is the authorization record.
   service role inside the sync pipeline — so `Db` is a parameter (`lib/supabase/db.ts`).
 - **Sync stages hand off through Postgres, never through memory.** Each stage
   is its own invocation; anything the next one needs has to be committed first.
+- **Math the browser reruns lives in a pure module.** `lib/sync/plan.ts` and
+  `lib/trades/analyze.ts` carry no transport and no `server-only`, so both sides
+  run the same function over the same data. The corollary is a bundle rule:
+  client components import *types* from the modules next door to those, never
+  values, or a Zod parser the browser never runs ships to it anyway.
 
 ## Scripts
 
