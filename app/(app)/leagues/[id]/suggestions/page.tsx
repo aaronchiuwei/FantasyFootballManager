@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { BuilderPanel } from "@/components/suggestions/builder-panel";
+import { CycleBoard } from "@/components/suggestions/cycle-board";
 import { WinWinBoard } from "@/components/suggestions/win-win-board";
 import { SyncButton } from "@/components/sync/sync-button";
 import { loadSuggestionsBoard } from "@/lib/suggestions/store";
@@ -142,6 +143,34 @@ export default async function SuggestionsPage({
               </p>
             </div>
             <BuilderPanel leagueId={league.id} board={board} />
+          </section>
+
+          <Separator />
+
+          <section className="space-y-3">
+            <div className="space-y-1">
+              <h2 className="text-sm font-medium text-muted-foreground">
+                Three-team trades
+              </h2>
+              <p className="max-w-2xl text-sm text-muted-foreground">
+                A cycle: you give to one manager, they give to another, the
+                third gives back to you. Nobody trades with anybody directly,
+                which is the whole reason these exist — they are the deal to
+                make when the manager who has what you want does not want what
+                you have. Every leg is priced on its own, because a ring that
+                balances overall can still be robbing one of the three.
+              </p>
+            </div>
+            <CycleBoard
+              leagueId={league.id}
+              teams={suggestions.teams}
+              cycles={suggestions.cycles}
+              // A cycle menu is empty far more often than it is full, so
+              // "searched and found none" has to be distinguishable from "never
+              // searched". The value board's own timestamp is the honest signal:
+              // stage 8 computes both, so if there are values there was a search.
+              searched={board.computedAt !== null}
+            />
           </section>
         </>
       )}

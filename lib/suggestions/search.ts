@@ -55,10 +55,10 @@
  * the other side, and `C(12,1) + C(12,2) + C(12,3) = 298` subsets of the user's
  * own tradeable pieces.
  *
- * Phase 9's three-team cycle is deliberately not here. §7 calls its
- * combinatorics "a real trap" and says to ship it only after 9 and 10 are
- * solid; the seam it needs is `SuggestionTeam` plus `compareSuggestions`, both
- * of which already generalize past two teams.
+ * Phase 9's three-team cycle is not here, and that is a file boundary rather
+ * than an omission: it lives in `./cycles`, over the seams this module leaves
+ * for it — `SuggestionTeam`, `prepareTeam`, `windowSlice` and `compareScores`,
+ * none of which know how many teams are in a trade.
  */
 import { normalizePosition } from "@/lib/crosswalk/resolve";
 import {
@@ -382,6 +382,56 @@ function bound<T extends SuggestionAsset>(
   return low;
 }
 
+/**
+ * The half-open slice of a base-sorted package list whose raw sums lie in
+ * `[min, max]` — two bisections, so a package outside the window is never
+ * constructed, let alone scored.
+ *
+ * Exported because Phase 9's cycle search needs the same bound applied to the
+ * *intersection* of two windows: the third leg of a cycle has to balance the
+ * team behind it and the team in front of it at once, and both constraints are
+ * this one.
+ */
+export function windowSlice<T extends SuggestionAsset>(
+  packages: AssetPackage<T>[],
+  min: number,
+  max: number,
+): { start: number; end: number } {
+  if (max < min) return { start: 0, end: 0 };
+  return { start: bound(packages, min, false), end: bound(packages, max, true) };
+}
+
+/**
+ * A team, reduced to everything a search needs and nothing it recomputes.
+ *
+ * Both engines hoist this out of their inner loops, and Phase 9's cycle search
+ * hoists the same three things for the same reason: the candidate list, the
+ * packages built from it and the lineup the roster already puts out are all
+ * properties of the roster alone, so they are solved once per team rather than
+ * once per candidate.
+ */
+export type PreparedTeam<T extends SuggestionAsset> = {
+  team: SuggestionTeam<T>;
+  candidates: CandidateSet<T>;
+  packages: AssetPackage<T>[];
+  before: Lineup<T>;
+};
+
+export function prepareTeam<T extends SuggestionAsset>(
+  team: SuggestionTeam<T>,
+  slots: StartingSlot[],
+  limits: { topAssets: number; maxPackage: number },
+): PreparedTeam<T> {
+  const candidates = candidateAssets(team, limits.topAssets);
+
+  return {
+    team,
+    candidates,
+    packages: enumeratePackages(candidates.assets, limits.maxPackage),
+    before: bestLineup(team.roster, slots),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // what a suggestion is
 // ---------------------------------------------------------------------------
@@ -447,21 +497,38 @@ function differs(a: number, b: number): boolean {
  *    outcome is strictly better.
  * 6. **The asset ids** — nothing left to argue about, and the order must still
  *    be the same on the next sync.
+ *
+ * The first five keys are `compareScores`, which knows nothing about how many
+ * teams are in the trade: a three-team cycle's minimum gain is the smallest of
+ * three rather than of two, and every argument above survives that unchanged.
+ * Only the sixth key — the tiebreak on identity — is shaped like a two-team
+ * deal, so only it lives here.
  */
 export function compareSuggestions<T extends SuggestionAsset>(
   first: Suggestion<T>,
   second: Suggestion<T>,
 ): number {
-  const a = first.score;
-  const b = second.score;
+  const ranked = compareScores(first.score, second.score);
+  if (ranked !== 0) return ranked;
 
+  return assetKey(first.a, first.b) < assetKey(second.a, second.b) ? -1 : 1;
+}
+
+/**
+ * §9's objective and its four tiebreaks, over any number of participants.
+ *
+ * Returns 0 when all five are ties, so the caller supplies the last word. There
+ * always has to be one: a comparator that can return 0 lets the sort leave two
+ * equal suggestions in whatever order they were generated, and generation order
+ * is not something a user should be able to notice changing between syncs.
+ */
+export function compareScores(a: SuggestionScore, b: SuggestionScore): number {
   if (differs(a.minGain, b.minGain)) return b.minGain - a.minGain;
   if (differs(a.totalGain, b.totalGain)) return b.totalGain - a.totalGain;
   if (differs(a.marketShare, b.marketShare)) return b.marketShare - a.marketShare;
   if (differs(a.pct, b.pct)) return a.pct - b.pct;
   if (a.bodies !== b.bodies) return a.bodies - b.bodies;
-
-  return assetKey(first.a, first.b) < assetKey(second.a, second.b) ? -1 : 1;
+  return 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -486,13 +553,6 @@ export type SearchStats = {
 export type WinWinResult<T extends SuggestionAsset> = {
   suggestions: Suggestion<T>[];
   stats: SearchStats;
-};
-
-type PreparedTeam<T extends SuggestionAsset> = {
-  team: SuggestionTeam<T>;
-  packages: AssetPackage<T>[];
-  /** Solved once. It is a property of the roster, not of the candidate. */
-  before: Lineup<T>;
 };
 
 /**
@@ -524,14 +584,9 @@ export function searchWinWin<T extends SuggestionAsset>(
   // they are hoisted out of the O(teams²) loop. In a twelve-team league that is
   // 12 of each rather than 132.
   const prepared: PreparedTeam<T>[] = teams.map((team) => {
-    const candidates = candidateAssets(team, limits.topAssets);
-    stats.unvalued += candidates.unvalued;
-
-    return {
-      team,
-      packages: enumeratePackages(candidates.assets, limits.maxPackage),
-      before: bestLineup(team.roster, slots),
-    };
+    const ready = prepareTeam(team, slots, limits);
+    stats.unvalued += ready.candidates.unvalued;
+    return ready;
   });
 
   const window = baseRatioWindow(params, limits.maxPackage);
@@ -562,8 +617,11 @@ function searchPair<T extends SuggestionAsset>(
     // Only the slice of B's packages whose raw sum could still balance this
     // one. Both ends are binary-searched, so a package pair outside the window
     // is never constructed, let alone scored.
-    const start = bound(b.packages, fromA.base * window.lo, false);
-    const end = bound(b.packages, fromA.base * window.hi, true);
+    const { start, end } = windowSlice(
+      b.packages,
+      fromA.base * window.lo,
+      fromA.base * window.hi,
+    );
     stats.pruned += b.packages.length - (end - start);
 
     for (let index = start; index < end; index += 1) {

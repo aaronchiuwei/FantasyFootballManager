@@ -3,16 +3,17 @@
 Yahoo fantasy football league companion — market-grounded player values, trade
 analysis, waiver recommendations. See [PLAN.md](PLAN.md) for the full design.
 
-**Status: Phase 8 (the suggestion engines) complete.** On top of Phases 0–7
+**Status: Phase 9 (three-team trades) complete.** On top of Phases 0–8
 (Supabase auth + RLS, Yahoo OAuth2 with encrypted tokens, league + team import,
 the Sleeper/FantasyCalc/DynastyProcess adapters, the player-identity crosswalk,
-the value engine, the one-button sync, the stats surface, the trade analyzer and
-the needs vector): the app now goes looking for trades instead of waiting to be
-handed one. Every pair of rosters in the league is searched for a deal that is
-fair by value *and* leaves both starting lineups better than it found them, and
-naming a player on somebody else's roster returns a menu of packages that would
-buy them. Neither engine decides what "fair" means — Phase 6's verdict function
-does, called rather than reimplemented.
+the value engine, the one-button sync, the stats surface, the trade analyzer,
+the needs vector and the two suggestion engines): the search now closes rings as
+well as pairs. A three-team trade is a cycle — you give to one manager, they
+give to a second, the second gives back to you — and it is the deal to make when
+the manager holding what you want does not want what you have. It is found by a
+**bounded beam search**, which is not exhaustive and says so, and every one of
+the three managers is priced on their own ledger by Phase 6's verdict function,
+because a ring that balances overall can still be robbing one of the three.
 
 ## Stack
 
@@ -79,7 +80,8 @@ app/
       trade/           the trade analyzer, and the trades kept from it
       overview/        the twelve teams as positional strength radars
       waivers/         the available pool, ranked and need-weighted
-      suggestions/     the win-win board, and the build-around-a-player panel
+      suggestions/     the win-win board, the build-around-a-player panel, and
+                       the three-team cycles this team could be in
   auth/callback/     code → session exchange (email links, future OAuth)
   api/yahoo/         OAuth authorize + callback
 components/
@@ -127,8 +129,9 @@ lib/needs/
   store.ts           sync stage 8 — team_needs, persisted; the overview's read
 lib/suggestions/
   search.ts          §9's win-win search and §10's builder — pure, bounded, tested
+  cycles.ts          Req. 11's three-team cycle beam search — pure, bounded, tested
   payload.ts         the frozen package a cached suggestion stores, parsed with Zod
-  store.ts           sync stage 8 — trade_suggestions; the builder's server-side run
+  store.ts           sync stage 8 — trade_suggestions and cycle_suggestions; the builder
 lib/waivers/
   score.ts           §7's `ros × (1 + λ × need)` — pure, runs in the browser
   store.ts           Yahoo's available pool, the needs it is weighted by, and λ
@@ -145,7 +148,8 @@ components/
   trade/             the balance beam, the drop zones, the verdict, the lineup delta
   needs/             the positional radar, need and depth chips, the team card
   waivers/           the ranked wire, and the λ slider that tilts it
-  suggestions/       the package card, the stack that cycles them, the builder
+  suggestions/       the package card, the stack that cycles them, the builder,
+                     and the three-team ring card and its per-team board
   sync/              the sync button, progress ring and staged checklist
 supabase/migrations/
 ```
@@ -986,10 +990,230 @@ staler than the needs vector in one specific way: a trade that both managers
 would have liked becomes impossible the moment either of them makes a waiver
 claim, and the board will not notice until the next run.
 
-**No three-team cycles.** §7's Requirement 11 is Phase 9's, deliberately: §7
-calls the combinatorics "a real trap" and says to ship it only after 9 and 10
-are solid. The seam is `SuggestionTeam` and `compareSuggestions`, both of which
-already generalize past two teams.
+**Three-team cycles are a different search**, and they are Phase 9's — below.
+They stand on this module's seams: `SuggestionTeam`, `prepareTeam`,
+`windowSlice` and `compareScores`, none of which know how many teams are in a
+trade.
+
+## How the three-team search works
+
+Requirement 11, and §7 flags it twice: a stretch, "the combinatorics are a real
+trap", "low-frequency in practice". Both warnings are about the same thing and
+both are earned.
+
+A three-team trade is a **cycle** — A gives to B, B gives to C, C gives to A —
+and that is not a bigger two-team trade, it is a different object. Nobody trades
+with anybody directly, which is the entire reason the deal exists: it is what
+you do when the manager holding the receiver you need wants a tight end, and the
+tight end is on a third roster whose manager wants your running back. No pair of
+those three can make a trade. All three together can.
+
+### The rule the whole phase turns on
+
+**Every participant is priced on their own ledger, by `analyzeTrade`.** Each
+leg is one call — what this manager sends against what reaches them — and all
+three have to land inside §6's fairness band independently. There is no
+cycle-level fairness number anywhere in the code, and that is not tidiness:
+
+> **Fairness is not transitive.** Two legs that are each 7% apart can close a
+> ring that is 15% apart. `cycles.test.ts` builds exactly that league — prices
+> climbing 8% a leg — and asserts the search rejects it *after* confirming the
+> first two ledgers really were fair.
+
+A ring balanced as a whole would call that trade even. It is not even; one of
+the three is being robbed, and the check constraint on `cycle_suggestions.band`
+is what makes "the search proposed a cycle one of whose members is being robbed"
+unrepresentable rather than merely unlikely.
+
+### The search space, said out loud
+
+§7 sets the bounds — "restrict to the top 6 assets per team and ≤ 2 assets per
+leg, beam search width 50" — and here is what they are bounding.
+
+| | |
+|---|---|
+| Packages per team | `C(6,1) + C(6,2)` = **21** |
+| Candidates per directed cycle | `21³` = **9,261** |
+| Directed 3-cycles in a 12-team league | `C(12,3) × 2` = **440** |
+| **Whole-league space** | **4,074,840** |
+| Orientations one team can sit in | `11 × 10` = **110** |
+| **Space per anchored search** | **1,018,710** |
+
+That whole-league number is **48× Phase 8's two-team space** of 85,536, and each
+candidate costs *three* analyzer runs and three lineup solves instead of two.
+Phase 8 scores 11,341 survivors in ~33 ms; the same machinery over this would be
+minutes, inside a stage §9 caps at ~60 seconds. So it is cut three ways.
+
+**1. Six assets a team, not §9's eight.** Packages go as the square of the asset
+count and candidates as the *cube* of the package count, so eight would take a
+directed cycle from 9,261 to 46,656 — five times the bill for a roster's eighth
+and ninth-best players, who are throw-ins rather than the reason anyone picks up
+the phone about a three-way.
+
+**2. Anchored.** The search is always *for one team*, and both directions round
+the ring are searched because A → B → C → A and A → C → B → A move different
+players. Fixing the anchor cuts 440 orientations to 110. It is also the only
+question anyone asks: "find every three-way in the league" is a report nobody
+reads; "what three-way could I be in" is the feature.
+
+**3. An exact value window, twice.** The same `windowSlice` prune §9 uses — a
+package pair outside `[0.79, 1.27] ×` each other's raw sum cannot reach the
+fairness band whatever §6's bonuses do, so it is never constructed. The closing
+leg gets it *twice over*: `Pc` has to balance the partner behind it and the
+anchor in front of it, and because the window is symmetric the two constraints
+collapse into one slice of one sorted list.
+
+Only after all three does the beam appear.
+
+### The beam, and what it gives up
+
+The cycle is built at two depths. **Opening**: pick the anchor's package and a
+partner's. That already completes the *partner's* ledger — they send `Pb` and
+receive `Pa` whatever happens next — so they are fully scored here, and both
+filters are exact. **Closing**: pick the third team's package, which completes
+the other two ledgers at once.
+
+Between them, the openings are cut to 50. What they are sorted on took two
+attempts, and the first is worth recording because it looked right on paper:
+
+- **ΔB alone** is a true *upper bound* on the objective `min(Δa, Δb, Δc)`, so
+  ranking on it keeps the openings with the highest ceilings. It is also
+  **biased**: the way to maximize ΔB is to pay the partner out of the anchor's
+  own starting lineup, and the anchor is the team that asked. On the test league
+  it returns a cycle worth **140** to the anchor while one worth **150** sits
+  just under the cut.
+- **`ΔB − strip(Pa)`** — how much the opening pays the partner, net of what
+  sending `Pa` costs the anchor's lineup before anything comes back — fixes
+  that. It is an estimate rather than a bound, and the claim for it is only that
+  it is the best-informed one available where two thirds of the deal does not
+  exist yet. `cycles.test.ts` pins the 150.
+
+On top of it, a **per-partner cap of 6**. A plain top-50 collapses onto one
+manager: if B is a good fit for the anchor, the fifty best openings are fifty
+variations on trading with B. The cap is deliberately a *worse* beam by the
+objective, because eleven mediocre partners beat one good one when only one of
+the eleven has to say yes. Measured, it costs nothing — see below.
+
+**A beam is not exhaustive.** This is the part that has to be said plainly: the
+value windows are *prunes* and provably discard nothing, but the beam is a
+heuristic truncation and an opening just under the cut may close into the best
+cycle in the league and never be looked at. The stats count what was dropped,
+sync stage 8 raises it as a warning, and the numbers are here rather than
+implied.
+
+### Measured
+
+One anchored search over a synthetic twelve-team league whose positional
+strengths rotate round a ring, on this machine, at the shipped bounds:
+
+| | |
+|---|---|
+| Space the search stands in for | 1,018,710 |
+| Openings the value window ruled out unscored | **3,936** of 4,851 (81%) |
+| Openings handed to `analyzeTrade` | 915 |
+| …fair for the partner *and* better for their lineup | 98 |
+| Kept by the beam | **50** |
+| Set aside by the beam | **48** (35 by the per-partner cap, 13 by the width) |
+| Closings the two-sided window ruled out unscored | **8,174** of 10,500 (78%) |
+| Closings scored | 2,326 |
+| Complete cycles — fair for all three, better for all three | 109 |
+| Shown | 5 |
+| **Median wall clock, one anchor** | **8 ms** |
+| **Median wall clock, all twelve anchors** | **93 ms** |
+
+Roster size barely moves it — 15, 17 and 21 players a team come out within
+10% — because the top-6 cut happens first and everything after it is a function
+of six. §9's win-win search over the same league costs ~35 ms, so the two
+together are under 0.25% of one stage's ~60s budget.
+
+**Which is why it is cached in stage 8 rather than run on demand.** That was the
+decision the measurement settled: all twelve anchors is 93 ms, so the sync can
+afford the whole league, and running it for everybody buys the same thing §9's
+board buys by covering every pair — knowing that two *other* managers have an
+obvious three-way sitting between them is a reason to get there first. What
+makes that affordable is that the cost is a function of the bounds and not of
+the data: per anchor the search scores at most `11 × 21 × 21` openings and
+`50 × 10 × 21` closings, whatever the league contains.
+
+Widening the beam, same league and anchor:
+
+| Width | Cycles found | Best cycle | Wall clock |
+|---|---|---|---|
+| 5 | 20 | **26.0** | 2.8 ms |
+| 10 | 28 | 35.0 | 3.5 ms |
+| 25 | 70 | 35.0 | 5.2 ms |
+| **50** | **109** | **35.0** | **7.7 ms** |
+| unbounded | 134 | 35.0 | 8.8 ms |
+
+Two things to read off that. At §7's width of 50 the search finds 81% of the
+cycles an unbounded beam finds **and the same best one** — but at width 5 it
+does not, which is the beam's cost made visible rather than argued about. And
+the beam is *not* what makes this affordable: unbounded costs 8.8 ms against
+7.7 ms. Anchoring and the two exact windows are doing the work. Width 50 is kept
+because it is §7's number and because it is nearly free, not because the search
+would fall over without it.
+
+The per-partner cap, measured on the same league: 109 cycles with it against
+108 without, the same best cycle, the same three distinct partners in the menu.
+It does not bind here. It is insurance against a league with one obviously
+compatible partner, and it is cheap enough to keep on that basis alone.
+
+### What is stored, and what the card says
+
+`cycle_suggestions` is deliberately the same shape as `trade_suggestions` — a
+row per suggestion, ranked, upserted under one run stamp and pruned afterwards —
+with two differences that are the differences between a pair and a ring:
+
+- **One team column, not two.** `anchor_team` does not mean "a participant", it
+  means "the team this search was run for", and it is always the payload's
+  `legs[0]`. The other two live in the payload, in ring order.
+- **`band` is the worst leg's**, never an average of three, with the same
+  `check (band in ('even', 'slight'))` §9's table carries.
+
+The card is three equal ledgers side by side rather than the two-team card with
+a column bolted on, because a cycle has no sides. Each panel carries that
+manager's own percentage, their own lineup before → after, and — §5's rule,
+which does not stop at the analyzer — every player's provenance badge. The
+"open in the analyzer" link is *per leg*, and it says why: the analyzer prices
+what one manager gives up against what they get, which is exactly the arithmetic
+the panel is reporting, but it cannot show all three at once because the players
+do not move between two rosters.
+
+### Where it falls short
+
+**The beam is not exhaustive, and no amount of framing changes that.** At the
+shipped width it dropped 48 of 98 viable openings on the measured league and
+found 81% of the cycles an unbounded beam finds. It happened to find the same
+best one; there is no guarantee it will. If the app ever needs that guarantee,
+the measurements above say the honest fix is to widen the beam rather than to
+tune the sort key — unbounded costs about a millisecond more per anchor.
+
+**The per-partner cap makes the beam worse on purpose.** 35 of those 48 dropped
+openings are the cap's doing, not the width's. It buys spread across managers,
+which is the right trade for a deal needing two other people to agree, but it is
+a trade and this is which way it goes.
+
+**Six assets a team is a real ceiling**, and a lower one than §9's eight. A
+cycle turning on a roster's seventh-best player will not be found. That is §7's
+own bound and the cube in the candidate count is why it is where it is.
+
+**Two players a leg, same as Phase 8.** Consolidating three bench pieces into a
+starter is a trade people make, and neither search will find it.
+
+**The anchor is a team, not a player.** There is no three-team equivalent of
+§10's builder — no way to say "I want *him*, find me a ring that gets him". The
+seam for it exists (fix one closing package instead of enumerating them), but it
+is a different search and this phase did not build it.
+
+**A cycle needs three managers to agree**, and nothing in the app models that
+its odds are worse than a two-team deal's. The menu ranks a three-way against
+other three-ways only; the suggestions page shows the pair board first, which is
+the ordering the plan's "low-frequency in practice" implies, but it is a layout
+decision rather than anything the math knows.
+
+**Everything Phase 8's list already says still applies**: the trade deadline is
+not enforced, nothing knows what has already been offered, and the whole board
+is as stale as the last sync.
 
 ## How the sync works
 
@@ -1006,7 +1230,7 @@ that hand work to each other **through Postgres**, never through memory:
 | 5 | `stats` | Season-to-date actuals, plus last season's game log as context | already stored |
 | 6 | `yahoo` | Settings, standings, teams, rosters, matchups, free agents | — |
 | 7 | `resolve` | The §4 identity ladder over what stage 6 pulled | — |
-| 8 | `compute` | The §5 value engine over everything above, the §7 needs vector over that, then §9's win-win search over both | — |
+| 8 | `compute` | The §5 value engine over everything above, the §7 needs vector over that, §9's win-win search over both, then Req. 11's cycle search once per team | — |
 
 `POST /api/sync` opens a `sync_runs` row and kicks stage 1;
 `POST /api/sync/[stage]` runs one stage, records it, and hands the next one to
@@ -1074,8 +1298,9 @@ row that an authenticated owner created. That row is the authorization record.
   is its own invocation; anything the next one needs has to be committed first.
 - **Math the browser reruns lives in a pure module.** `lib/sync/plan.ts`,
   `lib/trades/analyze.ts`, `lib/needs/needs.ts`, `lib/needs/lineup.ts`,
-  `lib/waivers/score.ts` and `lib/suggestions/search.ts` carry no transport and
-  no `server-only`, so both sides run the same function over the same data. The
+  `lib/waivers/score.ts`, `lib/suggestions/search.ts` and
+  `lib/suggestions/cycles.ts` carry no transport and no `server-only`, so both
+  sides run the same function over the same data. The
   corollary is a bundle rule: client components import *types* from the modules
   next door to those, never values, or a Zod parser the browser never runs ships
   to it anyway.
@@ -1083,7 +1308,8 @@ row that an authenticated owner created. That row is the authorization record.
   is fair calls `analyzeTrade`; anything that needs to know what it does to a
   lineup calls `lineupChange`. The suggestion engines generate candidates and
   rank them — they do not re-derive the answer, because a second implementation
-  of the verdict is a second verdict.
+  of the verdict is a second verdict. A three-team cycle is three calls, one per
+  manager, and never one call over a netted-out ring.
 
 ## Scripts
 

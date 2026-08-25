@@ -555,6 +555,33 @@ export type Database = {
         >;
         Relationships: [];
       };
+      /** Phase 9: three-team cycles, one ranked menu per team (§7 Req. 11). */
+      cycle_suggestions: {
+        Row: {
+          id: string;
+          league_id: string;
+          anchor_team: string;
+          payload: Json;
+          score: number;
+          band: string;
+          rank: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          league_id: string;
+          anchor_team: string;
+          payload: Json;
+          score: number;
+          band: string;
+          rank: number;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["cycle_suggestions"]["Insert"]
+        >;
+        Relationships: [];
+      };
       matchups: {
         Row: {
           league_id: string;

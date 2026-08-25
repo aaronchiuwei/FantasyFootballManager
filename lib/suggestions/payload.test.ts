@@ -3,8 +3,12 @@ import { describe, expect, it } from "vitest";
 import { analyzeTrade } from "@/lib/trades/analyze";
 import type { StartingSlot } from "@/lib/values/vor";
 
+import { searchCycles, type CycleSuggestion } from "./cycles";
 import {
+  buildCyclePayload,
   buildSuggestionPayload,
+  CYCLE_VERSION,
+  parseCyclePayload,
   parseSuggestionPayload,
   SUGGESTION_VERSION,
   type NamedSuggestionAsset,
@@ -156,5 +160,167 @@ describe("reading one back", () => {
     expect(parseSuggestionPayload({ version: 99 })).toBeNull();
     expect(parseSuggestionPayload({ ...payload, band: "lopsided" })).toBeNull();
     expect(parseSuggestionPayload({ ...payload, a: 3 })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 9 — freezing a three-team cycle
+// ---------------------------------------------------------------------------
+
+/** One of each, so a roster can have a hole only one position fills. */
+const CYCLE_SLOTS: StartingSlot[] = [
+  { position: "RB", count: 1, isStarting: true },
+  { position: "WR", count: 1, isStarting: true },
+  { position: "TE", count: 1, isStarting: true },
+];
+
+const CYCLE_NAMES: Record<string, string> = {
+  A: "Regulation Grippers",
+  B: "Sunday Scaries",
+  C: "Fourth And Inches",
+};
+
+/** One real result out of the cycle search, so the payload is never hand-made. */
+function cycled(): CycleSuggestion<NamedSuggestionAsset> {
+  // The same ring `cycles.test.ts` uses: three rosters whose surpluses and
+  // holes chase each other round, so no two of them can pair off.
+  const shape: [string, [string, number][]][] = [
+    [
+      "A",
+      [
+        ["RB", 200],
+        ["RB", 190],
+        ["WR", 205],
+        ["TE", 40],
+      ],
+    ],
+    [
+      "B",
+      [
+        ["WR", 200],
+        ["WR", 190],
+        ["TE", 205],
+        ["RB", 40],
+      ],
+    ],
+    [
+      "C",
+      [
+        ["TE", 200],
+        ["TE", 190],
+        ["RB", 205],
+        ["WR", 40],
+      ],
+    ],
+  ];
+
+  const teams = shape.map(([teamId, players], index) =>
+    team(
+      teamId,
+      players.map(([position, points], slot) =>
+        asset(index * 10 + slot + 1, `${teamId} ${position}${slot}`, {
+          position,
+          points,
+          value: 3000,
+          // One modelled player, so the market share on the payload is a real
+          // fraction rather than a constant 1.
+          source: index === 1 && slot === 1 ? "model" : "market",
+        }),
+      ),
+    ),
+  );
+
+  const { cycles } = searchCycles({ anchorTeamId: "A", teams }, CYCLE_SLOTS);
+  expect(cycles.length).toBeGreaterThan(0);
+  return cycles[0];
+}
+
+const cycleNameFor = (teamId: string) => CYCLE_NAMES[teamId] ?? null;
+
+describe("freezing a three-team cycle", () => {
+  it("carries all three ledgers in ring order", () => {
+    const cycle = cycled();
+    const payload = buildCyclePayload(cycle, cycleNameFor);
+
+    expect(payload).not.toBeNull();
+    expect(payload?.version).toBe(CYCLE_VERSION);
+    expect(payload?.anchorTeamId).toBe("A");
+    expect(payload?.legs.map((leg) => leg.teamId)).toEqual(["A", "B", "C"]);
+    expect(payload?.legs.map((leg) => leg.toTeamId)).toEqual(["B", "C", "A"]);
+    expect(payload?.legs.map((leg) => leg.teamName)).toEqual([
+      "Regulation Grippers",
+      "Sunday Scaries",
+      "Fourth And Inches",
+    ]);
+  });
+
+  /** §7: every participant lands inside the band on their own in-vs-out. */
+  it("reports the worst leg's verdict, never an average of three", () => {
+    const cycle = cycled();
+    const payload = buildCyclePayload(cycle, cycleNameFor)!;
+
+    const worst = Math.max(...payload.legs.map((leg) => leg.pct));
+    expect(payload.maxPct).toBeCloseTo(worst, 12);
+
+    for (const leg of payload.legs) {
+      expect(["even", "slight"]).toContain(leg.band);
+      expect(leg.pct).toBeLessThanOrEqual(payload.maxPct + 1e-12);
+    }
+  });
+
+  it("keeps each manager's own lineup delta and §5's provenance", () => {
+    const cycle = cycled();
+    const payload = buildCyclePayload(cycle, cycleNameFor)!;
+
+    payload.legs.forEach((leg, index) => {
+      expect(leg.lineup.delta).toBeCloseTo(cycle.legs[index].lineup.delta, 12);
+      expect(leg.lineup.after).toBeCloseTo(leg.lineup.before + leg.lineup.delta, 9);
+      for (const entry of leg.assets) {
+        expect(["market", "model", "model_capped", "floor"]).toContain(entry.source);
+      }
+    });
+
+    expect(payload.minGain).toBeCloseTo(cycle.score.minGain, 12);
+    expect(payload.marketShare).toBeCloseTo(cycle.score.marketShare, 12);
+  });
+
+  /** §4, at three legs instead of two: no verdict, no row, and never a band. */
+  it("refuses a cycle one of whose legs the analyzer would not price", () => {
+    const cycle = cycled();
+
+    const robbed: CycleSuggestion<NamedSuggestionAsset> = {
+      ...cycle,
+      legs: [
+        cycle.legs[0],
+        {
+          ...cycle.legs[1],
+          analysis: analyzeTrade(cycle.legs[1].assets, [
+            asset(99, "Nobody", { value: 40 }),
+          ]),
+        },
+        cycle.legs[2],
+      ],
+    };
+
+    expect(robbed.legs[1].analysis.verdict?.band).toBe("lopsided");
+    expect(buildCyclePayload(robbed, cycleNameFor)).toBeNull();
+  });
+
+  it("round-trips through the jsonb column", () => {
+    const payload = buildCyclePayload(cycled(), cycleNameFor);
+    const stored = JSON.parse(JSON.stringify(payload)) as unknown;
+    expect(parseCyclePayload(stored)).toEqual(payload);
+  });
+
+  it("returns null for a cycle payload it cannot read", () => {
+    const payload = buildCyclePayload(cycled(), cycleNameFor)!;
+
+    expect(parseCyclePayload(null)).toBeNull();
+    expect(parseCyclePayload({ version: 99 })).toBeNull();
+    expect(parseCyclePayload({ ...payload, band: "clear" })).toBeNull();
+    // Two legs is not a cycle, and the tuple is what says so.
+    expect(
+      parseCyclePayload({ ...payload, legs: payload.legs.slice(0, 2) }),
+    ).toBeNull();
   });
 });
