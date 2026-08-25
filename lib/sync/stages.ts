@@ -7,13 +7,22 @@ import {
 } from "@/lib/crosswalk/store";
 import { importLeague, saveMatchups } from "@/lib/leagues/import";
 import { loadSleeperIds, syncPlayerMaster } from "@/lib/players/master";
-import { syncActuals, syncProjections } from "@/lib/players/stats";
+import {
+  loadCoverage,
+  SEASON_TOTAL_WEEK,
+  syncStatLines,
+} from "@/lib/players/stats";
 import { fetchNflState } from "@/lib/sources/sleeper";
 import { fetchFreeAgents, fetchMatchups, fetchRosters } from "@/lib/sources/yahoo";
 import type { Db } from "@/lib/supabase/db";
 import { computeLeagueValues } from "@/lib/values/store";
 
-import { playedWeeks, weeksRemainingFor } from "./clock";
+import {
+  playedWeeks,
+  priorSeasonWeeks,
+  scheduleWeeks,
+  weeksRemainingFor,
+} from "./clock";
 import { syncMarketValues } from "./market";
 import type { StageId, SyncContext } from "./plan";
 import type { StageOutcome } from "./run";
@@ -73,6 +82,13 @@ const state: StageRunner = async ({ db, leagueId }) => {
     leagueKey: league.yahoo_league_key,
     season: league.season,
     liveSeason,
+    // Sleeper names the previous season in its own state payload; falling back
+    // to `season - 1` says the same thing for a league that is not on the live
+    // season, where Sleeper's answer would be about a different year.
+    priorSeason:
+      isCurrentSeason && nfl.previous_season
+        ? Number(nfl.previous_season)
+        : league.season - 1,
     seasonType: nfl.season_type,
     isRegularSeason,
     currentWeek,
@@ -138,23 +154,92 @@ const values: StageRunner = async ({ db, context }) => {
   };
 };
 
-/** Stage 4. Season-total projections. */
+/**
+ * Weeks whose projection is now history: everything behind the live week. A
+ * projection for a game already played is never revised, so once it is pulled
+ * it is done. Before kickoff nothing is settled — the whole grid is still a
+ * forecast, and a forecast is exactly what a sync is for.
+ */
+function settledWeeks(context: SyncContext): Set<number> {
+  const current = context.currentWeek;
+  if (!context.isRegularSeason || current === null) return new Set();
+  return new Set(scheduleWeeks(context).filter((week) => week < current));
+}
+
+/**
+ * Stage 4. Projections: the season total the value engine prices off, and the
+ * week-by-week grid the player pages render.
+ *
+ * The grid is the league's own week window rather than the NFL's, for the same
+ * reason §1.2 reads scoring from Yahoo — a league that ends in week 14 has no
+ * use for a week 17 projection.
+ */
 const projections: StageRunner = async ({ db, context }) => {
-  const written = await syncProjections(db, await loadSleeperIds(db), context.season);
-  return { detail: `${n(written)} season projections` };
+  const ids = await loadSleeperIds(db);
+  const coverage = await loadCoverage(db, [context.season]);
+
+  const written = await syncStatLines(db, ids, {
+    season: context.season,
+    kind: "projected",
+    weeks: [SEASON_TOTAL_WEEK, ...scheduleWeeks(context)],
+    frozenWeeks: settledWeeks(context),
+    coverage,
+  });
+
+  const weeks = written.weeks.filter((week) => week !== SEASON_TOTAL_WEEK);
+
+  return {
+    detail: `${n(written.rows)} projected lines · season total + ${weeks.length} week${weeks.length === 1 ? "" : "s"}`,
+  };
 };
 
-/** Stage 5. Season-to-date actuals — nothing to fetch before kickoff (§3). */
+/**
+ * Stage 5. Actuals — this season's, and last season's as context.
+ *
+ * §12: right now there is no current season to have actuals for. An empty
+ * table is not an honest answer to Requirement 4, so the prior season's game
+ * log is pulled alongside and the UI labels it for what it is. That season is
+ * finished, so it is pulled exactly once and then skipped forever after.
+ */
 const stats: StageRunner = async ({ db, context }) => {
+  const ids = await loadSleeperIds(db);
+  const coverage = await loadCoverage(db, [context.season, context.priorSeason]);
+
+  const priorWeeks = priorSeasonWeeks();
+  const prior = await syncStatLines(db, ids, {
+    season: context.priorSeason,
+    kind: "actual",
+    weeks: [SEASON_TOTAL_WEEK, ...priorWeeks],
+    frozenWeeks: new Set([SEASON_TOTAL_WEEK, ...priorWeeks]),
+    coverage,
+  });
+
+  const priorNote =
+    prior.weeks.length === 0
+      ? `${context.priorSeason} game log already stored`
+      : `${n(prior.rows)} ${context.priorSeason} lines for context`;
+
   if (!context.isRegularSeason) {
     return {
-      detail: "No games played yet — the model runs on projections alone",
-      skipped: true,
+      detail: `No games played yet — the model runs on projections alone · ${priorNote}`,
+      // Nothing left to do only when the context was already in hand.
+      skipped: prior.rows === 0,
     };
   }
 
-  const written = await syncActuals(db, await loadSleeperIds(db), context.season);
-  return { detail: `${n(written)} season stat lines` };
+  const current = await syncStatLines(db, ids, {
+    season: context.season,
+    kind: "actual",
+    weeks: [SEASON_TOTAL_WEEK, ...playedWeeks(context)],
+    frozenWeeks: settledWeeks(context),
+    coverage,
+  });
+
+  const weeks = current.weeks.filter((week) => week !== SEASON_TOTAL_WEEK);
+
+  return {
+    detail: `${n(current.rows)} stat lines · season total + ${weeks.length} week${weeks.length === 1 ? "" : "s"} · ${priorNote}`,
+  };
 };
 
 /**

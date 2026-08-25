@@ -361,6 +361,26 @@ export type Database = {
         >;
         Relationships: [];
       };
+      stat_coverage: {
+        Row: {
+          season: number;
+          week: number;
+          kind: string;
+          players: number;
+          fetched_at: string;
+        };
+        Insert: {
+          season: number;
+          week: number;
+          kind: string;
+          players?: number;
+          fetched_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["stat_coverage"]["Insert"]
+        >;
+        Relationships: [];
+      };
       sync_runs: {
         Row: {
           id: string;

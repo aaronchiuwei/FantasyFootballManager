@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   SleeperStateSchema,
+  hasScoring,
   parseSleeperPlayers,
   parseStatMap,
 } from "./sleeper-parse";
@@ -95,6 +96,28 @@ describe("parseStatMap", () => {
   });
 });
 
+describe("hasScoring", () => {
+  const line = (stats: Record<string, number>, ptsPpr: number | null = null) => ({
+    sleeperId: "4034",
+    ptsPpr,
+    stats,
+  });
+
+  it("keeps a line that scored, in any of the three scorings", () => {
+    expect(hasScoring(line({}, 21.4))).toBe(true);
+    expect(hasScoring(line({ pts_std: 14.2 }))).toBe(true);
+    expect(hasScoring(line({ pts_half_ppr: 0 }))).toBe(true);
+  });
+
+  it("drops the placeholder lines a weekly payload is mostly made of", () => {
+    // Sleeper lists every player in the league for every week; a bye, a
+    // healthy scratch and a player it simply has nothing for all come back
+    // like this, and eighteen weeks of them is a table full of nothing.
+    expect(hasScoring(line({}))).toBe(false);
+    expect(hasScoring(line({ adp_dd_ppr: 1000 }))).toBe(false);
+  });
+});
+
 describe("SleeperStateSchema", () => {
   it("reads the season clock", () => {
     expect(
@@ -106,5 +129,17 @@ describe("SleeperStateSchema", () => {
         league_season: "2026",
       }),
     ).toMatchObject({ week: 3, season: "2026", season_type: "regular" });
+  });
+
+  it("carries the previous season, which the preseason falls back on (§12)", () => {
+    expect(
+      SleeperStateSchema.parse({
+        week: 3,
+        season: "2026",
+        season_type: "pre",
+        display_week: 3,
+        previous_season: "2025",
+      }).previous_season,
+    ).toBe("2025");
   });
 });

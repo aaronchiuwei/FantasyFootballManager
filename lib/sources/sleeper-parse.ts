@@ -8,6 +8,10 @@ export const SleeperStateSchema = z.object({
   season: z.string(),
   season_type: z.enum(["pre", "regular", "post", "off"]),
   display_week: z.number(),
+  // The season whose actuals are the honest preseason context (§12). Optional
+  // because it is undocumented like the rest of Sleeper — the caller falls back
+  // to `season - 1`, which is what it means anyway.
+  previous_season: z.string().nullish(),
 });
 
 export type SleeperState = z.infer<typeof SleeperStateSchema>;
@@ -135,4 +139,22 @@ export function scoredPoints(line: StatLine, ppr: number): number | null {
 /** Games played, as Sleeper reports it on a season line. */
 export function gamesPlayed(line: StatLine): number | null {
   return line.stats.gp ?? null;
+}
+
+/** The three scorings Sleeper ships on any line that describes real football. */
+const SCORING_KEYS = ["pts_ppr", "pts_half_ppr", "pts_std"] as const;
+
+/**
+ * Whether a line is a game rather than a placeholder.
+ *
+ * A weekly payload lists every player in the league, most of them with an
+ * empty object or a lone ADP field — a player on a bye, or one who never
+ * dressed, comes back indistinguishable from one Sleeper simply has nothing
+ * for. Rows like that are dropped before they are written, because eighteen
+ * weeks of them is tens of thousands of rows that say nothing, and because a
+ * *missing* week is exactly how the detail page renders "no game".
+ */
+export function hasScoring(line: StatLine): boolean {
+  if (line.ptsPpr !== null) return true;
+  return SCORING_KEYS.some((key) => typeof line.stats[key] === "number");
 }

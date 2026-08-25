@@ -1,4 +1,6 @@
-import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
+
+import { InjuryBadge } from "@/components/players/injury-badge";
 import { PositionBadge } from "@/components/values/position-badge";
 import { ValueBadge } from "@/components/values/value-badge";
 import type { Database } from "@/lib/supabase/database.types";
@@ -6,24 +8,6 @@ import { cn } from "@/lib/utils";
 
 export type ValueRowData =
   Database["public"]["Views"]["league_player_values"]["Row"];
-
-/** Sleeper's own spellings, shortened to something that fits next to a name. */
-const INJURY_LABELS: Record<string, string> = {
-  QUESTIONABLE: "Q",
-  DOUBTFUL: "D",
-  OUT: "OUT",
-  IR: "IR",
-  PUP: "PUP",
-  SUS: "SUS",
-  NA: "NA",
-  COV: "COV",
-};
-
-function injuryLabel(status: string | null) {
-  if (!status) return null;
-  const key = status.trim().toUpperCase().replace(/[\s.]/g, "");
-  return INJURY_LABELS[key] ?? status;
-}
 
 function trend(value: number | null) {
   if (value === null || value === 0) return null;
@@ -36,9 +20,13 @@ function trend(value: number | null) {
   );
 }
 
-export function PlayerValueRow({ row }: { row: ValueRowData }) {
-  const injury = injuryLabel(row.injury_status);
-
+export function PlayerValueRow({
+  row,
+  leagueId,
+}: {
+  row: ValueRowData;
+  leagueId: string;
+}) {
   return (
     <tr className="border-b last:border-0">
       <td className="py-2 pr-3 text-right font-mono text-xs text-muted-foreground">
@@ -51,12 +39,14 @@ export function PlayerValueRow({ row }: { row: ValueRowData }) {
 
       <td className="py-2 pr-3">
         <div className="flex items-center gap-2">
-          <span className="truncate font-medium">{row.full_name}</span>
-          {injury ? (
-            <Badge variant="destructive" className="shrink-0">
-              {injury}
-            </Badge>
-          ) : null}
+          {/* The way into the stats surface of Requirement 4. */}
+          <Link
+            href={`/leagues/${leagueId}/players/${row.player_id}`}
+            className="truncate font-medium underline-offset-4 hover:underline"
+          >
+            {row.full_name}
+          </Link>
+          <InjuryBadge status={row.injury_status} />
         </div>
         <p className="truncate text-xs text-muted-foreground">
           {row.nfl_team ?? "FA"}

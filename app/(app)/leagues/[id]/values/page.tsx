@@ -23,6 +23,9 @@ const PAGE_SIZE = 200;
 
 const POSITIONS = ["QB", "RB", "WR", "TE", "K", "DEF"] as const;
 
+/** A team id from the query string reaches Postgres as a uuid or not at all. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const AVAILABILITY = [
   { key: "all", label: "Everyone" },
   { key: "mine", label: "My team" },
@@ -30,13 +33,14 @@ const AVAILABILITY = [
   { key: "free", label: "Free agents" },
 ] as const;
 
-type Search = { pos?: string; avail?: string };
+type Search = { pos?: string; avail?: string; team?: string };
 
 function href(leagueId: string, search: Search, patch: Search) {
   const params = new URLSearchParams();
   const merged = { ...search, ...patch };
   if (merged.pos) params.set("pos", merged.pos);
   if (merged.avail && merged.avail !== "all") params.set("avail", merged.avail);
+  if (merged.team) params.set("team", merged.team);
   const query = params.toString();
   return `/leagues/${leagueId}/values${query ? `?${query}` : ""}`;
 }
@@ -113,6 +117,16 @@ export default async function ValuesPage({
   const position = POSITIONS.find((entry) => entry === search.pos?.toUpperCase());
   const availability =
     AVAILABILITY.find((entry) => entry.key === search.avail)?.key ?? "all";
+  const teamId = search.team && UUID.test(search.team) ? search.team : null;
+
+  const { data: filteredTeam } = teamId
+    ? await supabase
+        .from("teams")
+        .select("id, name")
+        .eq("id", teamId)
+        .eq("league_id", league.id)
+        .maybeSingle()
+    : { data: null };
 
   let query = supabase
     .from("league_player_values")
@@ -125,6 +139,9 @@ export default async function ValuesPage({
   if (availability === "mine") query = query.eq("is_users_team", true);
   if (availability === "free") query = query.is("team_id", null);
   if (availability === "rostered") query = query.not("team_id", "is", null);
+  // One team's roster, which is how a team card reaches its players — and
+  // from there their stat pages.
+  if (filteredTeam) query = query.eq("team_id", filteredTeam.id);
 
   const counts = (source?: string) => {
     const base = supabase
@@ -185,6 +202,7 @@ export default async function ValuesPage({
             redraft trades. Everyone below that line is valued from projections
             by value over replacement, calibrated onto the same scale — and
             labelled, so you always know which number you are arguing with.
+            Open any player for their season and week-by-week stats.
           </p>
         </div>
 
@@ -278,6 +296,15 @@ export default async function ValuesPage({
                 </FilterLink>
               ))}
             </div>
+
+            {filteredTeam ? (
+              <FilterLink
+                href={href(league.id, search, { team: undefined })}
+                active
+              >
+                {filteredTeam.name} ✕
+              </FilterLink>
+            ) : null}
           </div>
 
           {error ? (
@@ -310,7 +337,11 @@ export default async function ValuesPage({
                 </thead>
                 <tbody>
                   {(rows ?? []).map((row) => (
-                    <PlayerValueRow key={row.player_id} row={row as ValueRowData} />
+                    <PlayerValueRow
+                      key={row.player_id}
+                      row={row as ValueRowData}
+                      leagueId={league.id}
+                    />
                   ))}
                 </tbody>
               </table>

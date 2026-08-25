@@ -50,12 +50,12 @@ export const STAGES: StageMeta[] = [
   {
     id: "projections",
     label: "Projections",
-    description: "Pulling season projections",
+    description: "Pulling season and week-by-week projections",
   },
   {
     id: "stats",
     label: "Stats",
-    description: "Pulling season actuals",
+    description: "Pulling actuals, and last season for context",
   },
   {
     id: "yahoo",
@@ -108,6 +108,11 @@ export type SyncContext = {
   season: number;
   /** Sleeper's live season, which is not always the league's. */
   liveSeason: number;
+  /**
+   * The season whose actuals stand in for this one's before kickoff (§12).
+   * Sleeper reports it directly; `season - 1` is the fallback and the meaning.
+   */
+  priorSeason: number;
   seasonType: string;
   isRegularSeason: boolean;
   currentWeek: number | null;

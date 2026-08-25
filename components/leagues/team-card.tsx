@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -35,7 +37,13 @@ function initials(name: string) {
     .join("");
 }
 
-export function TeamCard({ team }: { team: TeamRow }) {
+export function TeamCard({
+  team,
+  leagueId,
+}: {
+  team: TeamRow;
+  leagueId: string;
+}) {
   return (
     <Card
       className={cn(
@@ -59,7 +67,14 @@ export function TeamCard({ team }: { team: TeamRow }) {
 
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex items-center gap-2">
-            <p className="truncate font-medium">{team.name}</p>
+            {/* The roster, as a filtered values board — and from any row
+                there, that player's stats. */}
+            <Link
+              href={`/leagues/${leagueId}/values?team=${team.id}`}
+              className="truncate font-medium underline-offset-4 hover:underline"
+            >
+              {team.name}
+            </Link>
             {team.is_users_team ? (
               <Badge variant="secondary" className="shrink-0">
                 You

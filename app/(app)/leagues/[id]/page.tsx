@@ -188,7 +188,7 @@ export default async function LeaguePage({
               <p className="text-sm text-muted-foreground">
                 {valued === 0
                   ? "No values yet — a sync prices every roster and the waiver wire."
-                  : `${valued?.toLocaleString()} players priced, ${marketValued?.toLocaleString()} straight from the trade market.`}
+                  : `${valued?.toLocaleString()} players priced, ${marketValued?.toLocaleString()} straight from the trade market. Open a player for their stats.`}
               </p>
             </div>
           </div>
@@ -208,7 +208,11 @@ export default async function LeaguePage({
 
         <div className="grid gap-3 sm:grid-cols-2">
           {(teams ?? []).map((team) => (
-            <TeamCard key={team.id} team={team as TeamRow} />
+            <TeamCard
+              key={team.id}
+              team={team as TeamRow}
+              leagueId={league.id}
+            />
           ))}
         </div>
       </section>

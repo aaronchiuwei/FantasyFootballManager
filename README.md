@@ -3,11 +3,12 @@
 Yahoo fantasy football league companion — market-grounded player values, trade
 analysis, waiver recommendations. See [PLAN.md](PLAN.md) for the full design.
 
-**Status: Phase 4 (one-button sync) complete.** On top of Phases 0–3 (Supabase
-auth + RLS, Yahoo OAuth2 with encrypted tokens, league + team import, the
-Sleeper/FantasyCalc/DynastyProcess adapters, the player-identity crosswalk and
-the value engine): everything above now refreshes from a single button, as an
-eight-stage pipeline with a durable progress record and a live checklist.
+**Status: Phase 5 (stats) complete.** On top of Phases 0–4 (Supabase auth +
+RLS, Yahoo OAuth2 with encrypted tokens, league + team import, the
+Sleeper/FantasyCalc/DynastyProcess adapters, the player-identity crosswalk, the
+value engine and the one-button sync): every player now has a page — identity,
+value with its provenance, season actuals against projections, and a
+week-by-week game log.
 
 ## Stack
 
@@ -70,6 +71,7 @@ app/
   (auth)/            login + signup, auth server actions
   (app)/             signed-in shell — re-checks the user, not just middleware
     leagues/[id]/    league + teams, identity resolution, the values board
+      players/[playerId]/  one player: value, stats, week-by-week
   auth/callback/     code → session exchange (email links, future OAuth)
   api/yahoo/         OAuth authorize + callback
 components/
@@ -107,12 +109,15 @@ lib/sync/
   market.ts          sync stage 3 — the FantasyCalc board, persisted
   pipeline.ts        stage execution, HMAC-signed chaining
   use-sync-run.ts    the browser's Realtime subscription
-lib/players/master.ts  Sleeper player master → Postgres, 24h TTL
-lib/players/stats.ts   season projections + actuals → Postgres, and back out
+lib/players/
+  master.ts          Sleeper player master → Postgres, 24h TTL
+  stats.ts           sync stages 4 and 5 — season totals and the weekly grid
+  stat-lines.ts      actuals against projections, pure and unit-tested
+  detail.ts          the player page's four reads
 lib/leagues/import.ts  Yahoo league, teams and matchups → Postgres
 app/api/sync/          POST to start or resume; POST /[stage] to run one stage
 components/
-  players/           identity resolution UI
+  players/           identity resolution UI, the stat surface
   values/            value badges, the values board
   sync/              the sync button, progress ring and staged checklist
 supabase/migrations/
@@ -244,6 +249,84 @@ the seam clamps pin the whole model tier to the market's floor regardless, and
 §5's own arithmetic says every trade worth proposing is 100% market-valued.
 Per-position fits are the obvious next move if that ever stops being true.
 
+## How the stats surface works
+
+Requirement 4 asks for current *and* projected stats on every player. The
+awkward part is the word "current": `/v1/state/nfl` reports **2026, `pre`,
+week 3**, and `/stats/nfl/regular/2026/1` answers `{}`. There are no
+current-season stats, and there will not be until Week 1.
+
+Rendering an empty table and calling the requirement met would be the dishonest
+answer. §12's mitigation is the one taken instead — **fall back to the prior
+season's actuals as context and label the UI accordingly** — so every player
+page shows two seasons side by side:
+
+| | 2026 | 2025 |
+|---|---|---|
+| Projected | season total + a line for every week the league plays | — |
+| Actual | nothing yet, and it says so | the full 18-week game log |
+
+Both come from Sleeper, into the `player_stats` / `player_projections` tables
+§8 already keyed `(player_id, season, week)` with `week = 0` reserved for the
+season total. Until this phase nothing had ever been written at a week other
+than 0.
+
+**The weekly endpoint is not the one §3 wrote down.** The plan has
+`/projections/nfl/{season}/{week}`, and that path does answer 200 — with 7,627
+entries, not one of which carries a single scoring key. The season-type segment
+is required on the weekly form exactly as it is on the season one. Measured on
+2026 week 1: `/projections/nfl/2026/1` returns 943 empty objects,
+`/projections/nfl/regular/2026/1` returns those same 943 players with `pts_ppr`
+on every one. Across the 2026 slate that is 780–954 scored projections a week;
+2025's actuals run 326–514 a week. Eighteen weeks, fetched four at a time,
+takes about three seconds — comfortably inside §9's ~60s stage budget.
+
+A weekly payload lists *every* player in the league, so most of what comes back
+is an empty object or a lone ADP field — a bye, a healthy scratch and a player
+Sleeper simply has nothing for are indistinguishable. Those lines are dropped
+before they are written, because eighteen weeks of them is tens of thousands of
+rows that say nothing, and because **a missing week is exactly how the page
+renders "no game."**
+
+**What has been pulled is itself a table.** `stat_coverage` records every
+`(season, week, kind)` that landed. It does two jobs:
+
+- **Skipping frozen work.** A finished season's game log cannot change, and
+  neither can a projection for a week already played. Both are pulled once and
+  then left alone, which is what keeps a stage with eighteen weeks in its
+  window from paying for all of them on every sync. The cost, stated rather
+  than hidden: a stat correction applied to an already-pulled week is not
+  chased.
+- **Telling "not fetched" apart from "did not play."** Those are different
+  claims and must not render the same way. The page's freshness line comes from
+  here.
+
+Two smaller decisions that follow the rules the rest of the app already runs on:
+
+- **Scoring is applied on read, never trusted from the stored `pts_ppr`.** One
+  stat row is shared by every league in the app, and §1.2's rule is that the
+  league's own PPR modifier decides what it is worth. The same rule the value
+  engine follows on season totals, applied to every week.
+- **The season total is Sleeper's own `week: 0` row, not a sum of the grid.**
+  The grid deliberately drops the lines with no scoring in them, so summing
+  what survived is a different — and smaller — number. Summing is the fallback
+  for a season whose totals were never pulled.
+
+The merge itself is a pure function (`lib/players/stat-lines.ts`), unit-tested,
+rather than a database view. `league_player_values` earned a view because it
+joins four tables and pages two hundred rows; this is one player, and the join
+depends on a league's PPR modifier that a view keyed only on the player cannot
+see.
+
+**Where it falls short.** There is no opponent column — nothing in the app maps
+a player to an NFL schedule yet, and §6's bye-week and playoff-schedule work is
+Phase 6's. The prior season is pulled over the NFL's weeks 1–18 rather than the
+league's own window, because the league's *previous* season's start and end
+weeks are not something Yahoo tells us about the current one. And the box score
+is the handful of columns a box score actually uses; the other forty keys
+Sleeper ships per game are stored in the `stats` jsonb, where a later phase can
+reach them.
+
 ## How the sync works
 
 One button, but not one request. Yahoo's pagination plus a 14.6 MB Sleeper
@@ -255,8 +338,8 @@ that hand work to each other **through Postgres**, never through memory:
 | 1 | `state` | Sleeper's season clock; the league parameters the rest are keyed on | — |
 | 2 | `players` | Sleeper's player master, and the Yahoo half of the crosswalk | cached <24h |
 | 3 | `values` | The FantasyCalc board for this league's scoring | — |
-| 4 | `projections` | Season-total projections | — |
-| 5 | `stats` | Season-to-date actuals | preseason |
+| 4 | `projections` | Season totals, plus a projection for every week the league plays | — |
+| 5 | `stats` | Season-to-date actuals, plus last season's game log as context | already stored |
 | 6 | `yahoo` | Settings, standings, teams, rosters, matchups, free agents | — |
 | 7 | `resolve` | The §4 identity ladder over what stage 6 pulled | — |
 | 8 | `compute` | The §5 value engine over everything above | — |
@@ -318,8 +401,8 @@ row that an authenticated owner created. That row is the authorization record.
 - **One adapter per external source** under `lib/sources/`, with the pure
   parsing split out so it can be tested against recorded fixtures.
 - **Global reference data is service-role only.** `players`, `player_crosswalk`,
-  stats and projections are readable by any signed-in user and written only by
-  the admin client; league data stays user-scoped and RLS-bound.
+  stats, projections and `stat_coverage` are readable by any signed-in user and
+  written only by the admin client; league data stays user-scoped and RLS-bound.
 - **Data-access modules take a client, they do not make one.** Which client is
   right depends on the caller — the user's RLS-bound one interactively, the
   service role inside the sync pipeline — so `Db` is a parameter (`lib/supabase/db.ts`).

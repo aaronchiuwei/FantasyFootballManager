@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { playedWeeks, weeksRemainingFor } from "./clock";
+import {
+  NFL_REGULAR_SEASON_WEEKS,
+  playedWeeks,
+  priorSeasonWeeks,
+  scheduleWeeks,
+  weeksRemainingFor,
+} from "./clock";
 import type { SyncContext } from "./plan";
 
 function context(overrides: Partial<SyncContext> = {}): SyncContext {
@@ -8,6 +14,7 @@ function context(overrides: Partial<SyncContext> = {}): SyncContext {
     leagueKey: "461.l.123456",
     season: 2026,
     liveSeason: 2026,
+    priorSeason: 2025,
     seasonType: "regular",
     isRegularSeason: true,
     currentWeek: 3,
@@ -93,5 +100,41 @@ describe("playedWeeks", () => {
     expect(
       playedWeeks(context({ currentWeek: 17, startWeek: 1, endWeek: 14 })),
     ).toHaveLength(14);
+  });
+});
+
+describe("scheduleWeeks", () => {
+  it("covers the whole slate before kickoff, unlike playedWeeks", () => {
+    const preseason = context({ isRegularSeason: false, currentWeek: null });
+    expect(playedWeeks(preseason)).toEqual([]);
+    expect(scheduleWeeks(preseason)).toHaveLength(17);
+  });
+
+  it("is the league's window, not the NFL's", () => {
+    expect(scheduleWeeks(context({ startWeek: 1, endWeek: 14 }))).toHaveLength(
+      14,
+    );
+    expect(scheduleWeeks(context({ startWeek: 2, endWeek: 15 }))).toEqual([
+      2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+    ]);
+  });
+
+  it("never runs past the NFL's own last week", () => {
+    expect(
+      scheduleWeeks(context({ startWeek: 1, endWeek: 25 })),
+    ).toHaveLength(NFL_REGULAR_SEASON_WEEKS);
+  });
+
+  it("falls back to a full fantasy season with no week bounds", () => {
+    expect(
+      scheduleWeeks(context({ startWeek: null, endWeek: null })),
+    ).toHaveLength(17);
+  });
+});
+
+describe("priorSeasonWeeks", () => {
+  it("is the NFL's eighteen, not the fantasy season's seventeen", () => {
+    expect(priorSeasonWeeks()).toHaveLength(NFL_REGULAR_SEASON_WEEKS);
+    expect(priorSeasonWeeks().at(-1)).toBe(18);
   });
 });
