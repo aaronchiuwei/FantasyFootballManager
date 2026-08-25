@@ -1,6 +1,12 @@
 import "server-only";
 
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from "node:crypto";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_BYTES = 12;
@@ -66,4 +72,25 @@ export function decryptSecret(payload: string): string {
     decipher.update(Buffer.from(ciphertext, "base64url")),
     decipher.final(),
   ]).toString("utf8");
+}
+
+/**
+ * Detached HMAC over a short payload, keyed by the same secret as the token
+ * encryption above.
+ *
+ * Phase 4's staged pipeline chains itself over HTTP, so each hop has to prove
+ * it is us. Signing the run id rather than presenting a fixed pipeline secret
+ * means a leaked token authorizes exactly one sync run, not every future one.
+ */
+export function signPayload(payload: string): string {
+  return createHmac("sha256", encryptionKey()).update(payload).digest("base64url");
+}
+
+export function verifySignature(payload: string, signature: string): boolean {
+  const expected = Buffer.from(signPayload(payload));
+  const actual = Buffer.from(signature);
+
+  // Length has to match before `timingSafeEqual` will look at the bytes, and
+  // comparing lengths first leaks nothing an attacker cannot already see.
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
 }

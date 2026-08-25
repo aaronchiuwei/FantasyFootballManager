@@ -1,32 +1,18 @@
 import "server-only";
 
-import { seedFantasyCalcCrosswalkFrom } from "@/lib/crosswalk/store";
-import { chunk, loadPlayers, syncPlayerMaster, type PlayerRow } from "@/lib/players/master";
-import { syncSeasonTotals, type SeasonLine } from "@/lib/players/stats";
-import {
-  fetchFantasyCalcValues,
-  type FantasyCalcPlayer,
-} from "@/lib/sources/fantasycalc";
-import { fetchNflState } from "@/lib/sources/sleeper";
+import { chunk, loadPlayers } from "@/lib/players/master";
+import { loadSeasonTotals, type SeasonLine } from "@/lib/players/stats";
 import type { RosterSlot } from "@/lib/sources/yahoo";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
+import { loadMarketValues, marketParamsKey } from "@/lib/sync/market";
+import type { SyncContext } from "@/lib/sync/plan";
+import type { Db } from "@/lib/supabase/db";
 import type { Database } from "@/lib/supabase/database.types";
 
-import {
-  computeValues,
-  type EnginePlayer,
-  type ValueSource,
-} from "./engine";
-import { SEASON_WEEKS } from "./vor";
+import { computeValues, type EnginePlayer, type ValueSource } from "./engine";
 
 const INSERT_CHUNK = 500;
 
 export type ValuationReport = {
-  season: number;
-  week: number | null;
-  weeksRemaining: number;
-  preseason: boolean;
   valued: number;
   rostered: number;
   rosteredMarket: number;
@@ -34,19 +20,15 @@ export type ValuationReport = {
   overlap: number;
   rankCorrelation: number | null;
   seamViolations: number;
-  /** FantasyCalc rows that never found a player — a crosswalk miss, not a gap. */
-  marketUnmatched: number;
   kdefCap: number;
   warnings: string[];
 };
 
-type ServerClient = Awaited<ReturnType<typeof createClient>>;
-
 async function rosteredPlayerIds(
-  supabase: ServerClient,
+  db: Db,
   leagueId: string,
 ): Promise<Set<number>> {
-  const { data: teams, error: teamError } = await supabase
+  const { data: teams, error: teamError } = await db
     .from("teams")
     .select("id")
     .eq("league_id", leagueId);
@@ -56,7 +38,7 @@ async function rosteredPlayerIds(
   const teamIds = (teams ?? []).map((team) => team.id);
   if (teamIds.length === 0) return new Set();
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("rosters")
     .select("player_id")
     .in("team_id", teamIds);
@@ -65,82 +47,29 @@ async function rosteredPlayerIds(
   return new Set((data ?? []).map((row) => row.player_id));
 }
 
-function marketByPlayerId(
-  values: FantasyCalcPlayer[],
-  players: PlayerRow[],
-): { market: Map<number, FantasyCalcPlayer>; unmatched: number } {
-  const bySleeperId = new Map<string, number>();
-  for (const player of players) {
-    if (player.sleeper_id) bySleeperId.set(player.sleeper_id, player.id);
-  }
-
-  const market = new Map<number, FantasyCalcPlayer>();
-  let unmatched = 0;
-
-  for (const value of values) {
-    const playerId = value.sleeperId ? bySleeperId.get(value.sleeperId) : undefined;
-    if (playerId === undefined) {
-      unmatched += 1;
-      continue;
-    }
-
-    // FantasyCalc lists a player once; if it ever does not, the higher value
-    // is the current one.
-    const existing = market.get(playerId);
-    if (!existing || value.value > existing.value) market.set(playerId, value);
-  }
-
-  return { market, unmatched };
-}
-
 /**
- * How much of the season a redraft asset is still a claim on (§6). Outside the
- * regular season — preseason, or a league whose season is not the live one —
- * the whole slate is ahead, which is also what makes the preseason case fall
- * out of the same arithmetic instead of needing its own branch.
- */
-function weeksRemainingFor({
-  isRegularSeason,
-  currentWeek,
-  startWeek,
-  endWeek,
-}: {
-  isRegularSeason: boolean;
-  currentWeek: number | null;
-  startWeek: number | null;
-  endWeek: number | null;
-}): number {
-  const end = endWeek ?? SEASON_WEEKS;
-  if (!isRegularSeason || currentWeek === null) {
-    const start = startWeek ?? 1;
-    return Math.min(SEASON_WEEKS, Math.max(1, end - start + 1));
-  }
-
-  return Math.min(SEASON_WEEKS, Math.max(1, end - currentWeek + 1));
-}
-
-/**
- * Values every player in a league's world — the market's 192, everyone on a
- * roster, and the projected free-agent pool — and writes them to
+ * Sync stage 8: values every player in a league's world — the market's 192,
+ * everyone on a roster, and the projected free-agent pool — and writes them to
  * `player_values` with provenance.
+ *
+ * Reads only. Every external pull it depends on was made by an earlier stage
+ * and committed to Postgres, which is what lets this stage be retried on its
+ * own without touching Yahoo, Sleeper or FantasyCalc (§9).
  *
  * Idempotent, and safe to interrupt: rows are upserted under a single run
  * timestamp and only then are the leftovers from the previous run deleted, so
- * a failure part-way leaves stale values rather than no values. Phase 4 folds
- * this into sync stage 8.
+ * a failure part-way leaves stale values rather than no values.
  */
 export async function computeLeagueValues(
+  db: Db,
   leagueId: string,
+  context: SyncContext,
 ): Promise<ValuationReport> {
-  const supabase = await createClient();
-  const admin = createAdminClient();
   const warnings: string[] = [];
 
-  const { data: league, error: leagueError } = await supabase
+  const { data: league, error: leagueError } = await db
     .from("leagues")
-    .select(
-      "id, season, num_teams, num_qbs, ppr, roster_slots, current_week, start_week, end_week",
-    )
+    .select("id, season, num_teams, num_qbs, ppr, roster_slots")
     .eq("id", leagueId)
     .single();
 
@@ -151,46 +80,21 @@ export async function computeLeagueValues(
   const ppr = Number(league.ppr);
   const numTeams = league.num_teams ?? 12;
 
-  await syncPlayerMaster();
-  const players = await loadPlayers(admin);
+  const [players, market, totals, rostered] = await Promise.all([
+    loadPlayers(db),
+    loadMarketValues(
+      db,
+      marketParamsKey({ numQbs: league.num_qbs, numTeams, ppr }),
+    ),
+    loadSeasonTotals(db, { season: league.season, ppr }),
+    rosteredPlayerIds(db, leagueId),
+  ]);
 
-  // The season clock decides two things: whether current-season actuals exist
-  // at all, and how much of the season is left to be worth anything (§5, §6).
-  const state = await fetchNflState();
-  const liveSeason = Number(state.season);
-  const isCurrentSeason = liveSeason === league.season;
-  const isRegularSeason =
-    isCurrentSeason && (state.season_type === "regular" || state.season_type === "post");
-  const currentWeek = isRegularSeason ? state.week : null;
-
-  const weeksRemaining = weeksRemainingFor({
-    isRegularSeason,
-    currentWeek,
-    startWeek: league.start_week,
-    endWeek: league.end_week,
-  });
-
-  const totals = await syncSeasonTotals(admin, players, {
-    season: league.season,
-    ppr,
-    includeActuals: isRegularSeason,
-  });
-  warnings.push(...totals.warnings);
-
-  const values = await fetchFantasyCalcValues({
-    numQbs: league.num_qbs,
-    numTeams,
-    ppr,
-  });
-  const { market, unmatched } = marketByPlayerId(values, players);
-  if (unmatched > 0) {
+  if (market.size === 0) {
     warnings.push(
-      `${unmatched} FantasyCalc players did not match a Sleeper id and were skipped.`,
+      "No market board for these settings — every value is modelled.",
     );
   }
-  await seedFantasyCalcCrosswalkFrom(admin, players, values);
-
-  const rostered = await rosteredPlayerIds(supabase, leagueId);
 
   const line = (map: Map<number, SeasonLine>, playerId: number) =>
     map.get(playerId) ?? null;
@@ -219,22 +123,14 @@ export async function computeLeagueValues(
       projectedPoints,
       actualPoints: actual?.points ?? null,
       gamesPlayed: actual?.gamesPlayed ?? null,
-      market: entry
-        ? {
-            value: entry.value,
-            overallRank: entry.overallRank,
-            positionRank: entry.positionRank,
-            trend30Day: entry.trend30Day,
-            tier: entry.tier,
-          }
-        : null,
+      market: entry,
     });
   }
 
   const report = computeValues(candidates, {
     numTeams,
     rosterSlots: league.roster_slots as unknown as RosterSlot[],
-    weeksRemaining,
+    weeksRemaining: context.weeksRemaining,
   });
 
   const computedAt = new Date().toISOString();
@@ -254,14 +150,14 @@ export async function computeLeagueValues(
     }));
 
   for (const batch of chunk(rows, INSERT_CHUNK)) {
-    const { error } = await supabase
+    const { error } = await db
       .from("player_values")
       .upsert(batch, { onConflict: "player_id,league_id" });
 
     if (error) throw new Error(`Failed to save values: ${error.message}`);
   }
 
-  const { error: pruneError } = await supabase
+  const { error: pruneError } = await db
     .from("player_values")
     .delete()
     .eq("league_id", leagueId)
@@ -276,10 +172,6 @@ export async function computeLeagueValues(
   ).length;
 
   return {
-    season: league.season,
-    week: currentWeek,
-    weeksRemaining,
-    preseason: !isRegularSeason,
     valued: report.rows.length,
     rostered: rostered.size,
     rosteredMarket,
@@ -287,7 +179,6 @@ export async function computeLeagueValues(
     overlap: report.overlap,
     rankCorrelation: report.rankCorrelation,
     seamViolations: report.seamViolations,
-    marketUnmatched: unmatched,
     kdefCap: report.kdefCap,
     warnings,
   };

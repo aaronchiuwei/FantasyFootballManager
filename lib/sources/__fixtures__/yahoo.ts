@@ -403,3 +403,72 @@ export function freeAgentsResponse() {
     },
   };
 }
+
+/**
+ * A `league/{key}/scoreboard;week=1,2` payload. Week 1 is finished, week 2 is
+ * in progress, and week 2's last pairing is a bye — Yahoo reports a one-team
+ * matchup when a league has an odd number of teams.
+ */
+export function scoreboardResponse() {
+  const matchup = (
+    week: number,
+    a: number,
+    b: number | null,
+    { status, playoffs = false }: { status: string; playoffs?: boolean },
+  ) => {
+    const side = (index: number, points: string, projected: string) => ({
+      team: [
+        [
+          { team_key: `${LEAGUE_KEY}.t.${index + 1}` },
+          { team_id: String(index + 1) },
+          { name: TEAM_NAMES[index] },
+        ],
+        { team_points: { coverage_type: "week", week: String(week), total: points } },
+        {
+          team_projected_points: {
+            coverage_type: "week",
+            week: String(week),
+            total: projected,
+          },
+        },
+      ],
+    });
+
+    return {
+      matchup: {
+        week: String(week),
+        week_start: "2026-09-10",
+        week_end: "2026-09-15",
+        status,
+        is_playoffs: playoffs ? "1" : "0",
+        is_consolation: "0",
+        teams: counted(
+          b === null
+            ? [side(a, "104.50", "98.20")]
+            : [side(a, "104.50", "98.20"), side(b, "121.06", "110.75")],
+        ),
+      },
+    };
+  };
+
+  return {
+    fantasy_content: {
+      league: [
+        { league_key: LEAGUE_KEY, name: "Sunday Funday Dynasty Club" },
+        {
+          scoreboard: {
+            0: {
+              matchups: counted([
+                matchup(1, 0, 1, { status: "postevent" }),
+                matchup(1, 2, 3, { status: "postevent" }),
+                matchup(2, 1, 0, { status: "midevent" }),
+                matchup(2, 4, null, { status: "midevent", playoffs: true }),
+              ]),
+            },
+            week: "2",
+          },
+        },
+      ],
+    },
+  };
+}

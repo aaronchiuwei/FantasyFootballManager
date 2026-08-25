@@ -1,7 +1,12 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { randomBytes } from "node:crypto";
 
-import { decryptSecret, encryptSecret } from "./crypto";
+import {
+  decryptSecret,
+  encryptSecret,
+  signPayload,
+  verifySignature,
+} from "./crypto";
 
 describe("token encryption", () => {
   beforeAll(() => {
@@ -44,5 +49,29 @@ describe("token encryption", () => {
     process.env.TOKEN_ENCRYPTION_KEY = Buffer.from("short").toString("base64");
     expect(() => encryptSecret("token")).toThrow(/32 bytes/);
     process.env.TOKEN_ENCRYPTION_KEY = original;
+  });
+});
+
+describe("run-token signatures", () => {
+  beforeAll(() => {
+    process.env.TOKEN_ENCRYPTION_KEY = randomBytes(32).toString("base64");
+  });
+
+  it("verifies a signature it produced", () => {
+    const payload = "sync:8f1d0d4e-0000-4000-8000-000000000000";
+    expect(verifySignature(payload, signPayload(payload))).toBe(true);
+  });
+
+  it("is deterministic, so any stage of a run can re-derive it", () => {
+    expect(signPayload("sync:a")).toBe(signPayload("sync:a"));
+  });
+
+  it("rejects a signature made for a different run", () => {
+    expect(verifySignature("sync:a", signPayload("sync:b"))).toBe(false);
+  });
+
+  it("rejects a signature of the wrong length without throwing", () => {
+    expect(verifySignature("sync:a", "short")).toBe(false);
+    expect(verifySignature("sync:a", "")).toBe(false);
   });
 });

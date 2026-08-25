@@ -1,7 +1,7 @@
 import "server-only";
 
-import { fetchLeague } from "@/lib/sources/yahoo";
-import { createClient } from "@/lib/supabase/server";
+import { fetchLeague, type MatchupImport } from "@/lib/sources/yahoo";
+import type { Db } from "@/lib/supabase/db";
 import type { Json } from "@/lib/supabase/database.types";
 
 export type ImportResult = {
@@ -13,21 +13,23 @@ export type ImportResult = {
 /**
  * Pulls a league from Yahoo and writes it to Postgres.
  *
- * Deliberately uses the user's RLS-bound client rather than the service role:
- * league and team rows are user data, so the policies should be doing the work
- * on every write. Only the token read underneath is privileged.
+ * The client is passed in rather than created here. Interactively — importing
+ * a league you just picked — that is the user's RLS-bound client, so the
+ * policies do the work on every write. Inside the sync pipeline there is no
+ * cookie session to bind to, so it is the service role, scoped by the league
+ * id on the run row that an authenticated owner created (§9).
  *
- * Idempotent — re-importing refreshes the same rows, which is what Phase 4's
- * sync stage 6 will call.
+ * Idempotent — re-importing refreshes the same rows, which is what sync stage
+ * 6 relies on.
  */
 export async function importLeague(
+  db: Db,
   userId: string,
   leagueKey: string,
 ): Promise<ImportResult> {
   const { league, teams } = await fetchLeague(userId, leagueKey);
-  const supabase = await createClient();
 
-  const { data: leagueRow, error: leagueError } = await supabase
+  const { data: leagueRow, error: leagueError } = await db
     .from("leagues")
     .upsert(
       {
@@ -60,7 +62,7 @@ export async function importLeague(
   }
 
   if (teams.length > 0) {
-    const { error: teamsError } = await supabase.from("teams").upsert(
+    const { error: teamsError } = await db.from("teams").upsert(
       teams.map((team) => ({
         league_id: leagueRow.id,
         yahoo_team_key: team.teamKey,
@@ -90,7 +92,7 @@ export async function importLeague(
 
     // A team that vanished from Yahoo (folded, or the league was rebuilt)
     // should not linger as a ghost row.
-    const { error: pruneError } = await supabase
+    const { error: pruneError } = await db
       .from("teams")
       .delete()
       .eq("league_id", leagueRow.id)
@@ -110,4 +112,65 @@ export async function importLeague(
     leagueName: leagueRow.name,
     teamCount: teams.length,
   };
+}
+
+/** Maps Yahoo's team keys onto our uuids for a league. */
+export async function teamIdsByKey(
+  db: Db,
+  leagueId: string,
+): Promise<Map<string, string>> {
+  const { data, error } = await db
+    .from("teams")
+    .select("id, yahoo_team_key")
+    .eq("league_id", leagueId);
+
+  if (error) throw new Error(`Failed to read teams: ${error.message}`);
+  return new Map((data ?? []).map((team) => [team.yahoo_team_key, team.id]));
+}
+
+/**
+ * Writes the schedule. Matchups are keyed by our team ids, so a matchup whose
+ * teams have not been imported yet is dropped rather than written against a
+ * dangling key — the same pull writes both, so that only happens if Yahoo
+ * reports a team in the scoreboard that it left out of the standings.
+ */
+export async function saveMatchups(
+  db: Db,
+  leagueId: string,
+  matchups: MatchupImport[],
+): Promise<number> {
+  if (matchups.length === 0) return 0;
+
+  const teamIds = await teamIdsByKey(db, leagueId);
+
+  const rows = matchups.flatMap((matchup) => {
+    const teamA = teamIds.get(matchup.teamKeyA);
+    if (!teamA) return [];
+
+    return [
+      {
+        league_id: leagueId,
+        week: matchup.week,
+        team_a: teamA,
+        team_b: matchup.teamKeyB
+          ? (teamIds.get(matchup.teamKeyB) ?? null)
+          : null,
+        points_a: matchup.pointsA,
+        points_b: matchup.pointsB,
+        projected_a: matchup.projectedA,
+        projected_b: matchup.projectedB,
+        status: matchup.status,
+        is_playoffs: matchup.isPlayoffs,
+      },
+    ];
+  });
+
+  if (rows.length === 0) return 0;
+
+  const { error } = await db
+    .from("matchups")
+    .upsert(rows, { onConflict: "league_id,week,team_a" });
+
+  if (error) throw new Error(`Failed to save matchups: ${error.message}`);
+  return rows.length;
 }

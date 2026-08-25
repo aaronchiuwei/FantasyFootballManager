@@ -1,10 +1,8 @@
 import "server-only";
 
 import { fetchAllPlayers, type SleeperPlayer } from "@/lib/sources/sleeper";
-import { createAdminClient } from "@/lib/supabase/admin";
+import type { Db } from "@/lib/supabase/db";
 import type { Database } from "@/lib/supabase/database.types";
-
-type Admin = ReturnType<typeof createAdminClient>;
 
 /** §3: the 14.6 MB Sleeper player master is refreshed at most once a day. */
 export const PLAYER_MASTER_TTL_MS = 24 * 60 * 60 * 1000;
@@ -31,11 +29,11 @@ export function chunk<T>(items: T[], size: number): T[][] {
 }
 
 /** Reads a whole table past PostgREST's 1000-row page cap. */
-export async function loadPlayers(admin: Admin): Promise<PlayerRow[]> {
+export async function loadPlayers(db: Db): Promise<PlayerRow[]> {
   const rows: PlayerRow[] = [];
 
   for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await admin
+    const { data, error } = await db
       .from("players")
       .select(
         "id, sleeper_id, full_name, search_name, position, nfl_team, birth_date, injury_status",
@@ -49,6 +47,33 @@ export async function loadPlayers(admin: Admin): Promise<PlayerRow[]> {
   }
 
   return rows;
+}
+
+/**
+ * Just the join key. Most stages only need `sleeper_id → player_id`, and
+ * paging eleven thousand full rows through a serverless function three times
+ * per sync to rebuild the same map is a cost with nothing on the other side.
+ */
+export async function loadSleeperIds(db: Db): Promise<Map<string, number>> {
+  const ids = new Map<string, number>();
+
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await db
+      .from("players")
+      .select("id, sleeper_id")
+      .not("sleeper_id", "is", null)
+      .order("id")
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) throw new Error(`Failed to read players: ${error.message}`);
+
+    for (const row of data ?? []) {
+      if (row.sleeper_id) ids.set(row.sleeper_id, row.id);
+    }
+    if (!data || data.length < PAGE_SIZE) break;
+  }
+
+  return ids;
 }
 
 function toRow(player: SleeperPlayer): Database["public"]["Tables"]["players"]["Insert"] {
@@ -73,6 +98,8 @@ export type PlayerMasterResult = {
   /** False when the cached master was still inside its TTL. */
   refreshed: boolean;
   count: number;
+  /** Age of the cached master before this call, for the sync's progress line. */
+  ageMs: number;
   /** The freshly fetched rows — present only on a refresh, for the seeders. */
   players: SleeperPlayer[] | null;
 };
@@ -82,34 +109,33 @@ export type PlayerMasterResult = {
  * this is global reference data, not user data (§8).
  */
 export async function syncPlayerMaster(
+  db: Db,
   { force = false }: { force?: boolean } = {},
 ): Promise<PlayerMasterResult> {
-  const admin = createAdminClient();
-
   const [{ data: newest }, { count }] = await Promise.all([
-    admin
+    db
       .from("players")
       .select("updated_at")
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
-    admin.from("players").select("id", { count: "exact", head: true }),
+    db.from("players").select("id", { count: "exact", head: true }),
   ]);
 
   const age = newest ? Date.now() - Date.parse(newest.updated_at) : Infinity;
   if (!force && age < PLAYER_MASTER_TTL_MS) {
-    return { refreshed: false, count: count ?? 0, players: null };
+    return { refreshed: false, count: count ?? 0, ageMs: age, players: null };
   }
 
   const players = await fetchAllPlayers();
 
   for (const batch of chunk(players, UPSERT_CHUNK)) {
-    const { error } = await admin
+    const { error } = await db
       .from("players")
       .upsert(batch.map(toRow), { onConflict: "sleeper_id" });
 
     if (error) throw new Error(`Failed to save players: ${error.message}`);
   }
 
-  return { refreshed: true, count: players.length, players };
+  return { refreshed: true, count: players.length, ageMs: age, players };
 }

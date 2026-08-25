@@ -26,15 +26,22 @@ function describe(cause: unknown) {
   return cause instanceof Error ? cause.message : "Something went wrong.";
 }
 
-/** Imports a league from Yahoo, then lands on its page. */
+/**
+ * Imports a league from Yahoo, then lands on its page.
+ *
+ * Only the league and its teams — rosters, values and everything else arrive
+ * with the first sync, which is the button waiting on the other side of the
+ * redirect. Written with the user's own client so RLS authorizes the writes.
+ */
 export async function importLeagueAction(
   leagueKey: string,
 ): Promise<ActionResult> {
   const user = await requireUser();
+  const supabase = await createClient();
 
   let leagueId: string;
   try {
-    ({ leagueId } = await importLeague(user.id, leagueKey));
+    ({ leagueId } = await importLeague(supabase, user.id, leagueKey));
   } catch (cause) {
     return { error: describe(cause) };
   }
@@ -42,23 +49,6 @@ export async function importLeagueAction(
   revalidatePath("/leagues");
   revalidatePath("/dashboard");
   redirect(`/leagues/${leagueId}`);
-}
-
-/** Re-pulls an already-imported league. Phase 4 folds this into the sync. */
-export async function refreshLeagueAction(
-  leagueId: string,
-  leagueKey: string,
-): Promise<ActionResult> {
-  const user = await requireUser();
-
-  try {
-    await importLeague(user.id, leagueKey);
-  } catch (cause) {
-    return { error: describe(cause) };
-  }
-
-  revalidatePath(`/leagues/${leagueId}`);
-  return {};
 }
 
 export async function disconnectYahooAction() {

@@ -7,11 +7,12 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { ComputeValuesButton } from "@/components/values/compute-values-button";
+import { SyncButton } from "@/components/sync/sync-button";
 import {
   PlayerValueRow,
   type ValueRowData,
 } from "@/components/values/player-value-row";
+import { latestRun } from "@/lib/sync/run";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
@@ -107,6 +108,8 @@ export default async function ValuesPage({
 
   if (!league) notFound();
 
+  const run = await latestRun(supabase, league.id);
+
   const position = POSITIONS.find((entry) => entry === search.pos?.toUpperCase());
   const availability =
     AVAILABILITY.find((entry) => entry.key === search.avail)?.key ?? "all";
@@ -185,7 +188,7 @@ export default async function ValuesPage({
           </p>
         </div>
 
-        <ComputeValuesButton leagueId={league.id} />
+        <SyncButton leagueId={league.id} initialRun={run} />
       </div>
 
       <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -227,15 +230,19 @@ export default async function ValuesPage({
         <Card>
           <CardContent className="space-y-3 py-8 text-center">
             <p className="text-sm text-muted-foreground">
-              No values yet for the {league.season} season. Resolve player
-              identity first, then compute — values are keyed to matched
-              players, so the crosswalk has to run before this does.
+              No values yet for the {league.season} season. One sync pulls the
+              market, resolves identity and prices everyone — values are keyed
+              to matched players, so the crosswalk runs first either way.
             </p>
             <div className="flex justify-center gap-2">
               <Button asChild size="sm" variant="ghost">
                 <Link href={`/leagues/${league.id}/identity`}>Player identity</Link>
               </Button>
-              <ComputeValuesButton leagueId={league.id} label="Compute values" />
+              <SyncButton
+                leagueId={league.id}
+                initialRun={run}
+                label="Sync this league"
+              />
             </div>
           </CardContent>
         </Card>

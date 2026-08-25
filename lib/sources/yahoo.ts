@@ -5,8 +5,10 @@ import { isPlainObject, normalize, type Plain } from "./yahoo-json";
 import {
   parseDiscovery,
   parseLeague,
+  parseMatchups,
   parsePlayerList,
   parseRosters,
+  type MatchupImport,
   type YahooPlayer,
 } from "./yahoo-parse";
 
@@ -84,6 +86,7 @@ export async function yahooGet(userId: string, path: string): Promise<Plain> {
 export type {
   DiscoveredLeague,
   LeagueImport,
+  MatchupImport,
   RosterSlot,
   TeamImport,
   TeamRoster,
@@ -151,4 +154,35 @@ export async function fetchFreeAgents(
   }
 
   return players.slice(0, limit);
+}
+
+/** Weeks per scoreboard request. Yahoo takes a comma list; this keeps it sane. */
+const SCOREBOARD_CHUNK = 6;
+
+/**
+ * The schedule and its scores, for the weeks given.
+ *
+ * Yahoo will return every week in one `;week=` list, but a full season of
+ * matchups in a single response is a payload with no ceiling we control, so it
+ * is asked for in chunks — still a handful of requests rather than one per
+ * week (§3).
+ */
+export async function fetchMatchups(
+  userId: string,
+  leagueKey: string,
+  weeks: number[],
+): Promise<MatchupImport[]> {
+  const key = encodeURIComponent(leagueKey);
+  const matchups: MatchupImport[] = [];
+
+  for (let i = 0; i < weeks.length; i += SCOREBOARD_CHUNK) {
+    const batch = weeks.slice(i, i + SCOREBOARD_CHUNK);
+    matchups.push(
+      ...parseMatchups(
+        await yahooGet(userId, `league/${key}/scoreboard;week=${batch.join(",")}`),
+      ),
+    );
+  }
+
+  return matchups;
 }

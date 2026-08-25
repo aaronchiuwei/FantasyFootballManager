@@ -361,6 +361,108 @@ export type Database = {
         >;
         Relationships: [];
       };
+      sync_runs: {
+        Row: {
+          id: string;
+          user_id: string;
+          league_id: string;
+          status: string;
+          stages: Json;
+          context: Json;
+          error: string | null;
+          started_at: string;
+          finished_at: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          league_id: string;
+          status?: string;
+          stages?: Json;
+          context?: Json;
+          error?: string | null;
+          started_at?: string;
+          finished_at?: string | null;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["sync_runs"]["Insert"]>;
+        Relationships: [];
+      };
+      market_values: {
+        Row: {
+          params_key: string;
+          player_id: number;
+          value: number;
+          overall_rank: number | null;
+          position_rank: number | null;
+          trend_30d: number | null;
+          tier: number | null;
+          fetched_at: string;
+        };
+        Insert: {
+          params_key: string;
+          player_id: number;
+          value: number;
+          overall_rank?: number | null;
+          position_rank?: number | null;
+          trend_30d?: number | null;
+          tier?: number | null;
+          fetched_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["market_values"]["Insert"]>;
+        Relationships: [];
+      };
+      yahoo_player_pool: {
+        Row: {
+          league_id: string;
+          yahoo_player_id: string;
+          team_key: string | null;
+          payload: Json;
+          fetched_at: string;
+        };
+        Insert: {
+          league_id: string;
+          yahoo_player_id: string;
+          team_key?: string | null;
+          payload: Json;
+          fetched_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["yahoo_player_pool"]["Insert"]
+        >;
+        Relationships: [];
+      };
+      matchups: {
+        Row: {
+          league_id: string;
+          week: number;
+          team_a: string;
+          team_b: string | null;
+          points_a: number | null;
+          points_b: number | null;
+          projected_a: number | null;
+          projected_b: number | null;
+          status: string | null;
+          is_playoffs: boolean;
+          updated_at: string;
+        };
+        Insert: {
+          league_id: string;
+          week: number;
+          team_a: string;
+          team_b?: string | null;
+          points_a?: number | null;
+          points_b?: number | null;
+          projected_a?: number | null;
+          projected_b?: number | null;
+          status?: string | null;
+          is_playoffs?: boolean;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["matchups"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: {
       /** Phase 3 read model: values joined to identity and league ownership. */

@@ -7,9 +7,10 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { ResolveIdentitiesButton } from "@/components/players/resolve-identities-button";
+import { SyncButton } from "@/components/sync/sync-button";
 import { UnmatchedPlayerCard } from "@/components/players/unmatched-player-card";
 import { getIdentityStatus } from "@/lib/crosswalk/store";
+import { latestRun } from "@/lib/sync/run";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Player identity" };
@@ -61,7 +62,10 @@ export default async function IdentityPage({
 
   if (!league) notFound();
 
-  const status = await getIdentityStatus(league.id);
+  const [status, run] = await Promise.all([
+    getIdentityStatus(league.id),
+    latestRun(supabase, league.id),
+  ]);
   const pendingRostered = status.unmatched.filter(
     (entry) => entry.payload.teamKey !== null,
   ).length;
@@ -93,7 +97,7 @@ export default async function IdentityPage({
           </p>
         </div>
 
-        <ResolveIdentitiesButton leagueId={league.id} />
+        <SyncButton leagueId={league.id} initialRun={run} />
       </div>
 
       <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -140,8 +144,9 @@ export default async function IdentityPage({
               No rosters have been read yet for this league.
             </p>
             <div className="flex justify-center">
-              <ResolveIdentitiesButton
+              <SyncButton
                 leagueId={league.id}
+                initialRun={run}
                 label="Pull rosters and resolve"
               />
             </div>

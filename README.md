@@ -3,11 +3,11 @@
 Yahoo fantasy football league companion — market-grounded player values, trade
 analysis, waiver recommendations. See [PLAN.md](PLAN.md) for the full design.
 
-**Status: Phase 3 (value engine) complete.** On top of Phases 0–2 (Supabase
+**Status: Phase 4 (one-button sync) complete.** On top of Phases 0–3 (Supabase
 auth + RLS, Yahoo OAuth2 with encrypted tokens, league + team import, the
-Sleeper/FantasyCalc/DynastyProcess adapters and the player-identity crosswalk):
-every rostered player and the whole projected free-agent pool now carries a
-value on one scale, with its source on the badge.
+Sleeper/FantasyCalc/DynastyProcess adapters, the player-identity crosswalk and
+the value engine): everything above now refreshes from a single button, as an
+eight-stage pipeline with a durable progress record and a live checklist.
 
 ## Stack
 
@@ -98,13 +98,23 @@ lib/values/
   vor.ts             replacement level, VOR, rest-of-season points
   isotonic.ts        PAVA regression + Spearman, both pure
   engine.ts          Tier A/B, guardrails, provenance — the value engine
-  store.ts           the league valuation run, persisted to player_values
+  store.ts           sync stage 8 — the valuation, persisted to player_values
+lib/sync/
+  plan.ts            the eight stages and the run's shape — pure, shared with the browser
+  clock.ts           season-clock arithmetic, pure
+  run.ts             sync_runs lifecycle: open, advance, fail, resume
+  stages.ts          what each of the eight stages actually does
+  market.ts          sync stage 3 — the FantasyCalc board, persisted
+  pipeline.ts        stage execution, HMAC-signed chaining
+  use-sync-run.ts    the browser's Realtime subscription
 lib/players/master.ts  Sleeper player master → Postgres, 24h TTL
-lib/players/stats.ts   season projections + actuals → Postgres
-lib/leagues/import.ts  Yahoo league → Postgres
+lib/players/stats.ts   season projections + actuals → Postgres, and back out
+lib/leagues/import.ts  Yahoo league, teams and matchups → Postgres
+app/api/sync/          POST to start or resume; POST /[stage] to run one stage
 components/
   players/           identity resolution UI
-  values/            value badges, the values board, the compute button
+  values/            value badges, the values board
+  sync/              the sync button, progress ring and staged checklist
 supabase/migrations/
 ```
 
@@ -234,6 +244,67 @@ the seam clamps pin the whole model tier to the market's floor regardless, and
 §5's own arithmetic says every trade worth proposing is 100% market-valued.
 Per-position fits are the obvious next move if that ever stops being true.
 
+## How the sync works
+
+One button, but not one request. Yahoo's pagination plus a 14.6 MB Sleeper
+payload will not fit in a serverless invocation, so the sync is eight stages
+that hand work to each other **through Postgres**, never through memory:
+
+| # | Stage | Work | Skips when |
+|---|---|---|---|
+| 1 | `state` | Sleeper's season clock; the league parameters the rest are keyed on | — |
+| 2 | `players` | Sleeper's player master, and the Yahoo half of the crosswalk | cached <24h |
+| 3 | `values` | The FantasyCalc board for this league's scoring | — |
+| 4 | `projections` | Season-total projections | — |
+| 5 | `stats` | Season-to-date actuals | preseason |
+| 6 | `yahoo` | Settings, standings, teams, rosters, matchups, free agents | — |
+| 7 | `resolve` | The §4 identity ladder over what stage 6 pulled | — |
+| 8 | `compute` | The §5 value engine over everything above | — |
+
+`POST /api/sync` opens a `sync_runs` row and kicks stage 1;
+`POST /api/sync/[stage]` runs one stage, records it, and hands the next one to
+a fresh invocation. Those hops carry no cookie session, so they are authorized
+by an **HMAC over the run id** — a leaked token is good for exactly one run.
+The work happens in `after()`, so the calling stage's request returns
+immediately rather than being held open for what it triggered.
+
+**The handoff tables are the point.** `market_values` holds the board stage 3
+fetched and `yahoo_player_pool` holds the players stage 6 pulled, so stages 7
+and 8 are pure reads. That is what makes "retry from the failed stage" cheap
+and honest: a resolve that broke re-runs without paying Yahoo's free-agent
+pagination again, and a valuation that broke re-runs without touching any
+external API at all.
+
+**Failure is a state, not an exception.** A stage that throws is recorded as
+failed on the run and the chain stops; everything before it stays committed.
+A stage that is *killed* — OOM, timeout — cannot record anything, so the run
+simply goes quiet, and both the UI (after 90s) and the next sync (after 5min)
+treat a silent `running` row as stalled and offer to resume it. Resuming
+reopens the same row from the first unfinished stage rather than starting a
+second run; a partial unique index on `sync_runs (league_id) where status =
+'running'` makes "two syncs of one league" unrepresentable.
+
+**Progress is live.** The browser subscribes to its own `sync_runs` row over
+Supabase Realtime — the owner policy is applied to the socket's own JWT, so a
+user streams only their own runs — and renders the checklist from it. A slow
+poll runs alongside while a sync is in flight, because a progress UI that shows
+nothing at all when a publication was not applied is a worse failure than a few
+extra requests.
+
+**Where the invariants live.** §13's checks — the seam clamp, the rank
+correlation against FantasyCalc, the 95% auto-resolution bar — are evaluated on
+every run and written to the stage that raised them. They are a property of the
+data, not of the test suite, so the durable progress record is where they
+belong.
+
+Two things this deliberately does not do. It does not re-read Yahoo's settings
+before stage 3, so a league whose scoring changes mid-season prices on the
+previous settings for exactly one sync — the alternative is asking Yahoo for
+settings twice per run, and the lag is one refresh. And it does not run under
+the user's RLS-bound client: there is no cookie session in a machine-to-machine
+hop, so the pipeline uses the service role, scoped by the `league_id` on a run
+row that an authenticated owner created. That row is the authorization record.
+
 ## Conventions
 
 - **`getUser()`, never `getSession()`** on the server. It revalidates the token
@@ -249,6 +320,11 @@ Per-position fits are the obvious next move if that ever stops being true.
 - **Global reference data is service-role only.** `players`, `player_crosswalk`,
   stats and projections are readable by any signed-in user and written only by
   the admin client; league data stays user-scoped and RLS-bound.
+- **Data-access modules take a client, they do not make one.** Which client is
+  right depends on the caller — the user's RLS-bound one interactively, the
+  service role inside the sync pipeline — so `Db` is a parameter (`lib/supabase/db.ts`).
+- **Sync stages hand off through Postgres, never through memory.** Each stage
+  is its own invocation; anything the next one needs has to be committed first.
 
 ## Scripts
 

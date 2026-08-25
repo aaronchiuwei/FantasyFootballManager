@@ -1,20 +1,15 @@
 import "server-only";
 
-import { chunk, loadPlayers, syncPlayerMaster, type PlayerRow } from "@/lib/players/master";
+import { teamIdsByKey } from "@/lib/leagues/import";
+import { chunk, loadPlayers, type PlayerRow } from "@/lib/players/master";
 import { fetchDynastyProcessIds } from "@/lib/sources/dynastyprocess";
-import {
-  fetchFantasyCalcValues,
-  type FantasyCalcPlayer,
-} from "@/lib/sources/fantasycalc";
+import type { FantasyCalcPlayer } from "@/lib/sources/fantasycalc";
 import type { SleeperPlayer } from "@/lib/sources/sleeper";
-import {
-  fetchFreeAgents,
-  fetchRosters,
-  type YahooPlayer,
-} from "@/lib/sources/yahoo";
+import type { TeamRoster, YahooPlayer } from "@/lib/sources/yahoo";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
+import type { Db } from "@/lib/supabase/db";
 import type { Database, Json } from "@/lib/supabase/database.types";
+import { createClient } from "@/lib/supabase/server";
 
 import {
   CandidateIndex,
@@ -26,7 +21,6 @@ import {
 
 export type { UnmatchedPayload } from "./resolve";
 
-type Admin = ReturnType<typeof createAdminClient>;
 type CrosswalkInsert = Database["public"]["Tables"]["player_crosswalk"]["Insert"];
 
 /** Ladder rank 2 and 3 of §4 — persisted once, then consulted by key. */
@@ -44,14 +38,6 @@ const INSERT_CHUNK = 500;
 // seeding
 // ---------------------------------------------------------------------------
 
-function playerIdsBySleeperId(rows: PlayerRow[]): Map<string, number> {
-  const map = new Map<string, number>();
-  for (const row of rows) {
-    if (row.sleeper_id) map.set(row.sleeper_id, row.id);
-  }
-  return map;
-}
-
 export function toCandidates(rows: PlayerRow[]): CrosswalkCandidate[] {
   return rows.map((row) => ({
     playerId: row.id,
@@ -63,11 +49,11 @@ export function toCandidates(rows: PlayerRow[]): CrosswalkCandidate[] {
   }));
 }
 
-async function insertCrosswalk(admin: Admin, rows: CrosswalkInsert[]) {
+async function insertCrosswalk(db: Db, rows: CrosswalkInsert[]) {
   for (const batch of chunk(rows, INSERT_CHUNK)) {
     // Never clobber what is already there: a row written by the name ladder or
     // an admin override outranks a re-seed of the same key.
-    const { error } = await admin
+    const { error } = await db
       .from("player_crosswalk")
       .upsert(batch, { onConflict: "source,source_id", ignoreDuplicates: true });
 
@@ -82,18 +68,17 @@ async function insertCrosswalk(admin: Admin, rows: CrosswalkInsert[]) {
  * first so it wins the key where both have an opinion.
  */
 export async function seedYahooCrosswalk(
-  admin: Admin,
-  players: PlayerRow[],
+  db: Db,
+  ids: Map<string, number>,
   sleeperPlayers: SleeperPlayer[],
 ): Promise<{ seeded: number; warning: string | null }> {
-  const bySleeperId = playerIdsBySleeperId(players);
   const seen = new Set<string>();
   const rows: CrosswalkInsert[] = [];
   let warning: string | null = null;
 
   try {
     for (const row of await fetchDynastyProcessIds()) {
-      const playerId = row.sleeperId ? bySleeperId.get(row.sleeperId) : undefined;
+      const playerId = row.sleeperId ? ids.get(row.sleeperId) : undefined;
       if (!playerId || !row.yahooId || seen.has(row.yahooId)) continue;
 
       seen.add(row.yahooId);
@@ -116,7 +101,7 @@ export async function seedYahooCrosswalk(
 
   for (const player of sleeperPlayers) {
     if (!player.yahooId || seen.has(player.yahooId)) continue;
-    const playerId = bySleeperId.get(player.sleeperId);
+    const playerId = ids.get(player.sleeperId);
     if (!playerId) continue;
 
     seen.add(player.yahooId);
@@ -129,42 +114,24 @@ export async function seedYahooCrosswalk(
     });
   }
 
-  await insertCrosswalk(admin, rows);
+  await insertCrosswalk(db, rows);
   return { seeded: rows.length, warning };
 }
 
 /**
  * The right half of the join (§4): FantasyCalc ships `sleeperId`, so this is
- * exact and free. Seeding it here means Phase 3 can look values up by
- * `player_id` without re-deriving identity.
- */
-export async function seedFantasyCalcCrosswalk(
-  admin: Admin,
-  players: PlayerRow[],
-  params: { numQbs: number; numTeams: number; ppr: number },
-): Promise<number> {
-  return seedFantasyCalcCrosswalkFrom(
-    admin,
-    players,
-    await fetchFantasyCalcValues(params),
-  );
-}
-
-/**
- * The same seeding pass over an already-fetched value list. The value engine
- * needs those rows for its own work, and FantasyCalc is undocumented enough
- * (§12) that pulling it twice in one run is a cost with no upside.
+ * exact and free. Seeded from the board sync stage 3 already fetched, so the
+ * undocumented API (§12) is pulled once per run and not twice.
  */
 export async function seedFantasyCalcCrosswalkFrom(
-  admin: Admin,
-  players: PlayerRow[],
+  db: Db,
+  ids: Map<string, number>,
   values: FantasyCalcPlayer[],
 ): Promise<number> {
-  const bySleeperId = playerIdsBySleeperId(players);
   const rows: CrosswalkInsert[] = [];
 
   for (const value of values) {
-    const playerId = value.sleeperId ? bySleeperId.get(value.sleeperId) : undefined;
+    const playerId = value.sleeperId ? ids.get(value.sleeperId) : undefined;
     if (!playerId) continue;
 
     rows.push({
@@ -176,34 +143,135 @@ export async function seedFantasyCalcCrosswalkFrom(
     });
   }
 
-  await insertCrosswalk(admin, rows);
+  await insertCrosswalk(db, rows);
   return rows.length;
 }
 
 // ---------------------------------------------------------------------------
-// resolution
+// stage 6's half: what Yahoo says is in the league
+// ---------------------------------------------------------------------------
+
+export type PoolEntry = {
+  yahooPlayerId: string;
+  /** Null means free agent. */
+  teamKey: string | null;
+  player: YahooPlayer;
+};
+
+/**
+ * Persists the league's player pool exactly as Yahoo reported it, before
+ * identity resolution has an opinion about any of it.
+ *
+ * This is the seam between stages 6 and 7. It exists so that a resolve that
+ * fails can be retried without paying Yahoo's free-agent pagination again —
+ * which is §9's "independently retryable" applied to the one stage where a
+ * retry would otherwise be expensive.
+ */
+export async function savePlayerPool(
+  db: Db,
+  leagueId: string,
+  { rosters, freeAgents }: { rosters: TeamRoster[]; freeAgents: YahooPlayer[] },
+): Promise<{ rostered: number; freeAgents: number }> {
+  const entries = new Map<string, PoolEntry>();
+
+  for (const roster of rosters) {
+    for (const player of roster.players) {
+      entries.set(player.playerId, {
+        yahooPlayerId: player.playerId,
+        teamKey: roster.teamKey,
+        player,
+      });
+    }
+  }
+
+  for (const player of freeAgents) {
+    // A rostered player is never also a free agent, but Yahoo's pagination can
+    // overlap with itself; the roster entry is the richer one.
+    if (entries.has(player.playerId)) continue;
+    entries.set(player.playerId, {
+      yahooPlayerId: player.playerId,
+      teamKey: null,
+      player,
+    });
+  }
+
+  const fetchedAt = new Date().toISOString();
+  const rows = [...entries.values()].map((entry) => ({
+    league_id: leagueId,
+    yahoo_player_id: entry.yahooPlayerId,
+    team_key: entry.teamKey,
+    payload: entry.player as unknown as Json,
+    fetched_at: fetchedAt,
+  }));
+
+  for (const batch of chunk(rows, INSERT_CHUNK)) {
+    const { error } = await db
+      .from("yahoo_player_pool")
+      .upsert(batch, { onConflict: "league_id,yahoo_player_id" });
+
+    if (error) throw new Error(`Failed to save the player pool: ${error.message}`);
+  }
+
+  // Dropped players and players who left the free-agent window are gone from
+  // Yahoo's answer, so they go from ours.
+  const { error: pruneError } = await db
+    .from("yahoo_player_pool")
+    .delete()
+    .eq("league_id", leagueId)
+    .lt("fetched_at", fetchedAt);
+
+  if (pruneError) {
+    throw new Error(`Failed to prune the player pool: ${pruneError.message}`);
+  }
+
+  return {
+    rostered: [...entries.values()].filter((entry) => entry.teamKey !== null).length,
+    freeAgents: [...entries.values()].filter((entry) => entry.teamKey === null).length,
+  };
+}
+
+async function loadPlayerPool(db: Db, leagueId: string): Promise<PoolEntry[]> {
+  const entries: PoolEntry[] = [];
+
+  for (let from = 0; ; from += INSERT_CHUNK) {
+    const { data, error } = await db
+      .from("yahoo_player_pool")
+      .select("yahoo_player_id, team_key, payload")
+      .eq("league_id", leagueId)
+      .order("yahoo_player_id")
+      .range(from, from + INSERT_CHUNK - 1);
+
+    if (error) throw new Error(`Failed to read the player pool: ${error.message}`);
+
+    for (const row of data ?? []) {
+      entries.push({
+        yahooPlayerId: row.yahoo_player_id,
+        teamKey: row.team_key,
+        player: row.payload as unknown as YahooPlayer,
+      });
+    }
+
+    if (!data || data.length < INSERT_CHUNK) break;
+  }
+
+  return entries;
+}
+
+// ---------------------------------------------------------------------------
+// stage 7: resolution
 // ---------------------------------------------------------------------------
 
 export type ResolutionReport = {
-  playersInMaster: number;
-  masterRefreshed: boolean;
   rostered: number;
   rosteredResolved: number;
   freeAgents: number;
   freeAgentsResolved: number;
   unmatched: number;
   byMethod: Partial<Record<MatchMethod, number>>;
-  marketCoverage: number | null;
-  warnings: string[];
-};
-
-type Target = {
-  player: YahooPlayer;
-  teamKey: string | null;
 };
 
 async function fetchKeyed<T extends { source_id: string }>(
-  admin: Admin,
+  db: Db,
   table: "player_crosswalk" | "player_id_overrides",
   columns: string,
   sourceIds: string[],
@@ -211,7 +279,7 @@ async function fetchKeyed<T extends { source_id: string }>(
   const map = new Map<string, T>();
 
   for (const batch of chunk(sourceIds, FILTER_CHUNK)) {
-    const { data, error } = await admin
+    const { data, error } = await db
       .from(table)
       .select(columns)
       .eq("source", YAHOO)
@@ -225,62 +293,25 @@ async function fetchKeyed<T extends { source_id: string }>(
 }
 
 /**
- * Runs the full §4 ladder over everything Yahoo says is in this league —
- * every rostered player plus the top free agents — and persists the outcome.
+ * Sync stage 7: runs the full §4 ladder over the persisted pool.
  *
- * Idempotent: resolutions already in `player_crosswalk` are reused rather than
- * recomputed, so the name-matching work happens once per player, not once per
- * sync. Phase 4 turns this into sync stage 7.
+ * Idempotent, and cheap on a re-run: resolutions already in
+ * `player_crosswalk` are reused rather than recomputed, so the name-matching
+ * work happens once per player, not once per sync.
  */
-export async function resolveLeagueIdentities(
-  userId: string,
+export async function resolvePool(
+  db: Db,
   leagueId: string,
 ): Promise<ResolutionReport> {
-  const supabase = await createClient();
-  const admin = createAdminClient();
-  const warnings: string[] = [];
+  const [pool, players] = await Promise.all([
+    loadPlayerPool(db, leagueId),
+    loadPlayers(db),
+  ]);
 
-  const { data: league, error: leagueError } = await supabase
-    .from("leagues")
-    .select("id, yahoo_league_key, num_qbs, num_teams, ppr")
-    .eq("id", leagueId)
-    .single();
-
-  if (leagueError || !league) {
-    throw new Error(`League not found: ${leagueError?.message ?? leagueId}`);
-  }
-
-  const master = await syncPlayerMaster();
-  const players = await loadPlayers(admin);
-
-  if (master.refreshed && master.players) {
-    const seed = await seedYahooCrosswalk(admin, players, master.players);
-    if (seed.warning) warnings.push(seed.warning);
-  }
-
-  // Yahoo first (rosters, then the paginated free-agent pull), so a Yahoo
-  // failure costs nothing downstream.
-  const rosters = await fetchRosters(userId, league.yahoo_league_key);
-  const freeAgents = await fetchFreeAgents(userId, league.yahoo_league_key);
-
-  const targets = new Map<string, Target>();
-  for (const roster of rosters) {
-    for (const player of roster.players) {
-      targets.set(player.playerId, { player, teamKey: roster.teamKey });
-    }
-  }
-  for (const player of freeAgents) {
-    // A player on a roster is never also a free agent, but Yahoo's pagination
-    // can overlap with itself; the roster entry is the richer one.
-    if (!targets.has(player.playerId)) {
-      targets.set(player.playerId, { player, teamKey: null });
-    }
-  }
-
-  const sourceIds = [...targets.keys()];
+  const sourceIds = pool.map((entry) => entry.yahooPlayerId);
   const [overrides, existing] = await Promise.all([
     fetchKeyed<{ source_id: string; player_id: number }>(
-      admin,
+      db,
       "player_id_overrides",
       "source_id, player_id",
       sourceIds,
@@ -291,7 +322,7 @@ export async function resolveLeagueIdentities(
       match_method: string;
       confidence: number;
     }>(
-      admin,
+      db,
       "player_crosswalk",
       "source_id, player_id, match_method, confidence",
       sourceIds,
@@ -300,11 +331,12 @@ export async function resolveLeagueIdentities(
 
   const index = new CandidateIndex(toCandidates(players));
   const resolved = new Map<string, Resolution>();
-  const unresolved: Target[] = [];
+  const unresolved: PoolEntry[] = [];
   const fresh: CrosswalkInsert[] = [];
   const byMethod: Partial<Record<MatchMethod, number>> = {};
 
-  for (const [sourceId, target] of targets) {
+  for (const entry of pool) {
+    const sourceId = entry.yahooPlayerId;
     const override = overrides.get(sourceId);
     const known = existing.get(sourceId);
 
@@ -321,10 +353,10 @@ export async function resolveLeagueIdentities(
     } else {
       resolution = index.match({
         sourceId,
-        name: target.player.name,
-        position: target.player.position,
-        nflTeam: target.player.nflTeam,
-        isDefense: target.player.isDefense,
+        name: entry.player.name,
+        position: entry.player.position,
+        nflTeam: entry.player.nflTeam,
+        isDefense: entry.player.isDefense,
       });
 
       if (resolution) {
@@ -342,59 +374,28 @@ export async function resolveLeagueIdentities(
       resolved.set(sourceId, resolution);
       byMethod[resolution.method] = (byMethod[resolution.method] ?? 0) + 1;
     } else {
-      unresolved.push(target);
+      unresolved.push(entry);
     }
   }
 
-  await insertCrosswalk(admin, fresh);
+  await insertCrosswalk(db, fresh);
+  await writeRosters(db, leagueId, pool, resolved);
+  await writeUnmatched(db, leagueId, unresolved, resolved);
 
-  await writeRosters(supabase, leagueId, rosters, resolved);
-  await writeUnmatched(supabase, leagueId, unresolved, resolved);
-
-  let marketCoverage: number | null = null;
-  try {
-    marketCoverage = await seedFantasyCalcCrosswalk(admin, players, {
-      numQbs: league.num_qbs,
-      numTeams: league.num_teams ?? 12,
-      ppr: Number(league.ppr),
-    });
-  } catch (cause) {
-    warnings.push(
-      cause instanceof Error
-        ? `FantasyCalc unavailable: ${cause.message}`
-        : "FantasyCalc unavailable.",
-    );
-  }
-
-  const rosteredIds = rosters.flatMap((roster) =>
-    roster.players.map((player) => player.playerId),
-  );
+  const rostered = pool.filter((entry) => entry.teamKey !== null);
+  const freeAgents = pool.filter((entry) => entry.teamKey === null);
 
   return {
-    playersInMaster: master.count,
-    masterRefreshed: master.refreshed,
-    rostered: rosteredIds.length,
-    rosteredResolved: rosteredIds.filter((id) => resolved.has(id)).length,
-    freeAgents: freeAgents.length,
-    freeAgentsResolved: freeAgents.filter((player) => resolved.has(player.playerId))
+    rostered: rostered.length,
+    rosteredResolved: rostered.filter((entry) => resolved.has(entry.yahooPlayerId))
       .length,
+    freeAgents: freeAgents.length,
+    freeAgentsResolved: freeAgents.filter((entry) =>
+      resolved.has(entry.yahooPlayerId),
+    ).length,
     unmatched: unresolved.length,
     byMethod,
-    marketCoverage,
-    warnings,
   };
-}
-
-type ServerClient = Awaited<ReturnType<typeof createClient>>;
-
-async function teamIdsByKey(supabase: ServerClient, leagueId: string) {
-  const { data, error } = await supabase
-    .from("teams")
-    .select("id, yahoo_team_key")
-    .eq("league_id", leagueId);
-
-  if (error) throw new Error(`Failed to read teams: ${error.message}`);
-  return new Map((data ?? []).map((team) => [team.yahoo_team_key, team.id]));
 }
 
 /**
@@ -403,15 +404,15 @@ async function teamIdsByKey(supabase: ServerClient, leagueId: string) {
  * player must not linger.
  */
 async function writeRosters(
-  supabase: ServerClient,
+  db: Db,
   leagueId: string,
-  rosters: Awaited<ReturnType<typeof fetchRosters>>,
+  pool: PoolEntry[],
   resolved: Map<string, Resolution>,
 ) {
-  const teamIds = await teamIdsByKey(supabase, leagueId);
+  const teamIds = await teamIdsByKey(db, leagueId);
   if (teamIds.size === 0) return;
 
-  const { error: clearError } = await supabase
+  const { error: clearError } = await db
     .from("rosters")
     .delete()
     .in("team_id", [...teamIds.values()]);
@@ -420,26 +421,25 @@ async function writeRosters(
 
   const rows = new Map<string, Database["public"]["Tables"]["rosters"]["Insert"]>();
 
-  for (const roster of rosters) {
-    const teamId = teamIds.get(roster.teamKey);
+  for (const entry of pool) {
+    if (!entry.teamKey) continue;
+    const teamId = teamIds.get(entry.teamKey);
     if (!teamId) continue;
 
-    for (const player of roster.players) {
-      const resolution = resolved.get(player.playerId);
-      if (!resolution) continue;
+    const resolution = resolved.get(entry.yahooPlayerId);
+    if (!resolution) continue;
 
-      rows.set(`${teamId}:${resolution.playerId}`, {
-        team_id: teamId,
-        player_id: resolution.playerId,
-        slot: player.selectedPosition,
-        is_starter: player.isStarter,
-        yahoo_player_id: player.playerId,
-      });
-    }
+    rows.set(`${teamId}:${resolution.playerId}`, {
+      team_id: teamId,
+      player_id: resolution.playerId,
+      slot: entry.player.selectedPosition,
+      is_starter: entry.player.isStarter,
+      yahoo_player_id: entry.yahooPlayerId,
+    });
   }
 
   for (const batch of chunk([...rows.values()], INSERT_CHUNK)) {
-    const { error } = await supabase
+    const { error } = await db
       .from("rosters")
       .upsert(batch, { onConflict: "team_id,player_id" });
 
@@ -447,17 +447,17 @@ async function writeRosters(
   }
 }
 
-function toPayload(target: Target): UnmatchedPayload {
+function toPayload(entry: PoolEntry): UnmatchedPayload {
   return {
-    playerKey: target.player.playerKey,
-    name: target.player.name,
-    position: target.player.position,
-    nflTeam: target.player.nflTeam,
-    isDefense: target.player.isDefense,
-    status: target.player.status,
-    teamKey: target.teamKey,
-    slot: target.player.selectedPosition,
-    isStarter: target.player.isStarter,
+    playerKey: entry.player.playerKey,
+    name: entry.player.name,
+    position: entry.player.position,
+    nflTeam: entry.player.nflTeam,
+    isDefense: entry.player.isDefense,
+    status: entry.player.status,
+    teamKey: entry.teamKey,
+    slot: entry.player.selectedPosition,
+    isStarter: entry.player.isStarter,
   };
 }
 
@@ -468,22 +468,22 @@ function toPayload(target: Target): UnmatchedPayload {
  * keeps a record of what it fixed.
  */
 async function writeUnmatched(
-  supabase: ServerClient,
+  db: Db,
   leagueId: string,
-  unresolved: Target[],
+  unresolved: PoolEntry[],
   resolved: Map<string, Resolution>,
 ) {
   if (unresolved.length > 0) {
-    const rows = unresolved.map((target) => ({
+    const rows = unresolved.map((entry) => ({
       league_id: leagueId,
-      yahoo_player_id: target.player.playerId,
-      payload: toPayload(target) as unknown as Json,
+      yahoo_player_id: entry.yahooPlayerId,
+      payload: toPayload(entry) as unknown as Json,
       resolved_at: null,
       resolved_player_id: null,
     }));
 
     for (const batch of chunk(rows, INSERT_CHUNK)) {
-      const { error } = await supabase
+      const { error } = await db
         .from("unmatched_players")
         .upsert(batch, { onConflict: "league_id,yahoo_player_id" });
 
@@ -491,7 +491,7 @@ async function writeUnmatched(
     }
   }
 
-  const { data: pending, error } = await supabase
+  const { data: pending, error } = await db
     .from("unmatched_players")
     .select("id, yahoo_player_id")
     .eq("league_id", leagueId)
@@ -504,7 +504,7 @@ async function writeUnmatched(
     const resolution = resolved.get(row.yahoo_player_id);
     if (!resolution) continue;
 
-    await supabase
+    await db
       .from("unmatched_players")
       .update({ resolved_at: now, resolved_player_id: resolution.playerId })
       .eq("id", row.id);

@@ -456,3 +456,86 @@ export function parsePlayerList(content: Plain): YahooPlayer[] {
     .map(parsePlayer)
     .filter((player): player is YahooPlayer => player !== null);
 }
+
+// ---------------------------------------------------------------------------
+// matchups (§8)
+// ---------------------------------------------------------------------------
+
+export type MatchupImport = {
+  week: number;
+  teamKeyA: string;
+  /** Null when an odd-sized league hands someone a bye. */
+  teamKeyB: string | null;
+  pointsA: number | null;
+  pointsB: number | null;
+  projectedA: number | null;
+  projectedB: number | null;
+  /** Yahoo's own: preevent / midevent / postevent. */
+  status: string | null;
+  isPlayoffs: boolean;
+};
+
+function totalPoints(node: unknown): number | null {
+  if (!isPlainObject(node)) return null;
+  const parsed = optionalNumber.safeParse(node.total);
+  return parsed.success && parsed.data !== undefined ? parsed.data : null;
+}
+
+type MatchupSide = {
+  teamKey: string;
+  points: number | null;
+  projected: number | null;
+};
+
+function parseSide(team: Plain): MatchupSide | null {
+  const teamKey = typeof team.team_key === "string" ? team.team_key : null;
+  if (!teamKey) return null;
+
+  return {
+    teamKey,
+    points: totalPoints(team.team_points),
+    projected: totalPoints(team.team_projected_points),
+  };
+}
+
+/**
+ * Shapes a `league/{key}/scoreboard;week=…` payload.
+ *
+ * The two sides are ordered by team key rather than by Yahoo's ordering, so a
+ * re-sync writes the same primary key `(league, week, team_a)` it wrote last
+ * time instead of a mirrored duplicate.
+ */
+export function parseMatchups(content: Plain): MatchupImport[] {
+  const matchups: MatchupImport[] = [];
+
+  const nodes = toArray(leagueNode(content).scoreboard)
+    .filter(isPlainObject)
+    .flatMap((node) => collection(node.matchups, "matchup"));
+
+  for (const node of nodes) {
+    const week = optionalNumber.safeParse(node.week);
+    if (!week.success || week.data === undefined) continue;
+
+    const sides = collection(node.teams, "team")
+      .map(parseSide)
+      .filter((side): side is MatchupSide => side !== null)
+      .sort((a, b) => a.teamKey.localeCompare(b.teamKey));
+
+    const [a, b] = sides;
+    if (!a) continue;
+
+    matchups.push({
+      week: week.data,
+      teamKeyA: a.teamKey,
+      teamKeyB: b?.teamKey ?? null,
+      pointsA: a.points,
+      pointsB: b?.points ?? null,
+      projectedA: a.projected,
+      projectedB: b?.projected ?? null,
+      status: typeof node.status === "string" ? node.status : null,
+      isPlayoffs: yahooBool(node.is_playoffs),
+    });
+  }
+
+  return matchups;
+}
