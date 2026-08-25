@@ -1,13 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { AlertTriangle, ArrowLeft } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Users } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { RefreshLeagueButton } from "@/components/leagues/refresh-league-button";
+import { ResolveIdentitiesButton } from "@/components/players/resolve-identities-button";
 import { TeamCard, type TeamRow } from "@/components/leagues/team-card";
 import { createClient } from "@/lib/supabase/server";
 import type { RosterSlot } from "@/lib/sources/yahoo";
@@ -48,6 +50,23 @@ export default async function LeaguePage({
     )
     .eq("league_id", league.id)
     .order("rank", { ascending: true, nullsFirst: false });
+
+  // Identity coverage, at a glance: how much of the roster the crosswalk has
+  // matched, and how much is waiting on a human (§4).
+  const teamIds = (teams ?? []).map((team) => team.id);
+  const [{ count: matched }, { count: pending }] = await Promise.all([
+    teamIds.length === 0
+      ? Promise.resolve({ count: 0 })
+      : supabase
+          .from("rosters")
+          .select("player_id", { count: "exact", head: true })
+          .in("team_id", teamIds),
+    supabase
+      .from("unmatched_players")
+      .select("id", { count: "exact", head: true })
+      .eq("league_id", league.id)
+      .is("resolved_at", null),
+  ]);
 
   const starters = (league.roster_slots as unknown as RosterSlot[])
     .filter((slot) => slot.isStarting)
@@ -121,6 +140,33 @@ export default async function LeaguePage({
       </dl>
 
       <Separator />
+
+      <Card>
+        <CardContent className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <Users className="mt-0.5 size-5 text-muted-foreground" aria-hidden />
+            <div className="space-y-0.5">
+              <p className="text-sm font-medium">Player identity</p>
+              <p className="text-sm text-muted-foreground">
+                {matched === 0
+                  ? "No rosters read yet — resolve to pull them from Yahoo."
+                  : `${matched} rostered players matched${
+                      pending ? `, ${pending} waiting on a manual match` : ""
+                    }.`}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button asChild size="sm" variant="ghost">
+              <Link href={`/leagues/${league.id}/identity`}>
+                {pending ? `Review ${pending}` : "Details"}
+              </Link>
+            </Button>
+            <ResolveIdentitiesButton leagueId={league.id} />
+          </div>
+        </CardContent>
+      </Card>
 
       <section className="space-y-3">
         <h2 className="text-sm font-medium text-muted-foreground">

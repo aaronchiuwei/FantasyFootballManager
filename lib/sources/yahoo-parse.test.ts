@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vitest";
 
 import { normalize, collection, isPlainObject } from "./yahoo-json";
-import { parseDiscovery, parseLeague } from "./yahoo-parse";
+import {
+  parseDiscovery,
+  parseLeague,
+  parsePlayerList,
+  parseRosters,
+} from "./yahoo-parse";
 import {
   counted,
   discoveryResponse,
+  freeAgentsResponse,
   leagueResponse,
+  rosterResponse,
   LEAGUE_KEY,
 } from "./__fixtures__/yahoo";
 
@@ -169,5 +176,73 @@ describe("parseLeague", () => {
       fantasyContent(leagueResponse({ keeper: true })),
     );
     expect(keeper.isDynasty).toBe(true);
+  });
+});
+
+describe("parseRosters", () => {
+  const rosters = parseRosters(fantasyContent(rosterResponse()));
+
+  it("returns one roster per team, keyed by team", () => {
+    expect(rosters.map((roster) => roster.teamKey)).toEqual([
+      `${LEAGUE_KEY}.t.1`,
+      `${LEAGUE_KEY}.t.2`,
+    ]);
+    expect(rosters[0].players).toHaveLength(4);
+  });
+
+  it("shapes a rostered player", () => {
+    expect(rosters[0].players[0]).toMatchObject({
+      playerId: "30123",
+      playerKey: "461.p.30123",
+      name: "Josh Allen",
+      position: "QB",
+      nflTeam: "Buf",
+      isDefense: false,
+      selectedPosition: "QB",
+      isStarter: true,
+      byeWeek: 10,
+    });
+  });
+
+  it("treats a bench slot as not starting", () => {
+    const bijan = rosters[0].players.find(
+      (player) => player.name === "Bijan Robinson",
+    );
+    expect(bijan).toMatchObject({ selectedPosition: "BN", isStarter: false });
+  });
+
+  it("flags a team defense", () => {
+    const defense = rosters[0].players.find((player) => player.isDefense);
+    expect(defense).toMatchObject({
+      name: "San Francisco",
+      nflTeam: "SF",
+      position: "DEF",
+      positionType: "DT",
+    });
+  });
+
+  it("keeps the injury status Yahoo reports", () => {
+    expect(rosters[1].players.find((p) => p.name === "Brock Bowers")).toMatchObject(
+      { status: "Q", injuryNote: "Knee" },
+    );
+  });
+});
+
+describe("parsePlayerList", () => {
+  const players = parsePlayerList(fantasyContent(freeAgentsResponse()));
+
+  it("reads a free-agent page", () => {
+    expect(players).toHaveLength(2);
+    expect(players[0]).toMatchObject({
+      playerId: "66666",
+      name: "Rome Odunze",
+      position: "WR",
+      nflTeam: "Chi",
+    });
+  });
+
+  it("leaves a free agent with no slot", () => {
+    expect(players[0].selectedPosition).toBeNull();
+    expect(players[0].isStarter).toBe(false);
   });
 });

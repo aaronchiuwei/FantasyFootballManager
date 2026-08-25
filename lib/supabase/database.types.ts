@@ -1,6 +1,6 @@
 /**
- * Hand-written for the Phase 0 schema. Once the full schema lands (§8), replace
- * this file wholesale with:
+ * Hand-written, kept in step with `supabase/migrations/`. Once the full §8
+ * schema lands, replace this file wholesale with:
  *
  *   npx supabase gen types typescript --project-id <ref> > lib/supabase/database.types.ts
  */
@@ -167,6 +167,198 @@ export type Database = {
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["teams"]["Insert"]>;
+        Relationships: [];
+      };
+      players: {
+        Row: {
+          id: number;
+          sleeper_id: string | null;
+          full_name: string;
+          search_name: string;
+          position: string | null;
+          nfl_team: string | null;
+          age: number | null;
+          years_exp: number | null;
+          status: string | null;
+          injury_status: string | null;
+          headshot_url: string | null;
+          birth_date: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: number;
+          sleeper_id?: string | null;
+          full_name: string;
+          search_name: string;
+          position?: string | null;
+          nfl_team?: string | null;
+          age?: number | null;
+          years_exp?: number | null;
+          status?: string | null;
+          injury_status?: string | null;
+          headshot_url?: string | null;
+          birth_date?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["players"]["Insert"]>;
+        Relationships: [];
+      };
+      player_crosswalk: {
+        Row: {
+          player_id: number;
+          source: string;
+          source_id: string;
+          match_method: string;
+          confidence: number;
+          created_at: string;
+        };
+        Insert: {
+          player_id: number;
+          source: string;
+          source_id: string;
+          match_method: string;
+          confidence: number;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["player_crosswalk"]["Insert"]
+        >;
+        Relationships: [];
+      };
+      player_id_overrides: {
+        Row: {
+          source: string;
+          source_id: string;
+          player_id: number;
+          created_by: string | null;
+          note: string | null;
+          created_at: string;
+        };
+        Insert: {
+          source: string;
+          source_id: string;
+          player_id: number;
+          created_by?: string | null;
+          note?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["player_id_overrides"]["Insert"]
+        >;
+        Relationships: [];
+      };
+      unmatched_players: {
+        Row: {
+          id: string;
+          league_id: string;
+          yahoo_player_id: string;
+          payload: Json;
+          resolved_at: string | null;
+          resolved_player_id: number | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          league_id: string;
+          yahoo_player_id: string;
+          payload: Json;
+          resolved_at?: string | null;
+          resolved_player_id?: number | null;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["unmatched_players"]["Insert"]
+        >;
+        Relationships: [];
+      };
+      rosters: {
+        Row: {
+          team_id: string;
+          player_id: number;
+          slot: string | null;
+          is_starter: boolean;
+          yahoo_player_id: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          team_id: string;
+          player_id: number;
+          slot?: string | null;
+          is_starter?: boolean;
+          yahoo_player_id?: string | null;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["rosters"]["Insert"]>;
+        Relationships: [];
+      };
+      player_values: {
+        Row: {
+          player_id: number;
+          league_id: string;
+          value: number;
+          base_value: number | null;
+          value_source: string;
+          confidence: number | null;
+          overall_rank: number | null;
+          position_rank: number | null;
+          trend_30d: number | null;
+          tier: number | null;
+          computed_at: string;
+        };
+        Insert: {
+          player_id: number;
+          league_id: string;
+          value: number;
+          base_value?: number | null;
+          value_source: string;
+          confidence?: number | null;
+          overall_rank?: number | null;
+          position_rank?: number | null;
+          trend_30d?: number | null;
+          tier?: number | null;
+          computed_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["player_values"]["Insert"]>;
+        Relationships: [];
+      };
+      player_stats: {
+        Row: {
+          player_id: number;
+          season: number;
+          week: number;
+          stats: Json;
+          pts_ppr: number | null;
+        };
+        Insert: {
+          player_id: number;
+          season: number;
+          week?: number;
+          stats?: Json;
+          pts_ppr?: number | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["player_stats"]["Insert"]>;
+        Relationships: [];
+      };
+      player_projections: {
+        Row: {
+          player_id: number;
+          season: number;
+          week: number;
+          stats: Json;
+          pts_ppr: number | null;
+        };
+        Insert: {
+          player_id: number;
+          season: number;
+          week?: number;
+          stats?: Json;
+          pts_ppr?: number | null;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["player_projections"]["Insert"]
+        >;
         Relationships: [];
       };
     };

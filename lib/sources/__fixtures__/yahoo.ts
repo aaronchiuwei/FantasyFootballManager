@@ -268,3 +268,138 @@ export function discoveryResponse() {
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// rosters and free agents
+// ---------------------------------------------------------------------------
+
+type PlayerSpec = {
+  id: number;
+  name: string;
+  pos: string;
+  team: string;
+  slot?: string;
+  status?: string;
+};
+
+function positionType(pos: string) {
+  if (pos === "DEF") return "DT";
+  return pos === "K" ? "K" : "O";
+}
+
+function playerNode({ id, name, pos, team, slot, status }: PlayerSpec) {
+  const [first, ...rest] = name.split(" ");
+
+  const fragments: unknown[] = [
+    { player_key: `461.p.${id}` },
+    { player_id: String(id) },
+    {
+      name: {
+        full: name,
+        first,
+        last: rest.join(" "),
+        ascii_first: first,
+        ascii_last: rest.join(" "),
+      },
+    },
+    { editorial_team_abbr: team },
+    { bye_weeks: { week: "10" } },
+    { uniform_number: "" },
+    { display_position: pos },
+    { position_type: positionType(pos) },
+    { eligible_positions: [{ position: pos }] },
+    { image_url: `https://s.yimg.com/player/${id}.png` },
+  ];
+
+  if (status) fragments.push({ status }, { injury_note: "Knee" });
+
+  const node: unknown[] = [fragments];
+  if (slot) {
+    node.push({
+      selected_position: [
+        { coverage_type: "week" },
+        { week: "3" },
+        { position: slot },
+        { is_flex: 0 },
+      ],
+    });
+  }
+
+  return { player: node };
+}
+
+const ROSTERS: PlayerSpec[][] = [
+  [
+    { id: 30123, name: "Josh Allen", pos: "QB", team: "Buf", slot: "QB" },
+    { id: 31002, name: "Ja'Marr Chase", pos: "WR", team: "Cin", slot: "WR" },
+    { id: 40001, name: "Bijan Robinson", pos: "RB", team: "Atl", slot: "BN" },
+    { id: 100024, name: "San Francisco", pos: "DEF", team: "SF", slot: "DEF" },
+  ],
+  [
+    { id: 33333, name: "Kenneth Walker III", pos: "RB", team: "Sea", slot: "RB" },
+    {
+      id: 44444,
+      name: "Brock Bowers",
+      pos: "TE",
+      team: "LV",
+      slot: "TE",
+      status: "Q",
+    },
+    { id: 55555, name: "Justin Tucker", pos: "K", team: "Bal", slot: "K" },
+  ],
+];
+
+/** A `league/{key}/teams;out=roster` payload for two teams. */
+export function rosterResponse() {
+  return {
+    fantasy_content: {
+      league: [
+        { league_key: LEAGUE_KEY, name: "Sunday Funday Dynasty Club" },
+        {
+          teams: counted(
+            ROSTERS.map((players, index) => ({
+              team: [
+                [
+                  { team_key: `${LEAGUE_KEY}.t.${index + 1}` },
+                  { team_id: String(index + 1) },
+                  { name: TEAM_NAMES[index] },
+                ],
+                {
+                  roster: {
+                    "0": { players: counted(players.map(playerNode)) },
+                    coverage_type: "week",
+                    week: "3",
+                    is_editable: 1,
+                  },
+                },
+              ],
+            })),
+          ),
+        },
+      ],
+    },
+  };
+}
+
+const FREE_AGENTS: PlayerSpec[] = [
+  { id: 66666, name: "Rome Odunze", pos: "WR", team: "Chi" },
+  {
+    id: 77777,
+    name: "Jonathon Brooks",
+    pos: "RB",
+    team: "Car",
+    status: "IR",
+  },
+];
+
+/** A `league/{key}/players;status=A` page. */
+export function freeAgentsResponse() {
+  return {
+    fantasy_content: {
+      league: [
+        { league_key: LEAGUE_KEY, name: "Sunday Funday Dynasty Club" },
+        { players: counted(FREE_AGENTS.map(playerNode)) },
+      ],
+    },
+  };
+}

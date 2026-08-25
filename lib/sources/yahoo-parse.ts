@@ -299,11 +299,7 @@ export function parseLeague(content: Plain): {
   league: LeagueImport;
   teams: TeamImport[];
 } {
-  const node = isPlainObject(content.league) ? content.league : null;
-  if (!node) {
-    throw new YahooParseError("No league in the Yahoo response");
-  }
-
+  const node = leagueNode(content);
   const meta = LeagueMetaSchema.parse(node);
   const settings = toArray(node.settings).filter(isPlainObject)[0] ?? {};
   const rosterSlots = parseRosterSlots(settings);
@@ -350,4 +346,113 @@ export function parseLeague(content: Plain): {
     },
     teams,
   };
+}
+
+// ---------------------------------------------------------------------------
+// players (rosters + free agents)
+// ---------------------------------------------------------------------------
+
+const YahooPlayerSchema = z.object({
+  player_key: z.string(),
+  player_id: z.coerce.string(),
+  name: z.object({ full: z.string() }),
+  editorial_team_abbr: optionalString,
+  display_position: optionalString,
+  position_type: optionalString,
+  status: optionalString,
+  injury_note: optionalString,
+  image_url: optionalString,
+  bye_weeks: z.object({ week: optionalNumber }).optional(),
+});
+
+export type YahooPlayer = {
+  playerId: string;
+  playerKey: string;
+  name: string;
+  /** Yahoo's `display_position`: "WR", "RB,WR" for multi-eligible, "DEF". */
+  position: string | null;
+  positionType: string | null;
+  nflTeam: string | null;
+  /** Yahoo models a defense as a team entity — resolved by team abbr (§4). */
+  isDefense: boolean;
+  status: string | null;
+  injuryNote: string | null;
+  byeWeek: number | null;
+  imageUrl: string | null;
+  /** The slot the manager has this player in; null for a free agent. */
+  selectedPosition: string | null;
+  isStarter: boolean;
+};
+
+/** Slots that hold a player without starting them. */
+const BENCH_SLOTS = new Set(["BN", "IR", "IR+", "IR-R", "NA"]);
+
+function parsePlayer(raw: Plain): YahooPlayer | null {
+  const parsed = YahooPlayerSchema.safeParse(raw);
+  if (!parsed.success) return null;
+  const p = parsed.data;
+
+  const selected = isPlainObject(raw.selected_position)
+    ? raw.selected_position
+    : {};
+  const selectedPosition =
+    typeof selected.position === "string" && selected.position !== ""
+      ? selected.position
+      : null;
+
+  return {
+    playerId: p.player_id,
+    playerKey: p.player_key,
+    name: p.name.full,
+    position: p.display_position ?? null,
+    positionType: p.position_type ?? null,
+    nflTeam: p.editorial_team_abbr ?? null,
+    isDefense: p.position_type === "DT" || p.display_position === "DEF",
+    status: p.status ?? null,
+    injuryNote: p.injury_note ?? null,
+    byeWeek: p.bye_weeks?.week ?? null,
+    imageUrl: p.image_url ?? null,
+    selectedPosition,
+    isStarter: selectedPosition !== null && !BENCH_SLOTS.has(selectedPosition),
+  };
+}
+
+export type TeamRoster = {
+  teamKey: string;
+  players: YahooPlayer[];
+};
+
+function leagueNode(content: Plain): Plain {
+  const node = isPlainObject(content.league) ? content.league : null;
+  if (!node) throw new YahooParseError("No league in the Yahoo response");
+  return node;
+}
+
+/** Shapes a `league/{key}/teams;out=roster` payload. */
+export function parseRosters(content: Plain): TeamRoster[] {
+  const rosters: TeamRoster[] = [];
+
+  for (const team of collection(leagueNode(content).teams, "team")) {
+    const teamKey = typeof team.team_key === "string" ? team.team_key : null;
+    if (!teamKey) continue;
+
+    // `roster` arrives as a counted collection wrapping one entry, which
+    // normalizes to a single-element array rather than a bare object.
+    const players = toArray(team.roster)
+      .filter(isPlainObject)
+      .flatMap((node) => collection(node.players, "player"))
+      .map(parsePlayer)
+      .filter((player): player is YahooPlayer => player !== null);
+
+    rosters.push({ teamKey, players });
+  }
+
+  return rosters;
+}
+
+/** Shapes a `league/{key}/players;status=A;start=n;count=25` page. */
+export function parsePlayerList(content: Plain): YahooPlayer[] {
+  return collection(leagueNode(content).players, "player")
+    .map(parsePlayer)
+    .filter((player): player is YahooPlayer => player !== null);
 }

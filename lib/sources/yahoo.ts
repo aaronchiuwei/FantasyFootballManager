@@ -2,7 +2,13 @@ import "server-only";
 
 import { getAccessToken, YahooReauthRequired } from "./yahoo-auth";
 import { isPlainObject, normalize, type Plain } from "./yahoo-json";
-import { parseDiscovery, parseLeague } from "./yahoo-parse";
+import {
+  parseDiscovery,
+  parseLeague,
+  parsePlayerList,
+  parseRosters,
+  type YahooPlayer,
+} from "./yahoo-parse";
 
 const API_BASE = "https://fantasysports.yahooapis.com/fantasy/v2";
 
@@ -80,7 +86,9 @@ export type {
   LeagueImport,
   RosterSlot,
   TeamImport,
+  TeamRoster,
   YahooDiscovery,
+  YahooPlayer,
 } from "./yahoo-parse";
 
 /** Every NFL league the signed-in Yahoo account belongs to this season. */
@@ -102,4 +110,45 @@ export async function fetchLeague(userId: string, leagueKey: string) {
       `league/${encodeURIComponent(leagueKey)};out=settings,standings,teams`,
     ),
   );
+}
+
+/** Every team's roster in one call — `;out=roster` on the teams collection. */
+export async function fetchRosters(userId: string, leagueKey: string) {
+  return parseRosters(
+    await yahooGet(
+      userId,
+      `league/${encodeURIComponent(leagueKey)}/teams;out=roster`,
+    ),
+  );
+}
+
+/** Yahoo caps a players page at 25. */
+const FA_PAGE_SIZE = 25;
+
+/**
+ * The top available players by Yahoo's own rank. Pagination is the only
+ * unavoidably chatty Yahoo call, so it is capped at ~150 — far more than any
+ * waiver recommendation needs (§3).
+ */
+export async function fetchFreeAgents(
+  userId: string,
+  leagueKey: string,
+  { limit = 150 }: { limit?: number } = {},
+) {
+  const key = encodeURIComponent(leagueKey);
+  const players: YahooPlayer[] = [];
+
+  for (let start = 0; start < limit; start += FA_PAGE_SIZE) {
+    const page = parsePlayerList(
+      await yahooGet(
+        userId,
+        `league/${key}/players;status=A;sort=OR;start=${start};count=${FA_PAGE_SIZE}`,
+      ),
+    );
+
+    players.push(...page);
+    if (page.length < FA_PAGE_SIZE) break;
+  }
+
+  return players.slice(0, limit);
 }
