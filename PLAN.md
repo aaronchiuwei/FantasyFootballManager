@@ -616,6 +616,16 @@ they are all just arithmetic over a good values table.
 1. Register the Yahoo developer app (`https://developer.yahoo.com/apps/create/`) with redirect
    `https://<project>.vercel.app/api/yahoo/callback` and a localhost variant. Scope: `fspt-r`
    (read) — read-only is sufficient for everything in this plan.
+
+   **Update, post-implementation:** Yahoo's developer console has changed since the research in
+   §0 — app registration itself is still instant, but it no longer grants live Fantasy Sports API
+   access on its own. A separate "Apply for Yahoo Fantasy Sports API Access" form is required
+   (product description, use case, expected users), reviewed manually with a stated **1–2 week**
+   turnaround. Practical consequence: register the app and submit that form on day one, in
+   parallel with Phase 0/1 development — don't block writing OAuth code on approval, since the
+   code is byte-identical either way and only live calls need the approved key. Phases 2–3
+   (Sleeper, FantasyCalc, DynastyProcess — all open, no application needed) are unaffected and
+   can proceed independently while approval is pending.
 2. Scaffold Next.js + Supabase + shadcn and land the auth + RLS baseline (Phase 0).
 3. Build the crosswalk subsystem against your real league before building any feature on top of
    it. It is the foundation everything else stands on, and it is the piece most likely to

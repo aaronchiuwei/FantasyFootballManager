@@ -27,9 +27,19 @@ export default async function AppLayout({
     <div className="flex min-h-svh flex-col">
       <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-6 py-3">
-          <Link href="/dashboard" className="font-semibold tracking-tight">
-            Fantasy Football Manager
-          </Link>
+          <div className="flex items-center gap-6">
+            <Link href="/dashboard" className="font-semibold tracking-tight">
+              Fantasy Football Manager
+            </Link>
+            <nav className="flex items-center gap-4 text-sm text-muted-foreground">
+              <Link href="/dashboard" className="hover:text-foreground">
+                Dashboard
+              </Link>
+              <Link href="/leagues" className="hover:text-foreground">
+                Leagues
+              </Link>
+            </nav>
+          </div>
 
           <div className="flex items-center gap-3">
             <span className="hidden text-sm text-muted-foreground sm:inline">
