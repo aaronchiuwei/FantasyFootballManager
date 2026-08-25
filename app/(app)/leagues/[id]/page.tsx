@@ -8,6 +8,7 @@ import {
   ListPlus,
   Radar,
   Scale,
+  Sparkles,
   Users,
 } from "lucide-react";
 
@@ -69,6 +70,7 @@ export default async function LeaguePage({
     { count: valued },
     { count: marketValued },
     { count: needsCount },
+    { count: suggestionCount },
   ] = await Promise.all([
       latestRun(supabase, league.id),
       teamIds.length === 0
@@ -97,6 +99,10 @@ export default async function LeaguePage({
             .from("team_needs")
             .select("team_id", { count: "exact", head: true })
             .in("team_id", teamIds),
+      supabase
+        .from("trade_suggestions")
+        .select("id", { count: "exact", head: true })
+        .eq("league_id", league.id),
     ]);
 
   const starters = (league.roster_slots as unknown as RosterSlot[])
@@ -258,6 +264,31 @@ export default async function LeaguePage({
           <Button asChild size="sm" variant="outline">
             <Link href={`/leagues/${league.id}/overview`}>
               {needsCount ? "Open" : "Details"}
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <Sparkles
+              className="mt-0.5 size-5 text-muted-foreground"
+              aria-hidden
+            />
+            <div className="space-y-0.5">
+              <p className="text-sm font-medium">Trade suggestions</p>
+              <p className="text-sm text-muted-foreground">
+                {suggestionCount === 0
+                  ? "Needs a sync — every pair of rosters is searched for a trade that is fair by value and better for both lineups."
+                  : `${suggestionCount?.toLocaleString()} trades in this league are fair by value and improve both starting lineups. Or name a player and get the packages that would buy them.`}
+              </p>
+            </div>
+          </div>
+
+          <Button asChild size="sm" variant="outline">
+            <Link href={`/leagues/${league.id}/suggestions`}>
+              {suggestionCount ? "Open" : "Details"}
             </Link>
           </Button>
         </CardContent>

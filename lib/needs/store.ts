@@ -314,6 +314,48 @@ export async function loadLeagueNeeds(
 }
 
 /**
+ * The two halves of the vector that anything optimizing against it wants: what
+ * a team is short of, and what it can spare.
+ *
+ * They travel together because they answer the same question from opposite
+ * ends. §7's waiver score reads `need`; Phase 8's win-win search reads
+ * `surplusZ` to decide which of a roster's players are worth putting on the
+ * table, and `need` again to decide which of the user's it should not spend.
+ * Both come off one row, so asking for them separately would be two reads of
+ * the same table.
+ */
+export type TeamNeedWeights = {
+  /** `need` by position. Positive is a weakness. */
+  need: Record<string, number>;
+  /** `surplusZ` by position — depth, on a scale that compares across them. */
+  surplusZ: Record<string, number>;
+};
+
+export async function loadNeedWeights(
+  db: Db,
+  teamIds: string[],
+): Promise<Map<string, TeamNeedWeights>> {
+  const weights = new Map<string, TeamNeedWeights>();
+  if (teamIds.length === 0) return weights;
+
+  const { data, error } = await db
+    .from("team_needs")
+    .select("team_id, position, need, surplus_z")
+    .in("team_id", teamIds);
+
+  if (error) throw new Error(`Failed to read needs: ${error.message}`);
+
+  for (const row of data ?? []) {
+    const entry = weights.get(row.team_id) ?? { need: {}, surplusZ: {} };
+    entry.need[row.position] = Number(row.need);
+    entry.surplusZ[row.position] = Number(row.surplus_z);
+    weights.set(row.team_id, entry);
+  }
+
+  return weights;
+}
+
+/**
  * `need` by position, per team — the shape §7's waiver score and the trade
  * page's roster-context panel both want, and nothing more than that.
  */
@@ -321,21 +363,12 @@ export async function loadNeedsByTeam(
   db: Db,
   teamIds: string[],
 ): Promise<Map<string, Map<string, number>>> {
-  const needs = new Map<string, Map<string, number>>();
-  if (teamIds.length === 0) return needs;
+  const weights = await loadNeedWeights(db, teamIds);
 
-  const { data, error } = await db
-    .from("team_needs")
-    .select("team_id, position, need")
-    .in("team_id", teamIds);
-
-  if (error) throw new Error(`Failed to read needs: ${error.message}`);
-
-  for (const row of data ?? []) {
-    const byPosition = needs.get(row.team_id) ?? new Map<string, number>();
-    byPosition.set(row.position, Number(row.need));
-    needs.set(row.team_id, byPosition);
-  }
-
-  return needs;
+  return new Map(
+    [...weights].map(([teamId, entry]) => [
+      teamId,
+      new Map(Object.entries(entry.need)),
+    ]),
+  );
 }

@@ -33,6 +33,20 @@ type Picks = Record<TradeSideKey, number[]>;
 const NO_PICKS: Picks = { a: [], b: [] };
 
 /**
+ * A trade the user arrived with rather than built — Phase 8's suggestion cards
+ * link here so that a proposal can be tuned, argued with and saved instead of
+ * only read. Nothing about it is trusted: the ids are checked against the board
+ * the same way a saved trade's are, so a stale link opens an empty analyzer
+ * rather than a half-real one.
+ */
+export type InitialTrade = {
+  teamA: string;
+  teamB: string;
+  a: number[];
+  b: number[];
+};
+
+/**
  * The lineup math is denominated in rest-of-season projected points, not in
  * market value, so the board's assets are re-read in that currency on the way
  * into it (§6's roster-context delta).
@@ -61,20 +75,46 @@ export function TradeAnalyzer({
   leagueId,
   board,
   saved,
+  initial,
 }: {
   leagueId: string;
   board: TradeBoard;
   saved: SavedTradeView[];
+  initial?: InitialTrade | null;
 }) {
   const router = useRouter();
 
   const [teams, setTeams] = useState<Record<TradeSideKey, string>>(() => {
+    const known = (teamId: string | undefined) =>
+      board.teams.some((team) => team.id === teamId);
+
+    if (initial && known(initial.teamA) && known(initial.teamB)) {
+      return { a: initial.teamA, b: initial.teamB };
+    }
+
     const mine = board.teams.find((team) => team.isUsersTeam) ?? board.teams[0];
     const other = board.teams.find((team) => team.id !== mine?.id) ?? mine;
     return { a: mine?.id ?? "", b: other?.id ?? "" };
   });
 
-  const [picks, setPicks] = useState<Picks>(NO_PICKS);
+  const [picks, setPicks] = useState<Picks>(() => {
+    if (!initial) return NO_PICKS;
+
+    // Same rule the analyzer applies everywhere: a player can only be sent by
+    // the team that rosters them, so a link naming somebody who has since been
+    // traded simply drops them.
+    const onTeam = (playerIds: number[], teamId: string) =>
+      playerIds.filter((playerId) =>
+        board.assets.some(
+          (asset) => asset.playerId === playerId && asset.teamId === teamId,
+        ),
+      );
+
+    return {
+      a: onTeam(initial.a, initial.teamA),
+      b: onTeam(initial.b, initial.teamB),
+    };
+  });
   const [params, setParams] = useState<TradeParams>(board.params);
   const [note, setNote] = useState("");
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);

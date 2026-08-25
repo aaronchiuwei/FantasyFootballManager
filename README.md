@@ -3,16 +3,16 @@
 Yahoo fantasy football league companion — market-grounded player values, trade
 analysis, waiver recommendations. See [PLAN.md](PLAN.md) for the full design.
 
-**Status: Phase 7 (needs, waivers and the league overview) complete.** On top
-of Phases 0–6 (Supabase auth + RLS, Yahoo OAuth2 with encrypted tokens, league
-+ team import, the Sleeper/FantasyCalc/DynastyProcess adapters, the
-player-identity crosswalk, the value engine, the one-button sync, the stats
-surface and the trade analyzer): every roster in the league is now measured
-against every other one, position by position. That single structure — §7's
-needs vector — draws the league overview, tilts the waiver wire toward what a
-team is actually short of, and finally answers the question the trade analyzer
-could only ask: not just whether a deal is fair, but whether it makes your
-starting lineup any better.
+**Status: Phase 8 (the suggestion engines) complete.** On top of Phases 0–7
+(Supabase auth + RLS, Yahoo OAuth2 with encrypted tokens, league + team import,
+the Sleeper/FantasyCalc/DynastyProcess adapters, the player-identity crosswalk,
+the value engine, the one-button sync, the stats surface, the trade analyzer and
+the needs vector): the app now goes looking for trades instead of waiting to be
+handed one. Every pair of rosters in the league is searched for a deal that is
+fair by value *and* leaves both starting lineups better than it found them, and
+naming a player on somebody else's roster returns a menu of packages that would
+buy them. Neither engine decides what "fair" means — Phase 6's verdict function
+does, called rather than reimplemented.
 
 ## Stack
 
@@ -79,6 +79,7 @@ app/
       trade/           the trade analyzer, and the trades kept from it
       overview/        the twelve teams as positional strength radars
       waivers/         the available pool, ranked and need-weighted
+      suggestions/     the win-win board, and the build-around-a-player panel
   auth/callback/     code → session exchange (email links, future OAuth)
   api/yahoo/         OAuth authorize + callback
 components/
@@ -124,6 +125,10 @@ lib/needs/
   needs.ts           §7's needs vector — pure, and what Phases 8–9 stand on
   lineup.ts          the best startable lineup, and what a trade does to it — pure
   store.ts           sync stage 8 — team_needs, persisted; the overview's read
+lib/suggestions/
+  search.ts          §9's win-win search and §10's builder — pure, bounded, tested
+  payload.ts         the frozen package a cached suggestion stores, parsed with Zod
+  store.ts           sync stage 8 — trade_suggestions; the builder's server-side run
 lib/waivers/
   score.ts           §7's `ros × (1 + λ × need)` — pure, runs in the browser
   store.ts           Yahoo's available pool, the needs it is weighted by, and λ
@@ -140,6 +145,7 @@ components/
   trade/             the balance beam, the drop zones, the verdict, the lineup delta
   needs/             the positional radar, need and depth chips, the team card
   waivers/           the ranked wire, and the λ slider that tilts it
+  suggestions/       the package card, the stack that cycles them, the builder
   sync/              the sync button, progress ring and staged checklist
 supabase/migrations/
 ```
@@ -526,7 +532,9 @@ That is a data acquisition problem, not a trade-math one.
 
 **The trade deadline is not enforced.** §6 wants it surfaced and the suggestion
 engines disabled past it. Yahoo reports it in league settings; nothing reads it
-yet, and there are no suggestion engines to disable until Phase 8.
+yet. Phase 8 built the engines, so only the second half of that sentence is
+still missing — it is recorded again under
+[the suggestion engines](#how-the-suggestion-engines-work).
 
 ## How needs and waivers work
 
@@ -720,6 +728,269 @@ move a radar until the next sync. That is §9's bargain everywhere else in the
 app and it is the right one here, but the wire is the fastest-moving surface in
 the product and the staleness shows up soonest on this page.
 
+## How the suggestion engines work
+
+Requirement 9 asks for trades both managers would want. Requirement 10 asks
+what it would take to get one particular player. They are the same search under
+two different constraints, so they are one pure module — `lib/suggestions/search.ts`
+— with two entry points.
+
+Neither of them decides whether a trade is fair. `analyzeTrade` does, unchanged
+since Phase 6, called here rather than reimplemented, and `lineupChange` does
+the roster-context half the same way. **A suggestion the analyzer would then
+argue against is a bug**, not a difference of opinion, and it is the one bug
+this phase could not afford: the whole product here is a proposal the user is
+being invited to send to another human. So the engines are candidate
+generation, pruning and ranking on top of math the app already trusts, and the
+test suite re-runs the analyzer over every suggestion the search emits to prove
+it.
+
+### The search space, said out loud
+
+§7 sizes it and the code holds to that size:
+
+| | |
+|---|---|
+| Candidate assets per team | top **8**, ranked by value tilted toward surplus |
+| Packages per team | `C(8,1) + C(8,2)` = **36** |
+| Candidate trades per pair | `36 × 36` = **1,296** |
+| Pairs in a 12-team league | `C(12,2)` = **66** |
+| **Candidate trades in total** | **85,536** |
+
+Measured on a synthetic 12-team league with a FantasyCalc-shaped value curve,
+five runs, this machine:
+
+| | |
+|---|---|
+| Candidates enumerated | 85,536 |
+| Rejected by the value window without being scored | **74,195** (86.7%) |
+| Handed to `analyzeTrade` | 11,341 |
+| Fair by value (`pct < 8%`) | 3,844 |
+| …and better for **both** lineups | 422 |
+| Kept after the per-pair cap | 101 |
+| **Median wall clock** | **33 ms** |
+
+Roster size does not move that number — 15, 16 and 18 players a team all come
+out identical — because the top-8 cut happens first and everything after it is
+a function of eight. §9's budget for a whole stage is ~60s and stage 8 already
+spends most of it on the valuation; the search is a rounding error next to that,
+and the stage records its own wall clock into `sync_runs` so a regression says
+so where someone will read it rather than only in a test.
+
+### The three bounds, and why each one is where it is
+
+**Top 8 assets per team.** §7's own number, and it is not arbitrary: a redraft
+roster has about eight players anyone would ask for, and the ninth is a
+throw-in whose presence in a package is decided by §6's depth penalty rather
+than by the search. The eight are ranked on `value × (1 + 0.35 × surplusZ)` —
+deliberately the same shape as §7's waiver score, on a z clamped to ±1 for the
+same reason, because it is the same claim in the other direction. The wire tilts
+toward what a roster lacks; the trade table tilts toward what it can spare. The
+tilt is gentle on purpose: surplus should order assets of similar price, not let
+a fourth-string running back outrank a genuine star, because the star is still
+the player the other manager wants to talk about.
+
+**Two players a side.** §7 enumerates 1-for-1, 2-for-1 and 2-for-2. Allowing
+three would take a pair from 1,296 candidates to 8,464 — a 6.5× bill for
+packages `beta` exists specifically to discourage.
+
+**An exact value window.** Before the analyzer is called, a package pair is
+checked against a multiplicative window on their raw sums, and the window is
+*derived* rather than tuned. For a side of `n` assets summing to `B`, every one
+of §6's adjustments is bounded by a share of `B` — the best asset is at most
+`B`, so is the median, and the headline premium is charged on a margin no bigger
+than the best asset:
+
+```
+total ∈ [B(1 − β(n−1)), B(1 + α + γ)]        = [B·lo, B·hi]
+fair  ⟹ min(Ta,Tb) ≥ max(Ta,Tb)(1 − band)
+⟹ Bb ∈ [Ba · lo(1−band)/hi , Ba · hi/(lo(1−band))]
+```
+
+On §6's defaults that is `[0.79, 1.27] × Ba`. Nothing inside the window is
+assumed fair; everything outside it is *proved* unfair without running the
+analyzer — which is the only kind of pruning worth doing when the analyzer is
+the definition of the answer. Both package lists are sorted by raw sum, so the
+window is two binary searches rather than a scan. The test that matters here
+sweeps thousands of rejected pairs through `analyzeTrade` and asserts every one
+of them really is outside the band, at the default knobs and again at the far
+end of every slider.
+
+### `min`, not `sum`
+
+§7 says to "rank by `min(Δlineup_A, Δlineup_B)`", and that choice is the whole
+feature. A trade that helps one manager enormously and the other barely is not a
+win-win, it is a sale — and it is exactly what maximizing the total would
+select for. Maximizing the smaller of the two benefits is what makes the list
+one you could actually send.
+
+Everything after that first key is a tiebreak, and each earns its place:
+
+| # | Key | Why |
+|---|---|---|
+| 1 | `min(Δa, Δb)` desc | §7's objective |
+| 2 | `Δa + Δb` desc | equal for the worse-off side, more created overall |
+| 3 | market share desc | §5's rule applied to a ranking, not just a badge |
+| 4 | `pct` asc | the more even deal is the easier one to send |
+| 5 | bodies asc | roster spots are finite (§6) |
+| 6 | asset ids | nothing left to argue about, and it must not shuffle |
+
+The first four are compared with a `1e-6` tolerance. Two packages whose minimum
+gain differs in the twelfth decimal are the same package as far as a manager is
+concerned, and comparing sums of floats exactly would let rounding dust reorder
+the board on every sync for no reason anyone could point at.
+
+**Three per pair, and no two with the same headliners.** Ranked purely, the top
+of a pair's list is the same trade three times — a headliner swap, then that
+swap with a throw-in, then it again with a different one. §10 asks for a
+carousel the user *cycles* through, which is only worth building if the cards
+disagree with each other. The cost is real and worth stating: a genuinely better
+2-for-2 that shares its headliners with the winner is dropped, and the user sees
+the simpler deal instead.
+
+### Who is not in the search
+
+Two exclusions, and they are different kinds of exclusion.
+
+- **Unvalued players are dropped, and counted.** §4's rule is that the analyzer
+  refuses a verdict on a package containing a `floor` value, so every candidate
+  built from one is blocked before it is scored — generating them would spend
+  the search's whole budget producing trades that cannot be suggested. The count
+  comes back with the result and lands on the sync's warning list and the page's
+  banner, because "we did not look at these" is a claim the user is owed.
+- **Kickers and defenses are dropped.** §3: in redraft their trade value
+  genuinely is near zero, the value engine already prices them at the market's
+  own floor, and a package built around one is not a trade anybody would send.
+  The analyzer *flags* them rather than blocking them, which is right for a deal
+  a human assembled and wrong for one a search invented.
+
+### Provenance, into the card
+
+§5's rule does not stop at the analyzer. Every asset in a cached suggestion
+carries its own `value_source`, the package carries the share of itself that is
+market-priced, and it carries whether §6's error bars already swallow the
+margin — so a package resting on the modelled tail says so on the card, before
+the offer is sent rather than after. `trade_suggestions.payload` freezes all of
+it alongside both lineup deltas, denormalized for the reason `saved_trades` is:
+values move on every sync, and a cached recommendation that silently re-derived
+would be a recommendation the app never actually made.
+
+The `band` column has a `check (band in ('even', 'slight'))` on it. That is not
+belt and braces — it is what makes "the search proposed a trade the analyzer
+calls lopsided" unrepresentable rather than merely unlikely.
+
+### The builder is the same search, differently shaped
+
+§10 fixes one side — the player you named — and searches your own roster for
+the other. `C(12,1) + C(12,2) + C(12,3)` = 298 subsets, ranked on your own
+lineup delta, at most five returned, and a package that is another package plus
+a throw-in is suppressed rather than shown twice.
+
+Three decisions inside that:
+
+- **§10's literal window is not used.** It says to keep subsets landing in
+  `[0.95, 1.10] ×` the target's total; a package worth 1.10× what it is traded
+  for scores `pct = 9.1%`, which the analyzer calls a **clear winner**. That is
+  precisely the failure this phase is about. The fairness band wins and §10's
+  window loses — the same `pct < 8%` line §7 draws for the win-win search and
+  the same one the verdict panel changes color at. The asymmetry §10 was
+  reaching for, that you may pay a little over to get the player you actually
+  want, survives in the ranking instead of in the filter.
+- **"Exclude positions of need" is a threshold, not a sign test.** Taken
+  literally — any `need > 0` — it empties roughly half of every roster by
+  construction, because `need` is a z-score against the league and half the
+  league is on the wrong side of average at every position, including teams that
+  are perfectly fine there. Half a standard deviation is where the vector starts
+  making a claim rather than reporting noise. And if protecting those pieces
+  leaves nothing to offer, the exclusion is dropped and the panel says so: an
+  exclusion that empties a roster is a refusal to answer, not a filter.
+- **Packages that cost you lineup points are shown, not hidden.** §10 says rank
+  on the user's own lineup delta, and ranking is what it gets. You asked what
+  this player costs; declining to tell you because your bench gets thinner is
+  answering a different question.
+
+### One is cached, one is not
+
+The win-win search is a fold over every pair of rosters in the league, which is
+the exact shape of work §9 hands to a sync stage — so it runs in stage 8, third,
+after the valuation writes `player_values.ros_points` and the needs vector
+writes `team_needs.surplus_z`, both of which it reads. A page that ran it per
+request would run it identically per request.
+
+The builder is not cached and that is a difference rather than an omission: its
+input is a player the user picked half a second ago, and there are ~180 of them
+times twelve teams asking. It runs in a server action over a board already in
+memory, which costs less than a cache would. The board is re-read on the server
+rather than trusted from the browser, exactly as saving a trade re-reads it: the
+client sends two ids, and the packages that come back are the server's
+arithmetic over the server's values.
+
+Both engines run over `loadTradeBoard` — the analyzer's own read, which now
+carries §7's `surplusZ` next to `need`. A second query shaped for the search
+would be a second definition of "what is on this league's rosters", and the two
+would drift.
+
+### The stack
+
+§10 names the interaction: "a Skiper UI carousel/stack for cycling trade
+packages." It is written in the repo rather than pulled from the registry, which
+is what §10 describes happening to both component libraries anyway — they are
+copy-paste shadcn registries, so a vendored component is the normal outcome. It
+also keeps §10's performance guardrail: the richer React Bits stack components
+pull GSAP or OGL, and this is a data-dense page with no business loading a WebGL
+renderer to move a card sideways. What is here is two CSS transforms and a
+pointer handler.
+
+**Only the front card is real.** The ones behind it are empty rounded
+rectangles, so the accessibility tree contains exactly the trade being shown and
+the arrow buttons move through the list the way a listbox would — a stack that
+rendered every package would put a dozen offers in the tab order to convey
+"there are more". Arrow keys, buttons and a swipe all do the same thing. Under
+`prefers-reduced-motion` the transitions are cancelled outright; the offsets
+stay, because they are a static diagram of "there is more behind this" rather
+than motion.
+
+Every card links into the analyzer with the trade preloaded
+(`?ta=…&tb=…&a=1,2&b=3`) — ids only, never totals, so what the analyzer prices
+is its own arithmetic over its own board, exactly as it is when the player is
+dragged in by hand. A suggestion you cannot act on is not a suggestion, which is
+the same argument §7 makes about ranking free agents Yahoo will not let you add.
+
+### Where it falls short
+
+**The trade deadline is still not enforced.** §6 wants it surfaced and the
+suggestion engines disabled past it. There are engines to disable now, which is
+the half of that sentence Phase 6 could not act on — but nothing reads
+`trade_end_date` out of Yahoo's settings yet, so past the deadline this page
+will happily recommend trades nobody can make. It is a one-column import, and it
+is the first thing Phase 10 should pick up.
+
+**Three players a side is out of reach, and two is a real ceiling.** §7's
+enumeration stops at 2-for-2 and so does this. Consolidating three bench pieces
+into one starter is a trade people genuinely make, and the search will never
+find it — the builder reaches size three but only against a single fixed target,
+never in an open search. The cost of lifting it is stated above: 6.5× per pair.
+
+**Diversity is a per-pair rule, not a league-wide one.** Filtered to one team,
+the board can show three suggestions built around the same player they are
+shopping, because they came from three different pairs. Each is a genuinely
+different offer to a different manager, which is defensible, but it reads
+repetitively.
+
+**Nothing knows what has already been offered.** A suggestion the user sent and
+had rejected last week is still the top card this week, because Yahoo's trade
+history is not imported and there is nowhere to record "asked, declined".
+
+**The win-win list is cached, so it is as stale as the last sync** — and it is
+staler than the needs vector in one specific way: a trade that both managers
+would have liked becomes impossible the moment either of them makes a waiver
+claim, and the board will not notice until the next run.
+
+**No three-team cycles.** §7's Requirement 11 is Phase 9's, deliberately: §7
+calls the combinatorics "a real trap" and says to ship it only after 9 and 10
+are solid. The seam is `SuggestionTeam` and `compareSuggestions`, both of which
+already generalize past two teams.
+
 ## How the sync works
 
 One button, but not one request. Yahoo's pagination plus a 14.6 MB Sleeper
@@ -735,7 +1006,7 @@ that hand work to each other **through Postgres**, never through memory:
 | 5 | `stats` | Season-to-date actuals, plus last season's game log as context | already stored |
 | 6 | `yahoo` | Settings, standings, teams, rosters, matchups, free agents | — |
 | 7 | `resolve` | The §4 identity ladder over what stage 6 pulled | — |
-| 8 | `compute` | The §5 value engine over everything above, then the §7 needs vector over that | — |
+| 8 | `compute` | The §5 value engine over everything above, the §7 needs vector over that, then §9's win-win search over both | — |
 
 `POST /api/sync` opens a `sync_runs` row and kicks stage 1;
 `POST /api/sync/[stage]` runs one stage, records it, and hands the next one to
@@ -802,11 +1073,17 @@ row that an authenticated owner created. That row is the authorization record.
 - **Sync stages hand off through Postgres, never through memory.** Each stage
   is its own invocation; anything the next one needs has to be committed first.
 - **Math the browser reruns lives in a pure module.** `lib/sync/plan.ts`,
-  `lib/trades/analyze.ts`, `lib/needs/needs.ts`, `lib/needs/lineup.ts` and
-  `lib/waivers/score.ts` carry no transport and no `server-only`, so both sides
-  run the same function over the same data. The corollary is a bundle rule:
-  client components import *types* from the modules next door to those, never
-  values, or a Zod parser the browser never runs ships to it anyway.
+  `lib/trades/analyze.ts`, `lib/needs/needs.ts`, `lib/needs/lineup.ts`,
+  `lib/waivers/score.ts` and `lib/suggestions/search.ts` carry no transport and
+  no `server-only`, so both sides run the same function over the same data. The
+  corollary is a bundle rule: client components import *types* from the modules
+  next door to those, never values, or a Zod parser the browser never runs ships
+  to it anyway.
+- **One definition of a verdict.** Anything that needs to know whether a trade
+  is fair calls `analyzeTrade`; anything that needs to know what it does to a
+  lineup calls `lineupChange`. The suggestion engines generate candidates and
+  rank them — they do not re-derive the answer, because a second implementation
+  of the verdict is a second verdict.
 
 ## Scripts
 

@@ -7,7 +7,10 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { SyncButton } from "@/components/sync/sync-button";
-import { TradeAnalyzer } from "@/components/trade/trade-analyzer";
+import {
+  TradeAnalyzer,
+  type InitialTrade,
+} from "@/components/trade/trade-analyzer";
 import type { SavedTradeView } from "@/components/trade/saved-trades";
 import { latestRun } from "@/lib/sync/run";
 import { loadSavedTrades, loadTradeBoard } from "@/lib/trades/store";
@@ -23,12 +26,43 @@ function freshness(timestamp: string | null) {
   return `priced ${Math.round(hours / 24)}d ago`;
 }
 
+const one = (value: string | string[] | undefined) =>
+  Array.isArray(value) ? value[0] : value;
+
+/**
+ * A trade handed over in the URL, which is how Phase 8's suggestion cards open
+ * one here: `?ta=…&tb=…&a=1,2&b=3`. Ids only — never totals — so what the
+ * analyzer prices is its own arithmetic over its own board, exactly as it is
+ * when the user drags the players in by hand.
+ */
+function initialTrade(
+  query: Record<string, string | string[] | undefined>,
+): InitialTrade | null {
+  const teamA = one(query.ta);
+  const teamB = one(query.tb);
+  if (!teamA || !teamB || teamA === teamB) return null;
+
+  const ids = (value: string | undefined): number[] =>
+    (value ?? "")
+      .split(",")
+      .map((entry) => Number.parseInt(entry, 10))
+      .filter((entry) => Number.isSafeInteger(entry) && entry > 0);
+
+  const a = ids(one(query.a));
+  const b = ids(one(query.b));
+  if (a.length === 0 && b.length === 0) return null;
+
+  return { teamA, teamB, a, b };
+}
+
 export default async function TradePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { id } = await params;
+  const [{ id }, query] = await Promise.all([params, searchParams]);
   const supabase = await createClient();
 
   const { data: league } = await supabase
@@ -117,7 +151,12 @@ export default async function TradePage({
           </CardContent>
         </Card>
       ) : (
-        <TradeAnalyzer leagueId={league.id} board={board} saved={trades} />
+        <TradeAnalyzer
+          leagueId={league.id}
+          board={board}
+          saved={trades}
+          initial={initialTrade(query)}
+        />
       )}
     </div>
   );

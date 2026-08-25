@@ -1,6 +1,6 @@
 import "server-only";
 
-import { loadNeedsByTeam } from "@/lib/needs/store";
+import { loadNeedWeights } from "@/lib/needs/store";
 import type { RosterSlot } from "@/lib/sources/yahoo";
 import type { Db } from "@/lib/supabase/db";
 import { isValueSource, type ValueSource } from "@/lib/values/engine";
@@ -44,6 +44,13 @@ export type TradeBoardTeam = {
   isUsersTeam: boolean;
   /** §7's `need` by position, so the delta panel can say what a deal fixes. */
   needs: Record<string, number>;
+  /**
+   * §7's `surplusZ` by position. Nothing on the trade page reads it; Phase 8's
+   * suggestion engines do, and they run over exactly this board. Carrying it
+   * here rather than fetching it again is the same argument the needs vector
+   * itself makes — it comes off the row already being read.
+   */
+  surplusZ: Record<string, number>;
 };
 
 export type TradeBoard = {
@@ -173,7 +180,7 @@ export async function loadTradeBoard(
   if (teamError) throw new Error(`Failed to read teams: ${teamError.message}`);
   if (error) throw new Error(`Failed to read values: ${error.message}`);
 
-  const needs = await loadNeedsByTeam(
+  const needs = await loadNeedWeights(
     db,
     (teams ?? []).map((team) => team.id),
   );
@@ -216,7 +223,8 @@ export async function loadTradeBoard(
       name: team.name,
       managerName: team.manager_name,
       isUsersTeam: team.is_users_team,
-      needs: Object.fromEntries(needs.get(team.id) ?? []),
+      needs: needs.get(team.id)?.need ?? {},
+      surplusZ: needs.get(team.id)?.surplusZ ?? {},
     })),
     assets,
     params,

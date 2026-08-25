@@ -15,6 +15,7 @@ import {
 } from "@/lib/players/stats";
 import { fetchNflState } from "@/lib/sources/sleeper";
 import { fetchFreeAgents, fetchMatchups, fetchRosters } from "@/lib/sources/yahoo";
+import { computeTradeSuggestions } from "@/lib/suggestions/store";
 import type { Db } from "@/lib/supabase/db";
 import { computeLeagueValues } from "@/lib/values/store";
 
@@ -307,22 +308,26 @@ const resolve: StageRunner = async ({ db, leagueId }) => {
 };
 
 /**
- * Stage 8. The §5 value engine over everything the earlier stages landed, and
- * then the §7 needs vector over that.
+ * Stage 8. The §5 value engine over everything the earlier stages landed, then
+ * the §7 needs vector over that, then §9's win-win search over both.
  *
- * §9 gives this stage both jobs, and the order is not arbitrary: a needs vector
- * is a fold over rest-of-season projections, and the valuation is what writes
- * those down (`player_values.ros_points`). Reading the league's rosters a
- * second time is cheap next to that; recomputing the projections would not be.
+ * §9 gives this stage all three jobs — "value calibration, needs vectors,
+ * cached trade suggestions" — and the order is not arbitrary. A needs vector is
+ * a fold over rest-of-season projections and the valuation is what writes those
+ * down (`player_values.ros_points`); the search reads that column for its
+ * lineup math and `team_needs.surplus_z` for its candidate list, so it can only
+ * run once both are on disk. Reading the league's rosters again is cheap next
+ * to recomputing what they are worth.
  */
 const compute: StageRunner = async ({ db, leagueId, context }) => {
   const report = await computeLeagueValues(db, leagueId, context);
   const needs = await computeTeamNeeds(db, leagueId);
+  const suggestions = await computeTradeSuggestions(db, leagueId);
 
   // §13's invariants, checked on every run rather than only in tests. The
   // durable progress record is where they belong: a value board that quietly
   // stopped satisfying them should say so where someone will read it later.
-  const warnings = [...report.warnings, ...needs.warnings];
+  const warnings = [...report.warnings, ...needs.warnings, ...suggestions.warnings];
 
   if (report.seamViolations > 0) {
     warnings.push(
@@ -336,12 +341,22 @@ const compute: StageRunner = async ({ db, leagueId, context }) => {
     );
   }
 
+  // §9 caps a stage at ~60s and this one carries three jobs. The search is the
+  // only one whose cost grows with the *square* of the league, so its wall
+  // clock is recorded rather than assumed — a bound that is never measured is
+  // a bound nobody knows they have crossed.
+  if (suggestions.elapsedMs > 15_000) {
+    warnings.push(
+      `The win-win search took ${(suggestions.elapsedMs / 1000).toFixed(1)}s over ${suggestions.pairs} team pairs — stage 8's budget is ~60s in total.`,
+    );
+  }
+
   const modelled = report.bySource.model + report.bySource.model_capped;
 
   return {
     detail: `${n(report.valued)} valued · ${n(report.bySource.market)} market, ${n(modelled)} modelled${
       report.bySource.floor ? `, ${n(report.bySource.floor)} unvalued` : ""
-    } · needs read for ${needs.teams} team${needs.teams === 1 ? "" : "s"}`,
+    } · needs read for ${needs.teams} team${needs.teams === 1 ? "" : "s"} · ${n(suggestions.suggestions)} win-win trades across ${n(suggestions.pairs)} pairs in ${suggestions.elapsedMs}ms`,
     warnings,
   };
 };

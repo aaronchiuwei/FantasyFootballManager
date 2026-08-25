@@ -146,14 +146,22 @@ export type LineupChange = {
 };
 
 /**
- * What a package does to one team's starting lineup.
+ * What a package does to one team's starting lineup, given the lineup it
+ * already puts out.
  *
- * Both lineups are re-solved from scratch rather than diffed, because a trade
- * changes who *else* starts: sending the third-best running back away is free
- * until the flex spot has nobody left to take, and a diff of the two rosters
- * would never notice.
+ * Split out from `lineupChange` for Phase 8. The "before" lineup is a property
+ * of the roster alone, so it is identical for every package the win-win search
+ * tries against that team — and the search tries tens of thousands. Solving it
+ * once per team instead of twice per candidate is the difference between a
+ * stage that fits inside §9's ~60s budget and one that does not.
+ *
+ * The "after" lineup is still re-solved from scratch rather than diffed,
+ * because a trade changes who *else* starts: sending the third-best running
+ * back away is free until the flex spot has nobody left to take, and a diff of
+ * the two rosters would never notice.
  */
-export function lineupChange<T extends LineupPlayer>(
+export function lineupChangeFrom<T extends LineupPlayer>(
+  before: Lineup<T>,
   roster: T[],
   { out, in: incoming }: { out: T[]; in: T[] },
   slots: StartingSlot[],
@@ -164,9 +172,7 @@ export function lineupChange<T extends LineupPlayer>(
     ...incoming,
   ];
 
-  const before = bestLineup(roster, slots);
   const next = bestLineup(after, slots);
-
   const moving = [...out, ...incoming];
 
   return {
@@ -176,4 +182,19 @@ export function lineupChange<T extends LineupPlayer>(
     empty: next.empty,
     unprojected: moving.filter((player) => player.points === null).length,
   };
+}
+
+/**
+ * What a package does to one team's starting lineup.
+ *
+ * Both lineups are re-solved from scratch, which is what a caller asking about
+ * a single trade wants: the trade page re-runs this on every keystroke and the
+ * roster it is solving against changes when the user picks a different team.
+ */
+export function lineupChange<T extends LineupPlayer>(
+  roster: T[],
+  move: { out: T[]; in: T[] },
+  slots: StartingSlot[],
+): LineupChange {
+  return lineupChangeFrom(bestLineup(roster, slots), roster, move, slots);
 }

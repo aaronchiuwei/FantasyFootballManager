@@ -527,6 +527,34 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["team_needs"]["Insert"]>;
         Relationships: [];
       };
+      trade_suggestions: {
+        Row: {
+          id: string;
+          league_id: string;
+          team_a: string;
+          team_b: string;
+          payload: Json;
+          score: number;
+          band: string;
+          rank: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          league_id: string;
+          team_a: string;
+          team_b: string;
+          payload: Json;
+          score: number;
+          band: string;
+          rank: number;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["trade_suggestions"]["Insert"]
+        >;
+        Relationships: [];
+      };
       matchups: {
         Row: {
           league_id: string;
