@@ -5,6 +5,8 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowLeftRight,
+  ListPlus,
+  Radar,
   Scale,
   Users,
 } from "lucide-react";
@@ -66,6 +68,7 @@ export default async function LeaguePage({
     { count: pending },
     { count: valued },
     { count: marketValued },
+    { count: needsCount },
   ] = await Promise.all([
       latestRun(supabase, league.id),
       teamIds.length === 0
@@ -88,6 +91,12 @@ export default async function LeaguePage({
         .select("player_id", { count: "exact", head: true })
         .eq("league_id", league.id)
         .eq("value_source", "market"),
+      teamIds.length === 0
+        ? Promise.resolve({ count: 0 })
+        : supabase
+            .from("team_needs")
+            .select("team_id", { count: "exact", head: true })
+            .in("team_id", teamIds),
     ]);
 
   const starters = (league.roster_slots as unknown as RosterSlot[])
@@ -226,6 +235,50 @@ export default async function LeaguePage({
 
           <Button asChild size="sm" variant="outline">
             <Link href={`/leagues/${league.id}/trade`}>
+              {valued ? "Open" : "Details"}
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <Radar className="mt-0.5 size-5 text-muted-foreground" aria-hidden />
+            <div className="space-y-0.5">
+              <p className="text-sm font-medium">League overview</p>
+              <p className="text-sm text-muted-foreground">
+                {needsCount === 0
+                  ? "Needs a sync — every roster is measured against the rest of the league."
+                  : `Positional strength for all ${teams?.length ?? 0} teams, and what each of them is short of.`}
+              </p>
+            </div>
+          </div>
+
+          <Button asChild size="sm" variant="outline">
+            <Link href={`/leagues/${league.id}/overview`}>
+              {needsCount ? "Open" : "Details"}
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <ListPlus className="mt-0.5 size-5 text-muted-foreground" aria-hidden />
+            <div className="space-y-0.5">
+              <p className="text-sm font-medium">Waiver wire</p>
+              <p className="text-sm text-muted-foreground">
+                {valued === 0
+                  ? "Needs values — a sync pulls and projects the free-agent pool."
+                  : "The available pool, ranked on rest-of-season projection and weighted toward what a team is thin at."}
+              </p>
+            </div>
+          </div>
+
+          <Button asChild size="sm" variant="outline">
+            <Link href={`/leagues/${league.id}/waivers`}>
               {valued ? "Open" : "Details"}
             </Link>
           </Button>

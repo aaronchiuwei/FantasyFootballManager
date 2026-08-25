@@ -69,8 +69,8 @@ export const STAGES: StageMeta[] = [
   },
   {
     id: "compute",
-    label: "Values",
-    description: "Calibrating a value onto every player",
+    label: "Values and needs",
+    description: "Pricing every player, then reading every roster's needs",
   },
 ];
 

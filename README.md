@@ -3,14 +3,16 @@
 Yahoo fantasy football league companion — market-grounded player values, trade
 analysis, waiver recommendations. See [PLAN.md](PLAN.md) for the full design.
 
-**Status: Phase 6 (trade analyzer) complete.** On top of Phases 0–5 (Supabase
-auth + RLS, Yahoo OAuth2 with encrypted tokens, league + team import, the
-Sleeper/FantasyCalc/DynastyProcess adapters, the player-identity crosswalk, the
-value engine, the one-button sync and the stats surface): any two rosters in
-the league can now be put on a balance beam. Both packages are summed at their
-market value, adjusted for who holds the best player and how many roster spots
-the deal fills, and answered with one of four fairness bands — or with a refusal
-to answer, when a player in the deal has no resolved value.
+**Status: Phase 7 (needs, waivers and the league overview) complete.** On top
+of Phases 0–6 (Supabase auth + RLS, Yahoo OAuth2 with encrypted tokens, league
++ team import, the Sleeper/FantasyCalc/DynastyProcess adapters, the
+player-identity crosswalk, the value engine, the one-button sync, the stats
+surface and the trade analyzer): every roster in the league is now measured
+against every other one, position by position. That single structure — §7's
+needs vector — draws the league overview, tilts the waiver wire toward what a
+team is actually short of, and finally answers the question the trade analyzer
+could only ask: not just whether a deal is fair, but whether it makes your
+starting lineup any better.
 
 ## Stack
 
@@ -75,6 +77,8 @@ app/
     leagues/[id]/    league + teams, identity resolution, the values board
       players/[playerId]/  one player: value, stats, week-by-week
       trade/           the trade analyzer, and the trades kept from it
+      overview/        the twelve teams as positional strength radars
+      waivers/         the available pool, ranked and need-weighted
   auth/callback/     code → session exchange (email links, future OAuth)
   api/yahoo/         OAuth authorize + callback
 components/
@@ -116,6 +120,13 @@ lib/trades/
   analyze.ts         §6's bonus math and fairness bands — pure, runs in the browser
   saved.ts           the frozen payload a saved trade stores, parsed with Zod
   store.ts           league_settings and saved_trades, plus the analyzer's one read
+lib/needs/
+  needs.ts           §7's needs vector — pure, and what Phases 8–9 stand on
+  lineup.ts          the best startable lineup, and what a trade does to it — pure
+  store.ts           sync stage 8 — team_needs, persisted; the overview's read
+lib/waivers/
+  score.ts           §7's `ros × (1 + λ × need)` — pure, runs in the browser
+  store.ts           Yahoo's available pool, the needs it is weighted by, and λ
 lib/players/
   master.ts          Sleeper player master → Postgres, 24h TTL
   stats.ts           sync stages 4 and 5 — season totals and the weekly grid
@@ -126,7 +137,9 @@ app/api/sync/          POST to start or resume; POST /[stage] to run one stage
 components/
   players/           identity resolution UI, the stat surface
   values/            value badges, the values board
-  trade/             the balance beam, the drop zones, the verdict
+  trade/             the balance beam, the drop zones, the verdict, the lineup delta
+  needs/             the positional radar, need and depth chips, the team card
+  waivers/           the ranked wire, and the λ slider that tilts it
   sync/              the sync button, progress ring and staged checklist
 supabase/migrations/
 ```
@@ -489,15 +502,22 @@ and a phone, so both do the same thing. Every animation is a CSS transform
 transition or a `requestAnimationFrame` that checks `prefers-reduced-motion`
 first — under reduced motion the beam is a still, equally readable diagram.
 
-### Where it falls short
+### The roster-context delta
 
-**There is no roster-context delta yet.** §6 asks for each team's starting
-lineup projected points before and after, alongside the value verdict — "what
-makes a trade *good for you* as opposed to merely *even*". It needs starters,
-positional strength and league means, which is precisely §7's needs vector and
-therefore Phase 7's. The value verdict is the primary one either way (§1.5), and
-the seam is clean: the analyzer is a pure function over assets, and a second
-scorer over the same two packages does not disturb it.
+§6 also asks for each team's starting lineup projected points before and after
+the trade — "what makes a trade *good for you* as opposed to merely *even*".
+Phase 6 left the seam and Phase 7 filled it: `lib/needs/lineup.ts` is a second
+scorer over the same two packages, pure and local, so it re-runs on the same
+keystroke the verdict does. It is described under
+[needs and waivers](#how-needs-and-waivers-work) with the rest of §7's math.
+
+It stays **secondary**, and that is §1.5's rule rather than a shortcut: trade
+evaluation is value-first, context-second, so nothing in the lineup delta moves
+the fairness band. The two numbers are in different currencies — market value
+above, projected points below — because they answer different questions, and
+collapsing them into one score would lose both answers.
+
+### Where it falls short
 
 **No bye weeks and no playoff schedule.** §6 wants both as redraft-specific
 signals. Nothing in the app maps a player to an NFL schedule — the bye-week data
@@ -507,6 +527,198 @@ That is a data acquisition problem, not a trade-math one.
 **The trade deadline is not enforced.** §6 wants it surfaced and the suggestion
 engines disabled past it. Yahoo reports it in league settings; nothing reads it
 yet, and there are no suggestion engines to disable until Phase 8.
+
+## How needs and waivers work
+
+§7 opens with one structure and then spends four features out of it. Everything
+on this page is that structure, or a fold over it:
+
+```
+starters(p)   = top k_p players by projection at position p
+strength(p)   = Σ projections of starters(p)
+z(p)          = (strength(p) − league_mean(p)) / league_sd(p)
+need(p)       = −z(p)              positive ⇒ weakness
+surplus(p)    = Σ projections of players above the starter requirement
+```
+
+It is computed once per sync, in stage 8, immediately after the valuation — and
+`lib/needs/needs.ts` is a pure module with no transport and no `server-only`,
+the way `vor.ts` and `analyze.ts` are, because Phases 8 and 9 will optimize
+against these numbers and a bug in here is a bug in every suggestion they make.
+
+### The four decisions inside those five lines
+
+**`k_p` is fractional, and so is the player who fills it.** A standard W/R/T
+league starts 2.5 running backs — the flex slot is genuinely half of one, split
+across the positions that fill it by the same weights §5's replacement level
+uses. So the third RB counts for half his projection toward strength and half
+toward surplus. Rounding `k_p` would make him either free or worthless, and move
+a team's strength by a whole player for a slot that half exists.
+
+**The z-score is against this league and nobody else.** Twelve teams, population
+standard deviation rather than sample: these *are* every team, not a draw from
+somewhere larger. What makes a position a need is not that a roster is bad in
+the abstract, it is that the eleven managers you play against are better there.
+
+**A league with no spread gets zeroes, not infinities.** If every team's
+quarterbacks project identically the standard deviation is zero and every team
+is exactly average — which is true, and is what the code returns. The guard is
+relative rather than absolute, because twelve identical sums computed in
+different orders differ in the last bit and produce a spread of about 1e-13, not
+0. Two positions reach that state honestly rather than by accident: one nobody
+in the league starts (`k_p = 0` makes every strength 0), and one nobody rosters.
+
+**Surplus gets its own z-score.** §8's schema sketch names six columns; the
+table has a seventh, `surplus_z`, because raw surplus points are not comparable
+across positions — a quarterback outscores a tight end for reasons that have
+nothing to do with depth — and "this team's biggest surplus" has to survive that
+comparison to mean anything. It is what §7's later phases weight toward when
+they go looking for a trade.
+
+### Provenance, for a number made of projections
+
+§5's rule is that a value says where it came from. A needs row is not made of
+values, it is made of projections — so the same honesty is owed in the
+projection's own terms, and the row carries a `confidence`: the share of the
+team's players at that position that could be seen at all.
+
+A player with no projection is precisely §5's `floor` tier — no market price and
+nothing to model from. They contribute nothing to a strength that is a sum, and
+without the column that absence is *invisible*, which is the exact failure mode
+§4 spends the entire crosswalk avoiding. So the overview card says so
+underneath the shape, stage 8 raises a warning when more than a tenth of the
+league's rostered players are unprojected, and the trade page's lineup delta
+names the ones it could not see. The waiver board is the other half of the same
+rule: every row carries its value badge, so a model-priced flyer is legible as
+one — it just does not affect where the row sits.
+
+### Rest of season, stored once
+
+Both halves of this phase are denominated in rest-of-season points, and §5's
+value engine was already computing that number for every player it priced —
+the season projection, blended with actual pace at `min(0.7, games/10)` once
+games are played, scaled by `weeks_remaining / 17`. It was an intermediate that
+died inside the engine. It is now `player_values.ros_points`, which is the one
+change here that reaches back into an earlier phase, and it is worth it: the
+alternative is a second definition of "the rest of this season" in the same app,
+drifting from the first.
+
+### The league overview
+
+§10 asks for a staggered card grid with a positional strength radar per team,
+and the radar's axes are **z-scores, not points** — that is the whole reason the
+shape says anything, since 300 quarterback points and 300 tight-end points are
+not the same claim but "one standard deviation above this league" and "one
+standard deviation above this league" are. The dashed ring is the league
+average: a vertex inside it is a need, a vertex outside it is depth, and the two
+chips underneath name the largest of each. Cards are ordered by projected
+starters rather than by the standings, because the standings are one click away
+on the league page and this screen is asking a different question.
+
+It is plain SVG in a server component. §10's performance guardrail is to keep
+heavy visual dependencies off the data-dense pages, and a hexagon with six
+vertices does not need a charting library. The stagger is a CSS animation with a
+per-card delay, so `motion-reduce:animate-none` cancels it outright: under
+reduced motion twelve cards simply appear, which is the same information without
+the wait.
+
+The headline number on each card is Σ strength across the six positions. `k_p`
+sums to the number of starting slots, so summing the top `k_p` at each position
+spends every slot exactly once — it is the optimal lineup approached from the
+other side, and it needs only the cached vector rather than twelve rosters.
+
+### The waiver wire
+
+```
+score = ros_projected_points(p) × (1 + λ × need(position(p)))
+```
+
+**The ordering is the argument.** §7 is emphatic that the wire ranks on
+projection and not on estimated trade value, and the reason is arithmetic:
+free agents sit almost entirely below FantasyCalc's 191, so ranking them by
+value would mean sorting on an estimate of a number that is near zero for every
+one of them — noise amplified into a ranking. Values still appear on every row
+with their badge, for continuity with the rest of the app. They do not order it.
+
+Three things about the need term, none of them in the plan's one line:
+
+- **λ is clamped to 1.5, not the schema's 5.** λ multiplies a z-score, which is
+  unbounded. At 1 a team one standard deviation thin at a position doubles every
+  free agent there — already an aggressive reading — and past about 1.5 the
+  board stops ranking players and starts ranking positions. The check constraint
+  stays loose so a later phase can want more without a migration.
+- **The need is clamped to ±1 standard deviation.** Beyond that the direction is
+  established and the magnitude is mostly the tail of a twelve-sample estimate.
+  One catastrophic roster in the league should not triple a kicker.
+- **The multiplier is floored at zero.** With the clamps above it can only bind
+  at λ > 1, and it is a guard rather than a judgement: a negative multiplier
+  would put the best free agent at a position you are deep in *below* the worst,
+  which is not a stronger way of saying "you do not need one".
+
+**"Available" means Yahoo says so.** `player_values` prices roughly six hundred
+players, most of whom Yahoo has never offered in any league, so "not on a
+roster" would be the wrong pool — a recommendation you cannot act on is not a
+recommendation. Stage 6 already parks the top ~150 free agents Yahoo ranks in
+`yahoo_player_pool`; the `league_free_agents` view joins that to identity by
+running §4's ladder in SQL — the manual override wins, the persisted crosswalk
+answers the rest — and drops anyone who has since been rostered. A Yahoo player
+who resolved to nobody has no row at all; they are on the identity screen, which
+is where an unmatched player belongs.
+
+λ is the fourth of §8's per-league tunables and the only one Phase 6 left at its
+default. It behaves exactly like α, β and γ: the slider re-ranks the board in
+the browser on every nudge, and the server is asked once, on release.
+
+### What a trade does to a lineup
+
+The same needs machinery answers §6's roster-context delta. `bestLineup` solves
+a roster against the league's own starting slots, `lineupChange` solves it twice
+— before and after — and the panel sits under the balance beam.
+
+The greedy fill is **optimal here rather than merely convenient**. Fantasy
+eligibility sets are laminar: `{RB}` sits inside `{RB, WR, TE}` sits inside
+`{QB, RB, WR, TE}`, and any two sets are nested or disjoint. On a laminar
+family, filling the narrowest slot first with the best eligible player can never
+strand a better assignment, because anyone that slot could have taken instead is
+still eligible for every wider slot behind it. A general bipartite matching
+would be the right tool for a league whose slots overlap partially, and no such
+league exists.
+
+Both lineups are re-solved rather than diffed, because a trade changes who
+*else* starts: sending the third-best running back away is free until the flex
+spot has nobody left to take, and a diff of two rosters would never notice.
+Unprojected players are not candidates — inventing a zero for them would let a
+lineup "improve" by shedding them — and the panel reports how many of those the
+deal contains, along with any starting slot the trade would leave empty.
+
+The panel renders as soon as both sides have a player, **including when the
+value verdict is refused**. An unvalued player blocks a *price*; the lineup
+question is asked in projected points, and that is a different number that may
+well still exist.
+
+### Where it falls short
+
+**No shared-element transition.** §10 pairs the overview grid with one into a
+team detail page. There is no team detail page — a team card links to the values
+board filtered to that roster, which is where Phase 2 put it — so there is
+nothing to transition into yet.
+
+**Strength ignores who is actually startable this week.** A player on IR counts
+toward their team's positional strength at whatever the projection says, because
+the projection is the only signal the vector reads. §5 already discounts injured
+players on the model tier, so the worst cases are damped, but a needs vector is a
+claim about a roster over the rest of the season and treats a two-week absence
+as noise. That is defensible for trades and less so for a waiver claim you are
+making on Tuesday.
+
+**No bye weeks, still.** §7's overview would happily flag a team starting three
+running backs on bye in week 9, and nothing in the app maps a player to an NFL
+schedule — the same gap Phases 5 and 6 recorded, for the same reason.
+
+**The needs vector is cached, not live.** Adding a free agent in Yahoo does not
+move a radar until the next sync. That is §9's bargain everywhere else in the
+app and it is the right one here, but the wire is the fastest-moving surface in
+the product and the staleness shows up soonest on this page.
 
 ## How the sync works
 
@@ -523,7 +735,7 @@ that hand work to each other **through Postgres**, never through memory:
 | 5 | `stats` | Season-to-date actuals, plus last season's game log as context | already stored |
 | 6 | `yahoo` | Settings, standings, teams, rosters, matchups, free agents | — |
 | 7 | `resolve` | The §4 identity ladder over what stage 6 pulled | — |
-| 8 | `compute` | The §5 value engine over everything above | — |
+| 8 | `compute` | The §5 value engine over everything above, then the §7 needs vector over that | — |
 
 `POST /api/sync` opens a `sync_runs` row and kicks stage 1;
 `POST /api/sync/[stage]` runs one stage, records it, and hands the next one to
@@ -589,8 +801,9 @@ row that an authenticated owner created. That row is the authorization record.
   service role inside the sync pipeline — so `Db` is a parameter (`lib/supabase/db.ts`).
 - **Sync stages hand off through Postgres, never through memory.** Each stage
   is its own invocation; anything the next one needs has to be committed first.
-- **Math the browser reruns lives in a pure module.** `lib/sync/plan.ts` and
-  `lib/trades/analyze.ts` carry no transport and no `server-only`, so both sides
+- **Math the browser reruns lives in a pure module.** `lib/sync/plan.ts`,
+  `lib/trades/analyze.ts`, `lib/needs/needs.ts`, `lib/needs/lineup.ts` and
+  `lib/waivers/score.ts` carry no transport and no `server-only`, so both sides
   run the same function over the same data. The corollary is a bundle rule:
   client components import *types* from the modules next door to those, never
   values, or a Zod parser the browser never runs ships to it anyway.

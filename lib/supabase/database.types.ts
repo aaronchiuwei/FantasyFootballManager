@@ -305,6 +305,7 @@ export type Database = {
           position_rank: number | null;
           trend_30d: number | null;
           tier: number | null;
+          ros_points: number | null;
           computed_at: string;
         };
         Insert: {
@@ -318,6 +319,7 @@ export type Database = {
           position_rank?: number | null;
           trend_30d?: number | null;
           tier?: number | null;
+          ros_points?: number | null;
           computed_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["player_values"]["Insert"]>;
@@ -499,6 +501,32 @@ export type Database = {
         >;
         Relationships: [];
       };
+      team_needs: {
+        Row: {
+          team_id: string;
+          position: string;
+          strength: number;
+          z_score: number;
+          need: number;
+          surplus: number;
+          surplus_z: number;
+          confidence: number;
+          computed_at: string;
+        };
+        Insert: {
+          team_id: string;
+          position: string;
+          strength: number;
+          z_score: number;
+          need: number;
+          surplus: number;
+          surplus_z: number;
+          confidence?: number;
+          computed_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["team_needs"]["Insert"]>;
+        Relationships: [];
+      };
       matchups: {
         Row: {
           league_id: string;
@@ -544,6 +572,7 @@ export type Database = {
           position_rank: number | null;
           trend_30d: number | null;
           tier: number | null;
+          ros_points: number | null;
           computed_at: string;
           full_name: string;
           position: string | null;
@@ -556,6 +585,26 @@ export type Database = {
           team_id: string | null;
           team_name: string | null;
           is_users_team: boolean | null;
+        };
+        Relationships: [];
+      };
+      /** Phase 7 read model: Yahoo's available list, resolved and priced. */
+      league_free_agents: {
+        Row: {
+          league_id: string;
+          player_id: number;
+          value: number;
+          value_source: string;
+          confidence: number | null;
+          position_rank: number | null;
+          ros_points: number | null;
+          computed_at: string;
+          full_name: string;
+          position: string | null;
+          nfl_team: string | null;
+          injury_status: string | null;
+          projected_pts_ppr: number | null;
+          fetched_at: string;
         };
         Relationships: [];
       };

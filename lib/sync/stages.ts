@@ -6,6 +6,7 @@ import {
   seedYahooCrosswalk,
 } from "@/lib/crosswalk/store";
 import { importLeague, saveMatchups } from "@/lib/leagues/import";
+import { computeTeamNeeds } from "@/lib/needs/store";
 import { loadSleeperIds, syncPlayerMaster } from "@/lib/players/master";
 import {
   loadCoverage,
@@ -305,14 +306,23 @@ const resolve: StageRunner = async ({ db, leagueId }) => {
   };
 };
 
-/** Stage 8. The §5 value engine, over everything the earlier stages landed. */
+/**
+ * Stage 8. The §5 value engine over everything the earlier stages landed, and
+ * then the §7 needs vector over that.
+ *
+ * §9 gives this stage both jobs, and the order is not arbitrary: a needs vector
+ * is a fold over rest-of-season projections, and the valuation is what writes
+ * those down (`player_values.ros_points`). Reading the league's rosters a
+ * second time is cheap next to that; recomputing the projections would not be.
+ */
 const compute: StageRunner = async ({ db, leagueId, context }) => {
   const report = await computeLeagueValues(db, leagueId, context);
+  const needs = await computeTeamNeeds(db, leagueId);
 
   // §13's invariants, checked on every run rather than only in tests. The
   // durable progress record is where they belong: a value board that quietly
   // stopped satisfying them should say so where someone will read it later.
-  const warnings = [...report.warnings];
+  const warnings = [...report.warnings, ...needs.warnings];
 
   if (report.seamViolations > 0) {
     warnings.push(
@@ -331,7 +341,7 @@ const compute: StageRunner = async ({ db, leagueId, context }) => {
   return {
     detail: `${n(report.valued)} valued · ${n(report.bySource.market)} market, ${n(modelled)} modelled${
       report.bySource.floor ? `, ${n(report.bySource.floor)} unvalued` : ""
-    }`,
+    } · needs read for ${needs.teams} team${needs.teams === 1 ? "" : "s"}`,
     warnings,
   };
 };

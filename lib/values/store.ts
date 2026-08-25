@@ -146,6 +146,11 @@ export async function computeLeagueValues(
       position_rank: row.positionRank,
       trend_30d: row.trend30d,
       tier: row.tier,
+      // The quantity the value was derived from, kept rather than discarded:
+      // §7's needs vector and its waiver ranking are folds over projections,
+      // not over prices, and re-deriving "rest of season" downstream would put
+      // two definitions of it in one app.
+      ros_points: row.restOfSeasonPoints,
       computed_at: computedAt,
     }));
 

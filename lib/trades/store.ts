@@ -1,7 +1,10 @@
 import "server-only";
 
+import { loadNeedsByTeam } from "@/lib/needs/store";
+import type { RosterSlot } from "@/lib/sources/yahoo";
 import type { Db } from "@/lib/supabase/db";
 import { isValueSource, type ValueSource } from "@/lib/values/engine";
+import type { StartingSlot } from "@/lib/values/vor";
 
 import { DEFAULT_TRADE_PARAMS, PARAM_LIMITS, type TradeParams, type VerdictBand } from "./analyze";
 import { parseSnapshot, type TradeSnapshot } from "./saved";
@@ -30,6 +33,8 @@ export type TradeBoardAsset = {
   slot: string | null;
   isStarter: boolean;
   projectedPoints: number | null;
+  /** §5's rest-of-season points — what §6's roster-context delta is measured in. */
+  rosPoints: number | null;
 };
 
 export type TradeBoardTeam = {
@@ -37,12 +42,16 @@ export type TradeBoardTeam = {
   name: string;
   managerName: string | null;
   isUsersTeam: boolean;
+  /** §7's `need` by position, so the delta panel can say what a deal fixes. */
+  needs: Record<string, number>;
 };
 
 export type TradeBoard = {
   teams: TradeBoardTeam[];
   assets: TradeBoardAsset[];
   params: TradeParams;
+  /** The league's own starting slots — the lineup delta is solved against them. */
+  rosterSlots: StartingSlot[];
   computedAt: string | null;
   /** §4: rostered players the crosswalk could not resolve are missing from the board. */
   unresolved: number;
@@ -117,38 +126,57 @@ export async function saveTradeParams(
  *
  * Rostered players only. Free agents are not tradeable, and the waiver wire is
  * Requirement 7's question — asked and answered on projections rather than
- * values (§7), which is a different screen and a later phase.
+ * values (§7), on its own screen.
+ *
+ * The league's starting slots and the §7 needs vector ride along because §6's
+ * roster-context delta is a *second* scorer over the same two packages: it runs
+ * in the browser next to `analyzeTrade`, so everything it reads has to arrive
+ * in the same trip.
  */
 export async function loadTradeBoard(
   db: Db,
   leagueId: string,
 ): Promise<TradeBoard> {
-  const [{ data: teams, error: teamError }, { data: rows, error }, params, { count: unresolved }] =
-    await Promise.all([
-      db
-        .from("teams")
-        .select("id, name, manager_name, is_users_team")
-        .eq("league_id", leagueId)
-        .order("is_users_team", { ascending: false })
-        .order("name"),
-      db
-        .from("league_player_values")
-        .select(
-          "player_id, full_name, position, nfl_team, injury_status, value, value_source, team_id, slot, is_starter, projected_pts_ppr, computed_at",
-        )
-        .eq("league_id", leagueId)
-        .not("team_id", "is", null)
-        .order("value", { ascending: false }),
-      loadTradeParams(db, leagueId),
-      db
-        .from("unmatched_players")
-        .select("id", { count: "exact", head: true })
-        .eq("league_id", leagueId)
-        .is("resolved_at", null),
-    ]);
+  const [
+    { data: league, error: leagueError },
+    { data: teams, error: teamError },
+    { data: rows, error },
+    params,
+    { count: unresolved },
+  ] = await Promise.all([
+    db.from("leagues").select("roster_slots").eq("id", leagueId).single(),
+    db
+      .from("teams")
+      .select("id, name, manager_name, is_users_team")
+      .eq("league_id", leagueId)
+      .order("is_users_team", { ascending: false })
+      .order("name"),
+    db
+      .from("league_player_values")
+      .select(
+        "player_id, full_name, position, nfl_team, injury_status, value, value_source, team_id, slot, is_starter, projected_pts_ppr, ros_points, computed_at",
+      )
+      .eq("league_id", leagueId)
+      .not("team_id", "is", null)
+      .order("value", { ascending: false }),
+    loadTradeParams(db, leagueId),
+    db
+      .from("unmatched_players")
+      .select("id", { count: "exact", head: true })
+      .eq("league_id", leagueId)
+      .is("resolved_at", null),
+  ]);
 
+  if (leagueError || !league) {
+    throw new Error(`League not found: ${leagueError?.message ?? leagueId}`);
+  }
   if (teamError) throw new Error(`Failed to read teams: ${teamError.message}`);
   if (error) throw new Error(`Failed to read values: ${error.message}`);
+
+  const needs = await loadNeedsByTeam(
+    db,
+    (teams ?? []).map((team) => team.id),
+  );
 
   let computedAt: string | null = null;
   const assets: TradeBoardAsset[] = [];
@@ -178,6 +206,7 @@ export async function loadTradeBoard(
       isStarter: row.is_starter ?? false,
       projectedPoints:
         row.projected_pts_ppr === null ? null : Number(row.projected_pts_ppr),
+      rosPoints: row.ros_points === null ? null : Number(row.ros_points),
     });
   }
 
@@ -187,9 +216,11 @@ export async function loadTradeBoard(
       name: team.name,
       managerName: team.manager_name,
       isUsersTeam: team.is_users_team,
+      needs: Object.fromEntries(needs.get(team.id) ?? []),
     })),
     assets,
     params,
+    rosterSlots: league.roster_slots as unknown as RosterSlot[],
     computedAt,
     unresolved: unresolved ?? 0,
   };

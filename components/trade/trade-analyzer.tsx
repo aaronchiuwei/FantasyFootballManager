@@ -8,14 +8,16 @@ import { Loader2, Save, Trash } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { lineupChange, type LineupPlayer } from "@/lib/needs/lineup";
 import {
   analyzeTrade,
   BAND_META,
   type TradeParams,
   type TradeSideKey,
 } from "@/lib/trades/analyze";
-import type { TradeBoard } from "@/lib/trades/store";
+import type { TradeBoard, TradeBoardAsset } from "@/lib/trades/store";
 
+import { RosterDeltaPanel } from "./roster-delta-panel";
 import { SavedTrades, type SavedTradeView } from "./saved-trades";
 import { TradeSide } from "./trade-side";
 import { TuningPanel } from "./tuning-panel";
@@ -29,6 +31,19 @@ import {
 type Picks = Record<TradeSideKey, number[]>;
 
 const NO_PICKS: Picks = { a: [], b: [] };
+
+/**
+ * The lineup math is denominated in rest-of-season projected points, not in
+ * market value, so the board's assets are re-read in that currency on the way
+ * into it (§6's roster-context delta).
+ */
+function asLineup(assets: TradeBoardAsset[]): LineupPlayer[] {
+  return assets.map((asset) => ({
+    playerId: asset.playerId,
+    position: asset.position,
+    points: asset.rosPoints,
+  }));
+}
 
 /**
  * The analyzer (§6, §10 — "the centerpiece").
@@ -78,14 +93,58 @@ export function TradeAnalyzer({
     [board.assets, teams],
   );
 
-  const analysis = useMemo(() => {
+  const packages = useMemo(() => {
     const side = (key: TradeSideKey) =>
       picks[key]
         .map((playerId) => byId.get(playerId))
         .filter((asset) => asset !== undefined);
 
-    return analyzeTrade(side("a"), side("b"), params);
-  }, [picks, byId, params]);
+    return { a: side("a"), b: side("b") };
+  }, [picks, byId]);
+
+  const analysis = useMemo(
+    () => analyzeTrade(packages.a, packages.b, params),
+    [packages, params],
+  );
+
+  /**
+   * §6's second scorer, over the same two packages: what each side's starting
+   * lineup projects before and after. It is not folded into the verdict —
+   * §1.5 makes the value verdict primary and this one context — and it is pure
+   * and local for the same reason the verdict is, so both re-run on the same
+   * keystroke (§2).
+   */
+  const context = useMemo(() => {
+    const forSide = (key: TradeSideKey) => {
+      const other: TradeSideKey = key === "a" ? "b" : "a";
+      const team = board.teams.find((entry) => entry.id === teams[key]);
+      const incoming = packages[other];
+
+      // One chip per position, not per player: two running backs arriving is
+      // still one thing to say about this team's running backs.
+      const positions = [
+        ...new Set(
+          incoming
+            .map((asset) => asset.position)
+            .filter((position) => position !== null),
+        ),
+      ];
+
+      return {
+        change: lineupChange(
+          asLineup(rosters[key]),
+          { out: asLineup(packages[key]), in: asLineup(incoming) },
+          board.rosterSlots,
+        ),
+        incoming: positions.map((position) => ({
+          position,
+          need: team?.needs[position] ?? 0,
+        })),
+      };
+    };
+
+    return { a: forSide("a"), b: forSide("b") };
+  }, [board.rosterSlots, board.teams, teams, rosters, packages]);
 
   const names = useMemo(() => {
     const name = (id: string) =>
@@ -210,6 +269,14 @@ export function TradeAnalyzer({
   return (
     <div className="space-y-4">
       <VerdictPanel analysis={analysis} leagueId={leagueId} names={names} />
+
+      {/* Shown as soon as both sides have a player, even where the value
+          verdict is refused: an unvalued player blocks a *price*, and the
+          lineup question is asked in projected points, which is a different
+          number that may well still exist. */}
+      {picks.a.length > 0 && picks.b.length > 0 ? (
+        <RosterDeltaPanel names={names} sides={context} />
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <TradeSide
