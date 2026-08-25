@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { AlertTriangle, ArrowLeft, Users } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Scale, Users } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { RefreshLeagueButton } from "@/components/leagues/refresh-league-button";
 import { ResolveIdentitiesButton } from "@/components/players/resolve-identities-button";
+import { ComputeValuesButton } from "@/components/values/compute-values-button";
 import { TeamCard, type TeamRow } from "@/components/leagues/team-card";
 import { createClient } from "@/lib/supabase/server";
 import type { RosterSlot } from "@/lib/sources/yahoo";
@@ -54,19 +55,29 @@ export default async function LeaguePage({
   // Identity coverage, at a glance: how much of the roster the crosswalk has
   // matched, and how much is waiting on a human (§4).
   const teamIds = (teams ?? []).map((team) => team.id);
-  const [{ count: matched }, { count: pending }] = await Promise.all([
-    teamIds.length === 0
-      ? Promise.resolve({ count: 0 })
-      : supabase
-          .from("rosters")
-          .select("player_id", { count: "exact", head: true })
-          .in("team_id", teamIds),
-    supabase
-      .from("unmatched_players")
-      .select("id", { count: "exact", head: true })
-      .eq("league_id", league.id)
-      .is("resolved_at", null),
-  ]);
+  const [{ count: matched }, { count: pending }, { count: valued }, { count: marketValued }] =
+    await Promise.all([
+      teamIds.length === 0
+        ? Promise.resolve({ count: 0 })
+        : supabase
+            .from("rosters")
+            .select("player_id", { count: "exact", head: true })
+            .in("team_id", teamIds),
+      supabase
+        .from("unmatched_players")
+        .select("id", { count: "exact", head: true })
+        .eq("league_id", league.id)
+        .is("resolved_at", null),
+      supabase
+        .from("player_values")
+        .select("player_id", { count: "exact", head: true })
+        .eq("league_id", league.id),
+      supabase
+        .from("player_values")
+        .select("player_id", { count: "exact", head: true })
+        .eq("league_id", league.id)
+        .eq("value_source", "market"),
+    ]);
 
   const starters = (league.roster_slots as unknown as RosterSlot[])
     .filter((slot) => slot.isStarting)
@@ -164,6 +175,31 @@ export default async function LeaguePage({
               </Link>
             </Button>
             <ResolveIdentitiesButton leagueId={league.id} />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <Scale className="mt-0.5 size-5 text-muted-foreground" aria-hidden />
+            <div className="space-y-0.5">
+              <p className="text-sm font-medium">Player values</p>
+              <p className="text-sm text-muted-foreground">
+                {valued === 0
+                  ? "No values yet — compute to price every roster and the waiver wire."
+                  : `${valued?.toLocaleString()} players priced, ${marketValued?.toLocaleString()} straight from the trade market.`}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button asChild size="sm" variant="ghost">
+              <Link href={`/leagues/${league.id}/values`}>
+                {valued ? "Browse" : "Details"}
+              </Link>
+            </Button>
+            <ComputeValuesButton leagueId={league.id} />
           </div>
         </CardContent>
       </Card>

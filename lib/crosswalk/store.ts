@@ -2,7 +2,10 @@ import "server-only";
 
 import { chunk, loadPlayers, syncPlayerMaster, type PlayerRow } from "@/lib/players/master";
 import { fetchDynastyProcessIds } from "@/lib/sources/dynastyprocess";
-import { fetchFantasyCalcValues } from "@/lib/sources/fantasycalc";
+import {
+  fetchFantasyCalcValues,
+  type FantasyCalcPlayer,
+} from "@/lib/sources/fantasycalc";
 import type { SleeperPlayer } from "@/lib/sources/sleeper";
 import {
   fetchFreeAgents,
@@ -140,8 +143,24 @@ export async function seedFantasyCalcCrosswalk(
   players: PlayerRow[],
   params: { numQbs: number; numTeams: number; ppr: number },
 ): Promise<number> {
+  return seedFantasyCalcCrosswalkFrom(
+    admin,
+    players,
+    await fetchFantasyCalcValues(params),
+  );
+}
+
+/**
+ * The same seeding pass over an already-fetched value list. The value engine
+ * needs those rows for its own work, and FantasyCalc is undocumented enough
+ * (§12) that pulling it twice in one run is a cost with no upside.
+ */
+export async function seedFantasyCalcCrosswalkFrom(
+  admin: Admin,
+  players: PlayerRow[],
+  values: FantasyCalcPlayer[],
+): Promise<number> {
   const bySleeperId = playerIdsBySleeperId(players);
-  const values = await fetchFantasyCalcValues(params);
   const rows: CrosswalkInsert[] = [];
 
   for (const value of values) {

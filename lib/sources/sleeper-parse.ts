@@ -119,3 +119,20 @@ export function parseStatMap(
 
   return lines;
 }
+
+/**
+ * The points a stat or projection line is worth *in this league*. Sleeper
+ * ships three scorings per line; picking by the league's real `ppr` modifier
+ * keeps §1.2's rule — scoring is read from Yahoo, never assumed — true all the
+ * way down to the value engine's inputs.
+ */
+export function scoredPoints(line: StatLine, ppr: number): number | null {
+  if (ppr >= 0.75) return line.ptsPpr;
+  const key = ppr <= 0.25 ? "pts_std" : "pts_half_ppr";
+  return line.stats[key] ?? line.ptsPpr;
+}
+
+/** Games played, as Sleeper reports it on a season line. */
+export function gamesPlayed(line: StatLine): number | null {
+  return line.stats.gp ?? null;
+}

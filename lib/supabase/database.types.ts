@@ -362,7 +362,36 @@ export type Database = {
         Relationships: [];
       };
     };
-    Views: Record<never, never>;
+    Views: {
+      /** Phase 3 read model: values joined to identity and league ownership. */
+      league_player_values: {
+        Row: {
+          league_id: string;
+          player_id: number;
+          value: number;
+          base_value: number | null;
+          value_source: string;
+          confidence: number | null;
+          overall_rank: number | null;
+          position_rank: number | null;
+          trend_30d: number | null;
+          tier: number | null;
+          computed_at: string;
+          full_name: string;
+          position: string | null;
+          nfl_team: string | null;
+          injury_status: string | null;
+          headshot_url: string | null;
+          projected_pts_ppr: number | null;
+          slot: string | null;
+          is_starter: boolean | null;
+          team_id: string | null;
+          team_name: string | null;
+          is_users_team: boolean | null;
+        };
+        Relationships: [];
+      };
+    };
     Functions: Record<never, never>;
     Enums: Record<never, never>;
     CompositeTypes: Record<never, never>;

@@ -3,10 +3,11 @@
 Yahoo fantasy football league companion — market-grounded player values, trade
 analysis, waiver recommendations. See [PLAN.md](PLAN.md) for the full design.
 
-**Status: Phase 2 (data + identity) complete.** On top of Phases 0–1 (Supabase
-auth + RLS, Yahoo OAuth2 with encrypted tokens, league + team import): Sleeper,
-FantasyCalc and DynastyProcess adapters, the player-identity crosswalk, and the
-admin screen that resolves whatever the crosswalk cannot.
+**Status: Phase 3 (value engine) complete.** On top of Phases 0–2 (Supabase
+auth + RLS, Yahoo OAuth2 with encrypted tokens, league + team import, the
+Sleeper/FantasyCalc/DynastyProcess adapters and the player-identity crosswalk):
+every rostered player and the whole projected free-agent pool now carries a
+value on one scale, with its source on the badge.
 
 ## Stack
 
@@ -68,7 +69,7 @@ faster local loop.
 app/
   (auth)/            login + signup, auth server actions
   (app)/             signed-in shell — re-checks the user, not just middleware
-    leagues/         Yahoo connection, league discovery, league + teams
+    leagues/[id]/    league + teams, identity resolution, the values board
   auth/callback/     code → session exchange (email links, future OAuth)
   api/yahoo/         OAuth authorize + callback
 components/
@@ -93,10 +94,17 @@ lib/crosswalk/
   similarity.ts      pg_trgm-compatible trigram scoring
   resolve.ts         the resolution ladder, pure and unit-tested
   store.ts           seeding, persistence, the league resolution run
+lib/values/
+  vor.ts             replacement level, VOR, rest-of-season points
+  isotonic.ts        PAVA regression + Spearman, both pure
+  engine.ts          Tier A/B, guardrails, provenance — the value engine
+  store.ts           the league valuation run, persisted to player_values
 lib/players/master.ts  Sleeper player master → Postgres, 24h TTL
+lib/players/stats.ts   season projections + actuals → Postgres
 lib/leagues/import.ts  Yahoo league → Postgres
 components/
   players/           identity resolution UI
+  values/            value badges, the values board, the compute button
 supabase/migrations/
 ```
 
@@ -120,7 +128,7 @@ Zod. Those parsers are pure and covered by fixture tests — `npm test`.
 
 Scoring is read from the league, never hardcoded: PPR comes from the receptions
 stat modifier, `num_qbs` from the starting roster slots (superflex counts as
-two), both feeding the FantasyCalc query params in Phase 3.
+two), and both are what the value engine sends to FantasyCalc.
 
 ## How player identity works
 
@@ -161,6 +169,70 @@ wrong match silently corrupts every trade verdict that touches the player,
 while a miss costs one click. Suffix mismatches (`kennethwalkeriii` vs
 `kennethwalker`) never reach that rung: candidates are indexed under both
 Sleeper's `search_full_name` and our own normalization of their full name.
+
+## How player values work
+
+Requirement 3 asks for a number on every player. FantasyCalc has 191 of them,
+priced off real completed redraft trades; the other ~450 relevant players are
+modelled and calibrated onto the same scale. Every row says which it is.
+
+| Tier | Source | Covers | `value_source` |
+|---|---|---|---|
+| A | FantasyCalc redraft value | the 191 it prices | `market` |
+| B | VOR, isotonically calibrated to FantasyCalc | the skill-player tail | `model` |
+| B | same, held under a hard ceiling | K and DEF | `model_capped` |
+| — | nominal, no market price and no projection | anyone else | `floor` |
+
+Tier B is value over replacement — `projected_points − baseline(position)`,
+where the baseline is the player at `teams × (starters + flex_share)`, read
+from the league's own roster slots. VOR is in fantasy points, so it is bridged
+onto market units by fitting **isotonic regression** on the ~190 players that
+have both. Isotonic rather than linear because FantasyCalc's curve is steeply
+convex — its top 100 hold 92.3% of all league value — and because monotonicity
+guarantees a better projection never earns a lower value.
+
+Three guardrails, and a live run of the engine against the 2026 preseason board
+(12-team, 1QB, full PPR — 191 market players, 633 valued in total):
+
+- **Clamp at the seam.** A modelled player is capped at the lowest market value
+  at their own position, so a waiver flyer can never leapfrog a priced starter.
+  Those caps are small — QB 23, TE 6, RB 3, WR 3 against a #1 of 10,775 —
+  because FantasyCalc's list bottoms out near zero. Most of the model tier
+  therefore lands on the market's floor, which is the honest answer: below the
+  seam, players really are worth about nothing in trade. The *ordering* still
+  has to mean something, so ranks break ties on VOR.
+- **Cap K/DEF.** §5 suggests the QB2/TE2 tier as the ceiling. On the real curve
+  that is 136, and the raw fit rates the best kicker at **3,195** — capping at
+  136 still ranked every kicker above all 365 modelled skill players. The
+  ceiling used instead is the market's own floor: the cheapest player
+  FantasyCalc will price at all. That is §13's seam check generalized to a
+  position the market declines to cover, and it matches §3's sharper statement
+  that in redraft their trade value "genuinely *is* near zero."
+- **Preseason degradation.** Until games are played the model runs on
+  projections alone; actual pace then blends in at `w = min(0.7, games/10)`,
+  and the result is scaled by `weeks_remaining / 17` because a redraft asset is
+  a claim on the rest of the season and nothing else.
+
+Two decisions worth stating plainly:
+
+- **Market values are never adjusted.** Not for injury, not for anything. §6
+  wants `injury_status` in the engine, and it is — on the model tier, where
+  nothing else prices it. FantasyCalc's numbers come from managers who already
+  knew about the injury, so discounting them again charges the same news twice
+  and costs the one property that makes a verdict arguable with a leaguemate:
+  that the number is quotable. Injury *status* rides along on every row instead.
+- **Nothing is ever worth zero.** `player_values` has a `check (value > 0)` on
+  it, because a zero is indistinguishable from a missing value by the time it
+  reaches trade math.
+
+**Where it falls short of §13.** The fit's rank correlation against FantasyCalc
+on the overlap is **0.928**, under the 0.98 target. Within a position it is
+much closer — QB 0.971, RB 0.974, WR 0.950, TE 0.865 — so the gap is mostly
+cross-position: a single curve has to span a market that prices QBs far below
+their VOR in a 1QB league. It matters less than the number suggests, because
+the seam clamps pin the whole model tier to the market's floor regardless, and
+§5's own arithmetic says every trade worth proposing is 100% market-valued.
+Per-position fits are the obvious next move if that ever stops being true.
 
 ## Conventions
 

@@ -21,6 +21,7 @@ export type PlayerRow = {
   position: string | null;
   nfl_team: string | null;
   birth_date: string | null;
+  injury_status: string | null;
 };
 
 export function chunk<T>(items: T[], size: number): T[][] {
@@ -36,7 +37,9 @@ export async function loadPlayers(admin: Admin): Promise<PlayerRow[]> {
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await admin
       .from("players")
-      .select("id, sleeper_id, full_name, search_name, position, nfl_team, birth_date")
+      .select(
+        "id, sleeper_id, full_name, search_name, position, nfl_team, birth_date, injury_status",
+      )
       .order("id")
       .range(from, from + PAGE_SIZE - 1);
 

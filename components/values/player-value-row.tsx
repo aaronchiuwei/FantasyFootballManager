@@ -1,0 +1,96 @@
+import { Badge } from "@/components/ui/badge";
+import { PositionBadge } from "@/components/values/position-badge";
+import { ValueBadge } from "@/components/values/value-badge";
+import type { Database } from "@/lib/supabase/database.types";
+import { cn } from "@/lib/utils";
+
+export type ValueRowData =
+  Database["public"]["Views"]["league_player_values"]["Row"];
+
+/** Sleeper's own spellings, shortened to something that fits next to a name. */
+const INJURY_LABELS: Record<string, string> = {
+  QUESTIONABLE: "Q",
+  DOUBTFUL: "D",
+  OUT: "OUT",
+  IR: "IR",
+  PUP: "PUP",
+  SUS: "SUS",
+  NA: "NA",
+  COV: "COV",
+};
+
+function injuryLabel(status: string | null) {
+  if (!status) return null;
+  const key = status.trim().toUpperCase().replace(/[\s.]/g, "");
+  return INJURY_LABELS[key] ?? status;
+}
+
+function trend(value: number | null) {
+  if (value === null || value === 0) return null;
+  const up = value > 0;
+  return (
+    <span className={cn("font-mono text-xs", up ? "text-success" : "text-destructive")}>
+      {up ? "▲" : "▼"}
+      {Math.abs(Math.round(value)).toLocaleString()}
+    </span>
+  );
+}
+
+export function PlayerValueRow({ row }: { row: ValueRowData }) {
+  const injury = injuryLabel(row.injury_status);
+
+  return (
+    <tr className="border-b last:border-0">
+      <td className="py-2 pr-3 text-right font-mono text-xs text-muted-foreground">
+        {row.overall_rank ?? "—"}
+      </td>
+
+      <td className="py-2 pr-3">
+        <PositionBadge position={row.position} />
+      </td>
+
+      <td className="py-2 pr-3">
+        <div className="flex items-center gap-2">
+          <span className="truncate font-medium">{row.full_name}</span>
+          {injury ? (
+            <Badge variant="destructive" className="shrink-0">
+              {injury}
+            </Badge>
+          ) : null}
+        </div>
+        <p className="truncate text-xs text-muted-foreground">
+          {row.nfl_team ?? "FA"}
+          {row.position_rank ? ` · ${row.position}${row.position_rank}` : ""}
+        </p>
+      </td>
+
+      <td className="hidden py-2 pr-3 sm:table-cell">
+        <p className="truncate text-sm">
+          {row.team_name ?? (
+            <span className="text-muted-foreground">Free agent</span>
+          )}
+        </p>
+        {row.slot ? (
+          <p className="truncate text-xs text-muted-foreground">{row.slot}</p>
+        ) : null}
+      </td>
+
+      <td className="hidden py-2 pr-3 text-right font-mono text-sm text-muted-foreground md:table-cell">
+        {row.projected_pts_ppr === null
+          ? "—"
+          : Number(row.projected_pts_ppr).toFixed(1)}
+      </td>
+
+      <td className="py-2 pr-3 text-right">
+        <span className="font-mono text-sm font-medium tabular-nums">
+          {row.value.toLocaleString()}
+        </span>
+        <div className="leading-none">{trend(row.trend_30d)}</div>
+      </td>
+
+      <td className="py-2 text-right">
+        <ValueBadge source={row.value_source} />
+      </td>
+    </tr>
+  );
+}

@@ -9,6 +9,7 @@ import {
   type StatLine,
 } from "./sleeper-parse";
 
+export { gamesPlayed, scoredPoints } from "./sleeper-parse";
 export type { SleeperPlayer, SleeperState, StatLine } from "./sleeper-parse";
 
 const API_BASE = "https://api.sleeper.app/v1";
