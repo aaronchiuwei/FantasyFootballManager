@@ -1,36 +1,84 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Fantasy Football Manager
 
-## Getting Started
+Yahoo fantasy football league companion — market-grounded player values, trade
+analysis, waiver recommendations. See [PLAN.md](PLAN.md) for the full design.
 
-First, run the development server:
+**Status: Phase 0 (Foundation) complete.** Next.js 15 + Tailwind v4 + shadcn/ui,
+Supabase auth with session refresh in middleware, an RLS baseline, and the
+design tokens the later phases spend.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Stack
+
+| Layer | Choice |
+|---|---|
+| App | Next.js 15 App Router, React 19, TypeScript |
+| Styling | Tailwind v4 + shadcn/ui (`radix-nova`), tokens in `app/globals.css` |
+| Auth + data | Supabase (Postgres, Auth, RLS) via `@supabase/ssr` |
+
+## Setup
+
+1. **Create a Supabase project** at <https://supabase.com/dashboard>.
+
+2. **Configure env.** Copy the template and fill in Project Settings → API:
+
+   ```bash
+   cp .env.example .env.local
+   ```
+
+3. **Apply the schema.** Either paste
+   `supabase/migrations/20260825000000_auth_baseline.sql` into the Supabase SQL
+   editor, or use the CLI:
+
+   ```bash
+   npx supabase link --project-ref <project-ref> && npx supabase db push
+   ```
+
+4. **Set the auth redirect URLs** in Supabase → Authentication → URL
+   Configuration: site URL `http://localhost:3000`, redirect
+   `http://localhost:3000/auth/callback` (plus the deployed equivalents).
+
+5. **Run it.**
+
+   ```bash
+   npm run dev
+   ```
+
+Email confirmation is on by default in Supabase; sign-up then reports "check
+your email". Turn it off under Authentication → Sign In / Providers for a
+faster local loop.
+
+## Layout
+
+```
+app/
+  (auth)/          login + signup, auth server actions
+  (app)/           signed-in shell — re-checks the user, not just middleware
+  auth/callback/   code → session exchange (email links, future OAuth)
+components/
+  ui/              vendored shadcn components (ours to edit)
+lib/supabase/
+  client.ts        browser, anon key
+  server.ts        RSC / route handlers / server actions, cookie session, RLS
+  admin.ts         service role, `server-only`, bypasses RLS
+  middleware.ts    session refresh + route gate
+supabase/migrations/
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Conventions
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **`getUser()`, never `getSession()`** on the server. It revalidates the token
+  with Supabase instead of trusting a cookie.
+- **Middleware is a redirect, not an authorization boundary.** Protected
+  layouts re-check the user server-side.
+- **Secrets stay server-side.** The browser gets the anon key and nothing else —
+  no service-role key, and (Phase 1) no Yahoo token, ever.
+- **Colors come from tokens**, not from component files. Position, provenance,
+  and trade-verdict colors are all declared in `app/globals.css`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Scripts
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm run dev     # dev server (turbopack)
+npm run build   # production build
+npm run lint    # eslint
+```
