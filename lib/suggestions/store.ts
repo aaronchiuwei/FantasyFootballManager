@@ -144,7 +144,7 @@ export async function computeTradeSuggestions(
       pairs: 0,
       stats: empty,
       elapsedMs: 0,
-      warnings: ["Fewer than two teams to trade between — run a sync that reaches Yahoo first."],
+      warnings: ["Fewer than two teams to trade between. Run a sync that reaches Yahoo first."],
     };
   }
 
@@ -292,7 +292,7 @@ export async function computeCycleSuggestions(
       stats: { ...stats, blocked: "too-few-teams" },
       elapsedMs: 0,
       warnings: [
-        "Fewer than three teams, so there is no cycle to look for — run a sync that reaches Yahoo first.",
+        "Fewer than three teams, so there is no cycle to look for. Run a sync that reaches Yahoo first.",
       ],
     };
   }
@@ -367,7 +367,7 @@ export async function computeCycleSuggestions(
   // search instead of a value).
   if (stats.dropped > 0) {
     warnings.push(
-      `The three-team beam looked at ${stats.beam.toLocaleString()} openings and set aside ${stats.dropped.toLocaleString()} — a beam search is not exhaustive and can miss a cycle that exists.`,
+      `The three-team beam looked at ${stats.beam.toLocaleString()} openings and set aside ${stats.dropped.toLocaleString()}. A beam search is not exhaustive and can miss a cycle that exists.`,
     );
   }
 

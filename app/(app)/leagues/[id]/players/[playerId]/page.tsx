@@ -44,14 +44,19 @@ function Stat({
 }) {
   return (
     <div className="space-y-0.5">
-      <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+      <dt className="stencil text-chalk-dim">
         {label}
       </dt>
-      <dd className="flex items-center gap-2 font-mono text-lg">
+      <dd
+        data-numeric
+        className="flex items-center gap-2 font-plate text-xl font-bold tabular-nums text-foreground"
+      >
         {value}
         {children}
       </dd>
-      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+      {hint ? (
+        <p className="stencil text-chalk-dim/80">{hint}</p>
+      ) : null}
     </div>
   );
 }
@@ -77,7 +82,7 @@ function seasonHint(lines: SeasonLines, coverage: SeasonCoverage | undefined) {
   const pulled = freshness(coverage?.fetchedAt ?? null);
 
   if (lines.hasActuals) return `Played · ${weeks} week${weeks === 1 ? "" : "s"} of results · ${pulled}`;
-  if (lines.hasProjections) return `Projected — no games played yet · ${pulled}`;
+  if (lines.hasProjections) return `Projected. No games played yet · ${pulled}`;
   return "Nothing pulled for this season yet";
 }
 
@@ -150,7 +155,7 @@ export default async function PlayerPage({
 
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight">
+            <h1 className="font-plate text-3xl leading-tight font-bold tracking-[-0.01em] text-foreground">
               {player.full_name}
             </h1>
             <PositionBadge position={player.position} />
@@ -182,17 +187,17 @@ export default async function PlayerPage({
       <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Stat
           label="Value"
-          value={value ? value.value.toLocaleString() : "—"}
+          value={value ? value.value.toLocaleString() : "--"}
           hint={value ? undefined : "not priced in this league"}
         >
           {value ? <ValueBadge source={value.value_source} /> : null}
         </Stat>
         <Stat
           label="Rank"
-          value={value?.overall_rank ? `#${value.overall_rank}` : "—"}
+          value={value?.overall_rank ? `#${value.overall_rank}` : "--"}
           hint={
             value?.position_rank
-              ? `${player.position ?? "—"}${value.position_rank}`
+              ? `${player.position ?? "--"}${value.position_rank}`
               : undefined
           }
         />
@@ -200,7 +205,7 @@ export default async function PlayerPage({
           label={`${league.season} projected`}
           value={
             current.total.projected === null
-              ? "—"
+              ? "--"
               : current.total.projected.toFixed(1)
           }
           hint="full season, this league's scoring"
@@ -208,7 +213,7 @@ export default async function PlayerPage({
         <Stat
           label={`${priorSeason} actual`}
           value={
-            prior.total.actual === null ? "—" : prior.total.actual.toFixed(1)
+            prior.total.actual === null ? "--" : prior.total.actual.toFixed(1)
           }
           hint={
             prior.total.gamesPlayed
@@ -247,7 +252,7 @@ export default async function PlayerPage({
 
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-medium text-muted-foreground">
+          <h2 className="stencil text-chalk-dim">
             Week by week
           </h2>
 
@@ -257,7 +262,7 @@ export default async function PlayerPage({
                 key={season}
                 href={logHref(season)}
                 className={cn(
-                  "inline-flex h-7 items-center rounded-4xl border px-3 text-xs font-medium transition-colors motion-reduce:transition-none",
+                  "chip",
                   season === shown.season
                     ? "border-primary bg-primary text-primary-foreground"
                     : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -274,7 +279,7 @@ export default async function PlayerPage({
             <CardContent className="py-8 text-center text-sm text-muted-foreground">
               No weekly lines stored for {shown.season}. A sync pulls the
               projection grid for this league&apos;s own week window, and the
-              prior season&apos;s game log once — that one never changes, so it
+              prior season&apos;s game log once. That one never changes, so it
               is never pulled twice.
             </CardContent>
           </Card>
@@ -284,7 +289,7 @@ export default async function PlayerPage({
             <p className="text-xs text-muted-foreground">
               {shown.hasActuals
                 ? "Weeks that have been played show what happened; the box score follows the actual line."
-                : `Every week here is a projection — the ${shown.season} season has not started. The box score follows the projected line.`}
+                : `Every week here is a projection. The ${shown.season} season has not started. The box score follows the projected line.`}
             </p>
           </>
         )}

@@ -128,7 +128,7 @@ export function PackageStack({
         ))}
 
         <div
-          className="relative z-10 touch-pan-y transition-transform duration-[var(--motion-fast)] motion-reduce:transition-none"
+          className="relative z-10 touch-pan-y transition-transform duration-(--motion-fast) ease-(--ease-out) motion-reduce:transition-none"
           style={{ transform: `translateX(${drag * 0.35}px)` }}
         >
           <SuggestionCard
@@ -139,7 +139,7 @@ export function PackageStack({
             suggestion={packages[clamped]}
             leagueId={leagueId}
             names={names}
-            className="animate-in fade-in duration-[var(--motion-base)] motion-reduce:animate-none"
+            className="animate-in fade-in duration-(--motion-base) ease-(--ease-out) motion-reduce:animate-none"
           />
         </div>
       </div>
@@ -165,10 +165,10 @@ export function PackageStack({
                 <span
                   key={`${entry.a.teamId}-${entry.b.teamId}-${position}`}
                   className={cn(
-                    "h-1.5 rounded-4xl transition-all duration-[var(--motion-fast)] motion-reduce:transition-none",
+                    "h-1.5 rounded-xs transition-[width,background-color] duration-(--motion-fast) ease-(--ease-out) motion-reduce:transition-none",
                     position === clamped
-                      ? "w-5 bg-primary"
-                      : "w-1.5 bg-muted-foreground/40",
+                      ? "w-5 bg-grease"
+                      : "w-1.5 bg-chalk-dim/45",
                   )}
                 />
               ))}

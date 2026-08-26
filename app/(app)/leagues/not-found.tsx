@@ -31,7 +31,7 @@ export default function LeagueNotFound() {
       <CardHeader>
         <CardTitle>Not found in your leagues</CardTitle>
         <CardDescription>
-          Whatever this link points at is not on your account — a league that
+          Whatever this link points at is not on your account. It could be a league that
           was removed, a player who is not priced here, or somebody else&rsquo;s
           URL.
         </CardDescription>

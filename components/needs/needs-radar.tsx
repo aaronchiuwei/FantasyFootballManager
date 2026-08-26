@@ -13,15 +13,15 @@ import {
  * points are not the same claim, but "one standard deviation above this
  * league" and "one standard deviation above this league" are. The ring through
  * the middle is the league average, so a vertex inside it is a need and a
- * vertex outside it is depth — which is exactly the pair of numbers the card
+ * vertex outside it is depth, which is exactly the pair of numbers the card
  * lists underneath.
  *
  * Plain SVG, no chart library, no client component: this is a fixed number of
- * points computed from data the page already has, and §10's performance
+ * points computed from data the page already has, and the performance
  * guardrail is to keep heavy visual dependencies off the data-dense pages.
  */
 
-/** Position colors are tokens, never literals — one of the app's conventions. */
+/** Position colours are tokens, never literals, one of the app's conventions. */
 const AXIS_COLOR: Record<NeedPosition, string> = {
   QB: "var(--pos-qb)",
   RB: "var(--pos-rb)",
@@ -82,7 +82,7 @@ export function NeedsRadar({
           key={ring}
           points={polygon(NEED_POSITIONS.map(() => ring))}
           fill="none"
-          stroke="var(--border)"
+          stroke="color-mix(in oklch, var(--channel-lip) 40%, transparent)"
           strokeWidth={1}
         />
       ))}
@@ -92,10 +92,25 @@ export function NeedsRadar({
       <polygon
         points={polygon(NEED_POSITIONS.map(() => AVERAGE_RING))}
         fill="none"
-        stroke="var(--muted-foreground)"
+        stroke="var(--chalk-dim)"
         strokeWidth={1}
         strokeDasharray="3 3"
       />
+
+      {/* The reference the whole shape is read against, named on the board
+          rather than left for the caption to explain. */}
+      <text
+        x={CENTER}
+        y={CENTER - RADIUS * AVERAGE_RING - 4}
+        textAnchor="middle"
+        fill="var(--chalk-dim)"
+        fontFamily="var(--font-plate)"
+        fontSize={7}
+        fontWeight={600}
+        letterSpacing="0.14em"
+      >
+        LEAGUE AVG
+      </text>
 
       {NEED_POSITIONS.map((position, index) => {
         const [x, y] = point(index, 1);
@@ -106,7 +121,7 @@ export function NeedsRadar({
             y1={CENTER}
             x2={x}
             y2={y}
-            stroke="var(--border)"
+            stroke="color-mix(in oklch, var(--channel-lip) 34%, transparent)"
             strokeWidth={1}
           />
         );
@@ -114,9 +129,9 @@ export function NeedsRadar({
 
       <polygon
         points={polygon(radii)}
-        fill="var(--primary)"
-        fillOpacity={0.18}
-        stroke="var(--primary)"
+        fill="var(--grease)"
+        fillOpacity={0.2}
+        stroke="var(--grease)"
         strokeWidth={1.5}
         strokeLinejoin="round"
       />
@@ -145,8 +160,10 @@ export function NeedsRadar({
             textAnchor="middle"
             dominantBaseline="middle"
             fill={AXIS_COLOR[position]}
-            fontSize={11}
-            fontWeight={600}
+            fontFamily="var(--font-plate)"
+            fontSize={10}
+            fontWeight={700}
+            letterSpacing="0.1em"
           >
             {position}
           </text>

@@ -50,7 +50,7 @@ export default function AppError({
       <CardHeader>
         <CardTitle>Something went wrong on this page</CardTitle>
         <CardDescription>
-          The rest of the app is fine — this screen failed to load. It is
+          The rest of the app is fine. This screen failed to load. It is
           usually a dropped connection rather than anything you did.
         </CardDescription>
       </CardHeader>

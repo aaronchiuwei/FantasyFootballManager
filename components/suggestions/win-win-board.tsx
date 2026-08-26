@@ -21,10 +21,8 @@ function Filter({
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex h-7 max-w-[12rem] items-center truncate rounded-4xl border px-3 text-xs font-medium transition-colors motion-reduce:transition-none",
-        active
-          ? "border-primary bg-primary text-primary-foreground"
-          : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+        "chip max-w-[12rem] truncate",
+        active ? "chip-on" : "chip-off",
       )}
     >
       {children}

@@ -65,12 +65,12 @@ export default async function OverviewPage({
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <h1 className="font-plate text-3xl leading-tight font-bold tracking-[-0.01em] text-foreground">
             League overview
           </h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
             Every roster measured against the other {Math.max(0, teams.length - 1)}{" "}
-            at each position. The shape is a standard score, not a point total —
+            at each position. The shape is a standard score, not a point total.
             a vertex inside the dashed ring is a position this league is better
             at than they are. Ranked by projected starters, {freshness(needs.computedAt)}.
           </p>

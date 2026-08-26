@@ -57,10 +57,8 @@ function FilterLink({
     <Link
       {...props}
       className={cn(
-        "inline-flex h-7 items-center rounded-4xl border px-3 text-xs font-medium transition-colors motion-reduce:transition-none",
-        active
-          ? "border-primary bg-primary text-primary-foreground"
-          : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+        "chip",
+        active ? "chip-on" : "chip-off",
       )}
     >
       {children}
@@ -79,11 +77,15 @@ function Stat({
 }) {
   return (
     <div className="space-y-0.5">
-      <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+      <dt className="stencil text-chalk-dim">
         {label}
       </dt>
-      <dd className="font-mono text-lg">{value}</dd>
-      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+      <dd data-numeric className="font-plate text-xl font-bold tabular-nums text-foreground">
+        {value}
+      </dd>
+      {hint ? (
+        <p className="stencil text-chalk-dim/80">{hint}</p>
+      ) : null}
     </div>
   );
 }
@@ -200,11 +202,11 @@ export default async function ValuesPage({
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Player values</h1>
+          <h1 className="font-plate text-3xl leading-tight font-bold tracking-[-0.01em] text-foreground">Player values</h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
             FantasyCalc prices the top ~192 skill players off real completed
             redraft trades. Everyone below that line is valued from projections
-            by value over replacement, calibrated onto the same scale — and
+            by value over replacement, calibrated onto the same scale, and
             labelled, so you always know which number you are arguing with.
             Open any player for their season and week-by-week stats.
           </p>
@@ -253,7 +255,7 @@ export default async function ValuesPage({
           <CardContent className="space-y-3 py-8 text-center">
             <p className="text-sm text-muted-foreground">
               No values yet for the {league.season} season. One sync pulls the
-              market, resolves identity and prices everyone — values are keyed
+              market, resolves identity and prices everyone. Values are keyed
               to matched players, so the crosswalk runs first either way.
             </p>
             <div className="flex justify-center gap-2">
@@ -368,7 +370,7 @@ export default async function ValuesPage({
             <div className="space-y-2 py-8 text-center text-sm text-muted-foreground">
               {typed && !pattern ? (
                 <p>
-                  Type at least {MIN_QUERY_LENGTH} letters — a shorter search
+                  Type at least {MIN_QUERY_LENGTH} letters. A shorter search
                   matches most of the board, so it is not run.
                 </p>
               ) : pattern ? (
@@ -380,7 +382,7 @@ export default async function ValuesPage({
                   </p>
                   <p className="text-xs">
                     The engine prices the market&rsquo;s board, every rostered
-                    player and Yahoo&rsquo;s available list — a player outside
+                    player and Yahoo&rsquo;s available list. A player outside
                     all three has no row here. If they are on a roster, they may
                     be waiting on the{" "}
                     <Link
@@ -400,18 +402,18 @@ export default async function ValuesPage({
             <div className="overflow-x-auto">
               <table className="w-full min-w-[36rem] text-sm">
                 <thead>
-                  <tr className="border-b text-xs uppercase tracking-wide text-muted-foreground">
-                    <th className="w-10 py-2 pr-3 text-right font-medium">#</th>
-                    <th className="w-12 py-2 pr-3 text-left font-medium">Pos</th>
-                    <th className="py-2 pr-3 text-left font-medium">Player</th>
-                    <th className="hidden py-2 pr-3 text-left font-medium sm:table-cell">
+                  <tr className="thead-rail stencil text-chalk-dim">
+                    <th className="w-10 py-2 pr-3 text-right font-semibold">#</th>
+                    <th className="w-12 py-2 pr-3 text-left font-semibold">Pos</th>
+                    <th className="py-2 pr-3 text-left font-semibold">Player</th>
+                    <th className="hidden py-2 pr-3 text-left font-semibold sm:table-cell">
                       Owner
                     </th>
-                    <th className="hidden py-2 pr-3 text-right font-medium md:table-cell">
+                    <th className="hidden py-2 pr-3 text-right font-semibold md:table-cell">
                       Proj
                     </th>
-                    <th className="py-2 pr-3 text-right font-medium">Value</th>
-                    <th className="py-2 text-right font-medium">Source</th>
+                    <th className="py-2 pr-3 text-right font-semibold">Value</th>
+                    <th className="py-2 text-right font-semibold">Source</th>
                   </tr>
                 </thead>
                 <tbody>

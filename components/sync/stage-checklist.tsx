@@ -28,7 +28,7 @@ function StageIcon({ status }: { status: StageStatus }) {
     case "failed":
       return <X className={cn(base, "text-destructive")} aria-hidden />;
     default:
-      return <Circle className={cn(base, "text-border")} aria-hidden />;
+      return <Circle className={cn(base, "text-chalk-dim/50")} aria-hidden />;
   }
 }
 
@@ -49,7 +49,7 @@ export function StageChecklist({ stages }: { stages: StageState[] }) {
   const byId = new Map(stages.map((stage) => [stage.id, stage]));
 
   return (
-    <ol className="space-y-2">
+    <ol className="flex flex-col gap-2.5">
       {STAGES.map((meta) => {
         const stage = byId.get(meta.id);
         const status = stage?.status ?? "pending";
@@ -65,7 +65,7 @@ export function StageChecklist({ stages }: { stages: StageState[] }) {
               <div className="flex items-baseline justify-between gap-3">
                 <span
                   className={cn(
-                    "font-medium",
+                    "font-plate text-sm font-semibold",
                     status === "pending" && "text-muted-foreground",
                     status === "failed" && "text-destructive",
                   )}
@@ -73,7 +73,10 @@ export function StageChecklist({ stages }: { stages: StageState[] }) {
                   {meta.label}
                 </span>
                 {elapsed ? (
-                  <span className="font-mono text-xs text-muted-foreground">
+                  <span
+                    data-numeric
+                    className="stencil tabular-nums text-chalk-dim"
+                  >
                     {elapsed}
                   </span>
                 ) : null}

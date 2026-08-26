@@ -52,7 +52,7 @@ export default async function SuggestionsPage({
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <h1 className="font-plate text-3xl leading-tight font-bold tracking-[-0.01em] text-foreground">
             Trade suggestions
           </h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
@@ -110,7 +110,7 @@ export default async function SuggestionsPage({
       ) : (
         <>
           <section className="space-y-3">
-            <h2 className="text-sm font-medium text-muted-foreground">
+            <h2 className="stencil text-chalk-dim">
               Win-win trades
             </h2>
             <WinWinBoard
@@ -124,12 +124,12 @@ export default async function SuggestionsPage({
 
           <section className="space-y-3">
             <div className="space-y-1">
-              <h2 className="text-sm font-medium text-muted-foreground">
+              <h2 className="stencil text-chalk-dim">
                 Build around a player
               </h2>
               <p className="max-w-2xl text-sm text-muted-foreground">
                 Name someone on another roster and this prices them, then offers
-                a few different ways to meet that price — drawn from the
+                a few different ways to meet that price, drawn from the
                 positions this team is deep at, and keeping back the ones it is
                 thin at.
               </p>
@@ -141,13 +141,13 @@ export default async function SuggestionsPage({
 
           <section className="space-y-3">
             <div className="space-y-1">
-              <h2 className="text-sm font-medium text-muted-foreground">
+              <h2 className="stencil text-chalk-dim">
                 Three-team trades
               </h2>
               <p className="max-w-2xl text-sm text-muted-foreground">
                 A cycle: you give to one manager, they give to another, the
                 third gives back to you. Nobody trades with anybody directly,
-                which is the whole reason these exist — they are the deal to
+                which is the whole reason these exist: they are the deal to
                 make when the manager who has what you want does not want what
                 you have. Every leg is priced on its own, because a ring that
                 balances overall can still be robbing one of the three.

@@ -21,7 +21,7 @@ export type UnmatchedView = {
 };
 
 function describe(position: string | null, team: string | null) {
-  return [position ?? "—", team ?? "FA"].join(" · ");
+  return [position ?? "--", team ?? "FA"].join(" · ");
 }
 
 export function UnmatchedPlayerCard({
@@ -73,7 +73,7 @@ export function UnmatchedPlayerCard({
             {entry.suggestions.map((candidate) => (
               <li
                 key={candidate.playerId}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2"
+                className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xs bg-[color-mix(in_oklch,var(--board-deep)_42%,transparent)] shadow-[inset_0_1px_3px_color-mix(in_oklch,var(--board-deep)_60%,transparent)]"
               >
                 <div className="min-w-0">
                   <p className="truncate text-sm">{candidate.fullName}</p>

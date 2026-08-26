@@ -40,10 +40,8 @@ function Filter({
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex h-7 items-center rounded-4xl border px-3 text-xs font-medium transition-colors motion-reduce:transition-none",
-        active
-          ? "border-primary bg-primary text-primary-foreground"
-          : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+        "chip",
+        active ? "chip-on" : "chip-off",
       )}
     >
       {children}
@@ -109,7 +107,7 @@ export function WaiverBoard({
             <div className="min-w-0 space-y-1">
               <label
                 htmlFor="waiver-team"
-                className="text-xs uppercase tracking-wide text-muted-foreground"
+                className="stencil text-chalk-dim"
               >
                 Recommending for
               </label>
@@ -117,7 +115,7 @@ export function WaiverBoard({
                 id="waiver-team"
                 value={teamId}
                 onChange={(event) => setTeamId(event.target.value)}
-                className="h-8 w-full max-w-[16rem] rounded-md border bg-background px-2 text-sm"
+                className="h-8 w-full max-w-[16rem] min-w-0 rounded-xs bg-[color-mix(in_oklch,var(--board-deep)_45%,transparent)] px-2 font-plate text-sm text-foreground shadow-[inset_0_1px_3px_color-mix(in_oklch,var(--board-deep)_65%,transparent)] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               >
                 {board.teams.map((entry) => (
                   <option key={entry.id} value={entry.id}>
@@ -182,7 +180,7 @@ export function WaiverBoard({
 
             <p className="text-xs text-muted-foreground">
               {lambda === 0
-                ? "Off — the board is pure rest-of-season projection, which is the ranking §7 argues for on its own."
+                ? "Off. The board is pure rest-of-season projection, which is the ranking §7 argues for on its own."
                 : `A position one standard deviation thin is worth ${(1 + lambda).toFixed(2)}× its projection here; one that deep, ${(1 - lambda).toFixed(2)}×.`}
             </p>
           </div>
@@ -212,19 +210,19 @@ export function WaiverBoard({
         <div className="overflow-x-auto">
           <table className="w-full min-w-[36rem] text-sm">
             <thead>
-              <tr className="border-b text-xs uppercase tracking-wide text-muted-foreground">
-                <th className="w-10 py-2 pr-3 text-right font-medium">#</th>
-                <th className="w-12 py-2 pr-3 text-left font-medium">Pos</th>
-                <th className="py-2 pr-3 text-left font-medium">Player</th>
-                <th className="py-2 pr-3 text-right font-medium">ROS</th>
-                <th className="hidden py-2 pr-3 text-right font-medium sm:table-cell">
+              <tr className="thead-rail stencil text-chalk-dim">
+                <th className="w-10 py-2 pr-3 text-right font-semibold">#</th>
+                <th className="w-12 py-2 pr-3 text-left font-semibold">Pos</th>
+                <th className="py-2 pr-3 text-left font-semibold">Player</th>
+                <th className="py-2 pr-3 text-right font-semibold">ROS</th>
+                <th className="hidden py-2 pr-3 text-right font-semibold sm:table-cell">
                   Need
                 </th>
-                <th className="py-2 pr-3 text-right font-medium">Score</th>
-                <th className="hidden py-2 pr-3 text-right font-medium md:table-cell">
+                <th className="py-2 pr-3 text-right font-semibold">Score</th>
+                <th className="hidden py-2 pr-3 text-right font-semibold md:table-cell">
                   Value
                 </th>
-                <th className="py-2 text-right font-medium">Source</th>
+                <th className="py-2 text-right font-semibold">Source</th>
               </tr>
             </thead>
             <tbody>
@@ -289,7 +287,7 @@ function Row({
       </td>
 
       <td className="py-2 pr-3 text-right font-mono text-sm tabular-nums text-muted-foreground">
-        {candidate.rosPoints === null ? "—" : candidate.rosPoints.toFixed(1)}
+        {candidate.rosPoints === null ? "--" : candidate.rosPoints.toFixed(1)}
       </td>
 
       <td

@@ -216,7 +216,7 @@ export function formatStat(
   column: StatColumn,
 ): string {
   const value = stats?.[column.key];
-  if (typeof value !== "number") return "—";
+  if (typeof value !== "number") return "--";
   return value.toFixed(column.digits);
 }
 

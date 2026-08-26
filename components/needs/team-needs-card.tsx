@@ -57,7 +57,7 @@ export function TeamNeedsCard({
     <Card
       style={{ animationDelay: `${delay}ms` }}
       className={cn(
-        "animate-in fade-in slide-in-from-bottom-2 duration-[var(--motion-base)] motion-reduce:animate-none",
+        "animate-in fade-in slide-in-from-bottom-2 duration-(--motion-base) ease-(--ease-out) motion-reduce:animate-none",
         team.isUsersTeam && "border-primary/60 bg-primary/5",
       )}
     >
@@ -103,7 +103,7 @@ export function TeamNeedsCard({
 
         {team.needs.length === 0 ? (
           <p className="py-6 text-center text-xs text-muted-foreground">
-            No needs vector yet — a sync reads every roster.
+            No needs vector yet. A sync reads every roster.
           </p>
         ) : (
           <>
@@ -156,7 +156,7 @@ export function TeamNeedsCard({
             {confidence < 1 ? (
               <p className="text-[0.6875rem] text-muted-foreground">
                 {Math.round((1 - confidence) * 100)}% of one position has no
-                projection — this shape understates it.
+                projection, so this shape understates it.
               </p>
             ) : null}
           </>

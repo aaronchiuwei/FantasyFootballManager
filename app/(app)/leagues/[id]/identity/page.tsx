@@ -27,11 +27,15 @@ function Stat({
 }) {
   return (
     <div className="space-y-0.5">
-      <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+      <dt className="stencil text-chalk-dim">
         {label}
       </dt>
-      <dd className="font-mono text-lg">{value}</dd>
-      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+      <dd data-numeric className="font-plate text-xl font-bold tabular-nums text-foreground">
+        {value}
+      </dd>
+      {hint ? (
+        <p className="stencil text-chalk-dim/80">{hint}</p>
+      ) : null}
     </div>
   );
 }
@@ -77,7 +81,7 @@ export default async function IdentityPage({
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <h1 className="font-plate text-3xl leading-tight font-bold tracking-[-0.01em] text-foreground">
             Player identity
           </h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
@@ -94,7 +98,7 @@ export default async function IdentityPage({
       <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Stat
           label="Auto-resolved"
-          value={rate === null ? "—" : `${rate}%`}
+          value={rate === null ? "--" : `${rate}%`}
           hint={`target ${TARGET_RATE}%`}
         />
         <Stat
@@ -119,7 +123,7 @@ export default async function IdentityPage({
           <Info />
           <AlertTitle>Below the {TARGET_RATE}% target</AlertTitle>
           <AlertDescription>
-            Resolve the players below — every one of them would otherwise be
+            Resolve the players below. Every one of them would otherwise be
             missing from trade math, and a missing player is never valued at
             zero here.
           </AlertDescription>
@@ -154,7 +158,7 @@ export default async function IdentityPage({
         </Alert>
       ) : (
         <section className="space-y-3">
-          <h2 className="text-sm font-medium text-muted-foreground">
+          <h2 className="stencil text-chalk-dim">
             Unmatched ({status.unmatched.length})
           </h2>
 

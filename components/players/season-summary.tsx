@@ -34,12 +34,13 @@ function Bar({
   return (
     <div className="space-y-1">
       <div className="flex items-baseline justify-between gap-3">
-        <span className="text-xs uppercase tracking-wide text-muted-foreground">
+        <span className="stencil text-chalk-dim">
           {label}
         </span>
         <span
+          data-numeric
           className={cn(
-            "font-mono text-sm tabular-nums",
+            "font-plate text-sm font-semibold tabular-nums text-foreground",
             points === null && "text-muted-foreground",
           )}
         >
@@ -47,11 +48,17 @@ function Bar({
         </span>
       </div>
 
-      <div className="h-2 overflow-hidden rounded-4xl bg-muted">
+      {/* A measured slot, divided into ten, so the share is countable rather
+          than merely proportional. */}
+      <div className="relative h-2.5 overflow-hidden rounded-xs bg-[color-mix(in_oklch,var(--board-deep)_55%,transparent)] shadow-[inset_0_1px_2px_color-mix(in_oklch,var(--board-deep)_70%,transparent)]">
         <div
-          className={cn("h-full rounded-4xl transition-[width] duration-[var(--motion-slow)] motion-reduce:transition-none", tone)}
+          className={cn(
+            "h-full transition-[width] duration-(--motion-slow) ease-(--ease-out) motion-reduce:transition-none",
+            tone,
+          )}
           style={{ width: `${grown ? Math.round(share * 100) : 0}%` }}
         />
+        <span aria-hidden className="graticule absolute inset-0" />
       </div>
     </div>
   );

@@ -15,7 +15,7 @@ import {
   type SyncRun,
 } from "@/lib/sync/plan";
 
-import { ProgressRing } from "./progress-ring";
+import { ProgressGauge } from "./progress-gauge";
 import { StageChecklist } from "./stage-checklist";
 import { useLeagueSync } from "./use-league-sync";
 
@@ -36,7 +36,7 @@ function headline(run: SyncRun | null, stalled: boolean): string {
 
   if (run.status === "running") {
     const active = run.stages.find((stage) => stage.status === "running");
-    return active ? `Syncing — ${STAGE_LABELS[active.id]}` : "Starting the sync";
+    return active ? `Syncing: ${STAGE_LABELS[active.id]}` : "Starting the sync";
   }
 
   if (run.status === "failed") {
@@ -94,7 +94,7 @@ export function SyncPanel({
       <CardContent className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <ProgressRing progress={run ? progress : 0} tone={run ? tone : "muted"}>
+            <ProgressGauge progress={run ? progress : 0} tone={run ? tone : "muted"}>
               {live ? (
                 <span className="font-mono text-[10px] tabular-nums">
                   {Math.round(progress * 100)}
@@ -106,7 +106,7 @@ export function SyncPanel({
               ) : (
                 <RefreshCw className="size-4 text-muted-foreground" aria-hidden />
               )}
-            </ProgressRing>
+            </ProgressGauge>
 
             <div className="space-y-0.5">
               <p className="text-sm font-medium">One-button sync</p>

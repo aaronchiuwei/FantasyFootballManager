@@ -92,7 +92,7 @@ export async function computeLeagueValues(
 
   if (market.size === 0) {
     warnings.push(
-      "No market board for these settings — every value is modelled.",
+      "No market board for these settings, so every value is modelled.",
     );
   }
 

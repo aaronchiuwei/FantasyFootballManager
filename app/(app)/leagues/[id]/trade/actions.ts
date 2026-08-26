@@ -99,7 +99,7 @@ export async function saveTradeAction(
     if (!snapshot) {
       return {
         error:
-          "This trade has no verdict to save — both sides need players, and every player needs a resolved value.",
+          "This trade has no verdict to save. Both sides need players, and every player needs a resolved value.",
       };
     }
 

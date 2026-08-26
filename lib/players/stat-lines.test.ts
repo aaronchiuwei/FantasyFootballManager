@@ -166,8 +166,8 @@ describe("formatStat", () => {
   });
 
   it("shows an absent stat as absent, never as zero", () => {
-    expect(formatStat({}, passYd)).toBe("—");
-    expect(formatStat(null, passYd)).toBe("—");
+    expect(formatStat({}, passYd)).toBe("--");
+    expect(formatStat(null, passYd)).toBe("--");
   });
 });
 

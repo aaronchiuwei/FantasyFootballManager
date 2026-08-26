@@ -21,7 +21,7 @@ function percent(value: number): string {
 }
 
 function signed(value: number): string {
-  const sign = value > 0 ? "+" : value < 0 ? "−" : "±";
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "=";
   return `${sign}${points(Math.abs(value))}`;
 }
 
@@ -42,9 +42,9 @@ function Side({
   const better = side.lineup.delta > 0;
 
   return (
-    <div className="space-y-2 rounded-lg border p-3">
+    <div className="flex flex-col gap-2 p-3 rounded-xs bg-[color-mix(in_oklch,var(--board-deep)_42%,transparent)] shadow-[inset_0_1px_3px_color-mix(in_oklch,var(--board-deep)_60%,transparent)]">
       <div className="flex items-baseline justify-between gap-2">
-        <p className="truncate text-xs uppercase tracking-wide text-muted-foreground">
+        <p className="truncate stencil text-chalk-dim">
           {name}
         </p>
         <p className="shrink-0 text-[0.6875rem] text-muted-foreground">
@@ -156,7 +156,7 @@ export function SuggestionCard({
             that helps one side enormously and the other barely is not a
             win-win, it is a sale. */}
         <p className="text-sm">
-          Both starting lineups improve — the smaller gain is{" "}
+          Both starting lineups improve. The smaller gain is{" "}
           <span className="font-mono font-medium tabular-nums text-success">
             +{points(suggestion.minGain)}
           </span>{" "}
@@ -168,7 +168,7 @@ export function SuggestionCard({
             <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
             <span>
               {suggestion.marketShare >= 0.999
-                ? "Every player here is priced by the market — this package is as firm as the numbers get."
+                ? "Every player here is priced by the market. This package is as firm as the numbers get."
                 : `${percent(suggestion.marketShare)} of the value in this package is market-priced; the rest is modelled from projections.`}
             </span>
           </p>

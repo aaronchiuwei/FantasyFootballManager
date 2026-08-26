@@ -3,7 +3,7 @@
 import { AlertTriangle, ArrowRight } from "lucide-react";
 
 import { NeedChip } from "@/components/needs/need-chip";
-import { Card, CardContent } from "@/components/ui/card";
+import { Panel } from "@/components/board/panel";
 import type { LineupChange } from "@/lib/needs/lineup";
 import type { TradeSideKey } from "@/lib/trades/analyze";
 import { cn } from "@/lib/utils";
@@ -46,28 +46,28 @@ export function RosterDeltaPanel({
   const empty = sides.a.change.empty + sides.b.change.empty;
 
   return (
-    <Card className="gap-0 py-4">
-      <CardContent className="space-y-3 px-4">
-        <div className="flex items-baseline justify-between gap-3">
-          <p className="text-sm font-medium">Roster context</p>
-          <p className="text-xs text-muted-foreground">
-            projected starters, rest of season
-          </p>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2">
+    <Panel
+      label="Roster context"
+      note="Projected starters, rest of season. A different scale from the market values above, because it answers a different question."
+    >
+      <div className="flex flex-col gap-3">
+        <div className="grid gap-2 sm:grid-cols-2">
           {(["a", "b"] as const).map((side) => {
             const { change, incoming } = sides[side];
             const better = change.delta > 0.05;
             const worse = change.delta < -0.05;
 
             return (
-              <div key={side} className="space-y-1.5 rounded-lg border p-3">
-                <p className="truncate text-xs uppercase tracking-wide text-muted-foreground">
-                  {names[side]}
-                </p>
+              <div
+                key={side}
+                className="flex flex-col gap-1.5 rounded-xs bg-[color-mix(in_oklch,var(--board-deep)_42%,transparent)] p-3 shadow-[inset_0_1px_3px_color-mix(in_oklch,var(--board-deep)_60%,transparent)]"
+              >
+                <p className="stencil truncate text-chalk-dim">{names[side]}</p>
 
-                <p className="flex items-center gap-2 font-mono text-sm tabular-nums">
+                <p
+                  data-numeric
+                  className="flex items-center gap-2 font-plate text-sm tabular-nums"
+                >
                   <span className="text-muted-foreground">
                     {points(change.before)}
                   </span>
@@ -75,13 +75,13 @@ export function RosterDeltaPanel({
                   <span>{points(change.after)}</span>
                   <span
                     className={cn(
-                      "ml-auto font-medium",
+                      "ml-auto font-semibold",
                       better && "text-success",
                       worse && "text-destructive",
                       !better && !worse && "text-muted-foreground",
                     )}
                   >
-                    {change.delta > 0 ? "+" : change.delta < 0 ? "−" : "±"}
+                    {change.delta > 0 ? "+" : change.delta < 0 ? "-" : "="}
                     {points(Math.abs(change.delta))}
                   </span>
                 </p>
@@ -96,7 +96,7 @@ export function RosterDeltaPanel({
                         kind={need > 0 ? "need" : "surplus"}
                       />
                     ))}
-                    <span className="text-xs text-muted-foreground">
+                    <span className="stencil text-chalk-dim">
                       {incoming.some(({ need }) => need > 0)
                         ? "fills a position they are thin at"
                         : "positions they are already deep in"}
@@ -109,7 +109,7 @@ export function RosterDeltaPanel({
         </div>
 
         {unprojected > 0 || empty > 0 ? (
-          <p className="flex items-start gap-2 text-xs text-warning">
+          <p className="flex items-start gap-2 text-xs leading-relaxed text-warning">
             <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
             <span>
               {unprojected > 0
@@ -121,7 +121,7 @@ export function RosterDeltaPanel({
             </span>
           </p>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </Panel>
   );
 }

@@ -48,7 +48,7 @@ export async function buildPackagesAction(
     if (!result) {
       return {
         error:
-          "That player is not on a roster in this league any more — sync and try again.",
+          "That player is not on a roster in this league any more. Sync and try again.",
       };
     }
 

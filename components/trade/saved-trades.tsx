@@ -32,13 +32,13 @@ function describe(snapshot: TradeSnapshot): string {
   const band = BAND_META[snapshot.band as VerdictBand].label;
   const margin = `${Math.round(snapshot.pct * 1000) / 10}%`;
 
-  if (!snapshot.winner) return `${band} — ${margin} apart`;
+  if (!snapshot.winner) return `${band}, ${margin} apart`;
 
   const winner =
     snapshot[snapshot.winner].teamName ??
     (snapshot.winner === "a" ? "Side A" : "Side B");
 
-  return `${band} — ${winner} by ${Math.round(
+  return `${band}, ${winner} by ${Math.round(
     Math.abs(snapshot.delta),
   ).toLocaleString()} (${margin})`;
 }
@@ -52,7 +52,7 @@ function when(timestamp: string): string {
 
 function side(snapshot: TradeSnapshot, key: "a" | "b"): string {
   const assets = snapshot[key].assets;
-  return assets.length === 0 ? "—" : assets.map((asset) => asset.name).join(", ");
+  return assets.length === 0 ? "--" : assets.map((asset) => asset.name).join(", ");
 }
 
 /**
@@ -76,7 +76,7 @@ export function SavedTrades({
 }) {
   if (trades.length === 0) {
     return (
-      <p className="rounded-lg border border-dashed py-6 text-center text-sm text-muted-foreground">
+      <p className="py-6 text-center text-sm text-muted-foreground rounded-xs bg-[color-mix(in_oklch,var(--board-deep)_42%,transparent)] shadow-[inset_0_1px_3px_color-mix(in_oklch,var(--board-deep)_60%,transparent)] rounded-xs">
         Nothing saved yet. A saved trade keeps the values it was judged on, so
         you can see how an offer ages.
       </p>
@@ -92,13 +92,13 @@ export function SavedTrades({
         return (
           <li
             key={trade.id}
-            className="flex flex-wrap items-start justify-between gap-3 rounded-lg border px-3 py-2.5"
+            className="flex flex-wrap items-start justify-between gap-3 px-3 py-2.5 rounded-xs bg-[color-mix(in_oklch,var(--board-deep)_42%,transparent)] shadow-[inset_0_1px_3px_color-mix(in_oklch,var(--board-deep)_60%,transparent)]"
           >
             <div className="min-w-0 space-y-1">
               <div className="flex flex-wrap items-center gap-2">
                 <span
                   className={cn(
-                    "inline-flex h-5 items-center rounded-4xl border px-2 text-[0.6875rem] font-medium",
+                    "stencil inline-flex h-5 items-center rounded-xs px-1.5 text-[0.5625rem]",
                     CHIP[band],
                   )}
                 >

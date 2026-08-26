@@ -281,7 +281,7 @@ export function TradeAnalyzer({
 
       setNote("");
       toast.success(
-        verdict ? `Saved — ${BAND_META[verdict].label.toLowerCase()}.` : "Saved.",
+        verdict ? `Saved: ${BAND_META[verdict].label.toLowerCase()}.` : "Saved.",
       );
       router.refresh();
     });
@@ -347,7 +347,7 @@ export function TradeAnalyzer({
         <Input
           value={note}
           onChange={(event) => setNote(event.target.value)}
-          placeholder="Note — why you would or would not send this"
+          placeholder="Note: why you would or would not send this"
           maxLength={200}
           className="h-9 max-w-md flex-1"
         />
@@ -379,7 +379,7 @@ export function TradeAnalyzer({
       <Separator />
 
       <section className="space-y-3">
-        <h2 className="text-sm font-medium text-muted-foreground">
+        <h2 className="stencil text-chalk-dim">
           Saved trades ({saved.length})
         </h2>
         <SavedTrades

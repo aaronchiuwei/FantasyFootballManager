@@ -89,7 +89,7 @@ export default async function TradePage({
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <h1 className="font-plate text-3xl leading-tight font-bold tracking-[-0.01em] text-foreground">
             Trade analyzer
           </h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
@@ -112,7 +112,7 @@ export default async function TradePage({
           </AlertTitle>
           <AlertDescription>
             Identity is unresolved for them, so they have no value and cannot
-            appear in a trade — which is the point: a missing value must never
+            appear in a trade, which is the point: a missing value must never
             be summed as a zero.{" "}
             <Link
               href={`/leagues/${league.id}/identity`}
@@ -130,7 +130,7 @@ export default async function TradePage({
           <CardContent className="space-y-3 py-8 text-center">
             <p className="text-sm text-muted-foreground">
               Nothing to trade yet for the {league.season} season. A sync pulls
-              the rosters from Yahoo and prices every player on them — the
+              the rosters from Yahoo and prices every player on them. The
               analyzer runs entirely on those cached values.
             </p>
             <div className="flex justify-center">

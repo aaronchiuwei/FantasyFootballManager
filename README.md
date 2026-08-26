@@ -24,7 +24,7 @@ read out of Yahoo; a cycle beam that is bounded rather than exhaustive.
 | Layer | Choice |
 |---|---|
 | App | Next.js 15 App Router, React 19, TypeScript |
-| Styling | Tailwind v4 + shadcn/ui (`radix-nova`), tokens in `app/globals.css` |
+| Styling | Tailwind v4 + shadcn/ui, the War Room Board design system. Tokens in `app/globals.css`, primitives in `components/board/`, documented in [DESIGN.md](DESIGN.md) |
 | Auth + data | Supabase (Postgres, Auth, RLS) via `@supabase/ssr` |
 
 ## Setup

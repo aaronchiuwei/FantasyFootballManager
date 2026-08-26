@@ -21,10 +21,8 @@ function Filter({
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex h-7 max-w-[12rem] items-center truncate rounded-4xl border px-3 text-xs font-medium transition-colors motion-reduce:transition-none",
-        active
-          ? "border-primary bg-primary text-primary-foreground"
-          : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+        "chip max-w-[12rem] truncate",
+        active ? "chip-on" : "chip-off",
       )}
     >
       {children}
@@ -108,7 +106,7 @@ export function CycleBoard({
         <p className="py-8 text-center text-sm text-muted-foreground">
           {/* Two different claims, and they must not render the same way. */}
           {searched
-            ? "No three-team cycle for this team is fair for all three managers and better for all three lineups. That is the usual answer — a cycle has to solve three rosters at once, and most leagues do not contain one."
+            ? "No three-team cycle for this team is fair for all three managers and better for all three lineups. That is the usual answer. A cycle has to solve three rosters at once, and most leagues do not contain one."
             : "Nothing searched yet. A sync prices every roster and then looks for cycles."}
         </p>
       ) : (

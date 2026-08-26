@@ -81,7 +81,7 @@ export async function computeTeamNeeds(
       rows: 0,
       unprojected: 0,
       starters: emptyStarters(),
-      warnings: ["No teams to read — run a sync that reaches Yahoo first."],
+      warnings: ["No teams to read. Run a sync that reaches Yahoo first."],
     };
   }
 

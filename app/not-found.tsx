@@ -16,13 +16,13 @@ export const metadata: Metadata = { title: "Not found" };
  * The app's own 404, rather than Next's black-on-white default.
  *
  * It offers the dashboard and nothing more specific, because the thing that
- * was not found is by definition unknown here. A league that does not exist —
- * the case with an actual answer — has its own boundary next to the league
+ * was not found is by definition unknown here. A league that does not exist,
+ * the case with an actual answer, has its own boundary next to the league
  * routes.
  */
 export default function NotFound() {
   return (
-    <main className="flex min-h-svh flex-col items-center justify-center bg-muted/40 p-6">
+    <main className="flex min-h-svh flex-col items-center justify-center p-6">
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>Nothing here</CardTitle>

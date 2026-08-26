@@ -3,39 +3,32 @@
 import Link from "next/link";
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
-import { Loader2 } from "lucide-react";
+import { Loader2, TriangleAlertIcon, CircleCheckIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { RailLine } from "@/components/board/rail";
 import type { AuthState } from "@/app/(auth)/actions";
 
 type Mode = "sign-in" | "sign-up";
 
 const COPY = {
   "sign-in": {
-    title: "Welcome back",
-    description: "Sign in to your league workspace.",
+    title: "Sign in",
+    description: "Open your league board.",
     submit: "Sign in",
-    pending: "Signing in…",
+    pending: "Signing in",
     footer: "Need an account?",
     footerHref: "/signup",
     footerCta: "Create one",
     autoComplete: "current-password",
   },
   "sign-up": {
-    title: "Create your account",
+    title: "Create account",
     description: "One account, then link your Yahoo league.",
     submit: "Create account",
-    pending: "Creating account…",
+    pending: "Creating",
     footer: "Already have an account?",
     footerHref: "/login",
     footerCta: "Sign in",
@@ -47,10 +40,10 @@ function SubmitButton({ label, pending }: { label: string; pending: string }) {
   const status = useFormStatus();
 
   return (
-    <Button type="submit" className="w-full" disabled={status.pending}>
+    <Button type="submit" size="lg" className="w-full" disabled={status.pending}>
       {status.pending ? (
         <>
-          <Loader2 className="size-4 animate-spin" aria-hidden />
+          <Loader2 className="size-3.5 animate-spin" aria-hidden />
           {pending}
         </>
       ) : (
@@ -60,6 +53,12 @@ function SubmitButton({ label, pending }: { label: string; pending: string }) {
   );
 }
 
+/**
+ * Not a card. A panel mounted by the door: a stencilled head, a channel rule
+ * under it, and fields cut into the board. Messages are written in grease
+ * pencil beside their icon rather than boxed, which is how every other
+ * annotation in this app behaves.
+ */
 export function AuthForm({
   mode,
   action,
@@ -73,72 +72,78 @@ export function AuthForm({
   const [state, formAction] = useActionState<AuthState, FormData>(action, {});
 
   return (
-    <Card className="w-full max-w-sm">
-      <CardHeader>
-        <CardTitle>{copy.title}</CardTitle>
-        <CardDescription>{copy.description}</CardDescription>
-      </CardHeader>
+    <div className="animate-seat w-full">
+      <h1 className="stencil text-sm text-foreground">{copy.title}</h1>
+      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+        {copy.description}
+      </p>
 
-      <form action={formAction}>
-        <CardContent className="space-y-4">
-          {next ? <input type="hidden" name="next" value={next} /> : null}
+      <RailLine className="my-5" />
 
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="email"
-              placeholder="you@example.com"
-              required
-            />
-          </div>
+      <form action={formAction} className="flex flex-col gap-4">
+        {next ? <input type="hidden" name="next" value={next} /> : null}
 
-          <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              name="password"
-              type="password"
-              autoComplete={copy.autoComplete}
-              minLength={mode === "sign-up" ? 8 : undefined}
-              required
-            />
-          </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            placeholder="you@example.com"
+            required
+          />
+        </div>
 
-          {state.error ? (
-            <p
-              role="alert"
-              className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-            >
-              {state.error}
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="password">Password</Label>
+          <Input
+            id="password"
+            name="password"
+            type="password"
+            autoComplete={copy.autoComplete}
+            minLength={mode === "sign-up" ? 8 : undefined}
+            required
+          />
+          {mode === "sign-up" ? (
+            <p className="text-xs text-muted-foreground">
+              At least 8 characters.
             </p>
           ) : null}
+        </div>
 
-          {state.message ? (
-            <p
-              role="status"
-              className="rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm text-success"
-            >
-              {state.message}
-            </p>
-          ) : null}
-        </CardContent>
-
-        <CardFooter className="mt-6 flex-col gap-3">
-          <SubmitButton label={copy.submit} pending={copy.pending} />
-          <p className="text-sm text-muted-foreground">
-            {copy.footer}{" "}
-            <Link
-              href={copy.footerHref}
-              className="font-medium text-foreground underline-offset-4 hover:underline"
-            >
-              {copy.footerCta}
-            </Link>
+        {state.error ? (
+          <p
+            role="alert"
+            className="flex items-start gap-2 text-sm leading-relaxed text-destructive"
+          >
+            <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
+            {state.error}
           </p>
-        </CardFooter>
+        ) : null}
+
+        {state.message ? (
+          <p
+            role="status"
+            className="flex items-start gap-2 text-sm leading-relaxed text-success"
+          >
+            <CircleCheckIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
+            {state.message}
+          </p>
+        ) : null}
+
+        <SubmitButton label={copy.submit} pending={copy.pending} />
       </form>
-    </Card>
+
+      <p className="mt-5 text-sm text-muted-foreground">
+        {copy.footer}{" "}
+        <Link
+          href={copy.footerHref}
+          className="font-medium text-foreground underline underline-offset-4 decoration-grease decoration-2"
+        >
+          {copy.footerCta}
+        </Link>
+      </p>
+    </div>
   );
 }

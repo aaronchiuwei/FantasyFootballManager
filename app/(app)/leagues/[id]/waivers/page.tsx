@@ -45,9 +45,9 @@ export default async function WaiversPage({
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Waiver wire</h1>
+          <h1 className="font-plate text-3xl leading-tight font-bold tracking-[-0.01em] text-foreground">Waiver wire</h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
-            Ranked on rest-of-season projection, not on trade value — free
+            Ranked on rest-of-season projection, not on trade value. Free
             agents sit below the coverage of the market, so sorting them by an
             estimated price would be sorting on noise. Values still ride along
             with their source. {board.players.length.toLocaleString()} available

@@ -97,7 +97,7 @@ export function BuilderPanel({
             <div className="min-w-0 space-y-1">
               <label
                 htmlFor="builder-team"
-                className="text-xs uppercase tracking-wide text-muted-foreground"
+                className="stencil text-chalk-dim"
               >
                 Building for
               </label>
@@ -108,7 +108,7 @@ export function BuilderPanel({
                   setTeamId(event.target.value);
                   setResult(null);
                 }}
-                className="h-8 w-full max-w-[16rem] rounded-md border bg-background px-2 text-sm"
+                className="h-8 w-full max-w-[16rem] min-w-0 rounded-xs bg-[color-mix(in_oklch,var(--board-deep)_45%,transparent)] px-2 font-plate text-sm text-foreground shadow-[inset_0_1px_3px_color-mix(in_oklch,var(--board-deep)_65%,transparent)] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               >
                 {board.teams.map((team) => (
                   <option key={team.id} value={team.id}>
@@ -122,7 +122,7 @@ export function BuilderPanel({
             <div className="min-w-0 flex-1 space-y-1">
               <label
                 htmlFor="builder-target"
-                className="text-xs uppercase tracking-wide text-muted-foreground"
+                className="stencil text-chalk-dim"
               >
                 Player to go and get
               </label>
@@ -144,7 +144,7 @@ export function BuilderPanel({
           </div>
 
           {matches.length > 0 ? (
-            <ul className="divide-y rounded-lg border">
+            <ul className="flex flex-col gap-1.5">
               {matches.map((asset) => (
                 <li key={asset.playerId}>
                   <button
@@ -219,9 +219,9 @@ export function BuilderPanel({
           ) : (
             <p className="py-6 text-center text-sm text-muted-foreground">
               {stats?.blocked === "unvalued"
-                ? "That player has no resolved value, so there is no price to meet. Resolve their identity on the identity screen and sync — a missing value must never be summed as a zero."
+                ? "That player has no resolved value, so there is no price to meet. Resolve their identity on the identity screen and sync. A missing value must never be summed as a zero."
                 : stats?.blocked === "no-pieces"
-                  ? "This roster has nothing tradeable to offer — every player on it is either unvalued or a kicker or defense."
+                  ? "This roster has nothing tradeable to offer. Every player on it is either unvalued or a kicker or defense."
                   : "Nothing on this roster adds up to a fair package for them, at any combination of up to three players."}
             </p>
           )}
@@ -253,7 +253,7 @@ function BuilderNotes({
 
   if (stats.relaxed) {
     notes.push(
-      "Every tradeable player on this roster plays a position the team is thin at, so the search offered them anyway — an exclusion that empties a roster is a refusal to answer, not a filter.",
+      "Every tradeable player on this roster plays a position the team is thin at, so the search offered them anyway. An exclusion that empties a roster is a refusal to answer, not a filter.",
     );
   } else if (stats.protectedPieces > 0) {
     notes.push(

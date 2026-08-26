@@ -226,7 +226,7 @@ const stats: StageRunner = async ({ db, context }) => {
 
   if (!context.isRegularSeason) {
     return {
-      detail: `No games played yet — the model runs on projections alone · ${priorNote}`,
+      detail: `No games played yet, so the model runs on projections alone · ${priorNote}`,
       // Nothing left to do only when the context was already in hand.
       skipped: prior.rows === 0,
     };
@@ -293,7 +293,7 @@ const resolve: StageRunner = async ({ db, leagueId }) => {
   const warnings: string[] = [];
   if (report.unmatched > 0) {
     warnings.push(
-      `${report.unmatched} player${report.unmatched === 1 ? "" : "s"} could not be matched automatically — resolve them on the identity screen.`,
+      `${report.unmatched} player${report.unmatched === 1 ? "" : "s"} could not be matched automatically. Resolve them on the identity screen.`,
     );
   }
   // §13's bar for the crosswalk. Below it, trade math is missing real players.
@@ -355,7 +355,7 @@ const compute: StageRunner = async ({ db, leagueId, context }) => {
 
   if (report.rankCorrelation !== null && report.rankCorrelation < 0.98) {
     warnings.push(
-      `Fit correlates with FantasyCalc at ${report.rankCorrelation.toFixed(3)} across ${report.overlap} players — below §13's 0.98 target.`,
+      `Fit correlates with FantasyCalc at ${report.rankCorrelation.toFixed(3)} across ${report.overlap} players, below §13's 0.98 target.`,
     );
   }
 
@@ -366,13 +366,13 @@ const compute: StageRunner = async ({ db, leagueId, context }) => {
   // that is never measured is a bound nobody knows they have crossed.
   if (suggestions.elapsedMs > 15_000) {
     warnings.push(
-      `The win-win search took ${(suggestions.elapsedMs / 1000).toFixed(1)}s over ${suggestions.pairs} team pairs — stage 8's budget is ~60s in total.`,
+      `The win-win search took ${(suggestions.elapsedMs / 1000).toFixed(1)}s over ${suggestions.pairs} team pairs. Stage 8's budget is ~60s in total.`,
     );
   }
 
   if (cycles.elapsedMs > 15_000) {
     warnings.push(
-      `The three-team search took ${(cycles.elapsedMs / 1000).toFixed(1)}s over ${cycles.anchors} anchors — stage 8's budget is ~60s in total.`,
+      `The three-team search took ${(cycles.elapsedMs / 1000).toFixed(1)}s over ${cycles.anchors} anchors. Stage 8's budget is ~60s in total.`,
     );
   }
 

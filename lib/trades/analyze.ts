@@ -83,7 +83,7 @@ export const BAND_META: Record<
   even: {
     label: "Even",
     tone: "fair",
-    summary: "Inside the noise of the market itself — this is a coin flip.",
+    summary: "Inside the noise of the market itself. This is a coin flip.",
   },
   slight: {
     label: "Slight edge",

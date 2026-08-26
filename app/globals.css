@@ -4,57 +4,80 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* ---------------------------------------------------------------------------
-   Design tokens.
+/* ===========================================================================
+   THE WAR ROOM BOARD
 
-   Three layers, in order:
-   1. shadcn/ui surface tokens  — background/foreground/card/primary/...
-   2. app semantic tokens       — success / warning, trade verdict bands
-   3. domain tokens             — position colors, value provenance colors
+   The visual world is a draft-day war room: a floor-to-ceiling steel board
+   ruled into horizontal aluminium channel rails, holding engraved laminate
+   name plates that get moved by hand, with grease-pencil annotation over the
+   top. Every material below is one of exactly four things:
 
-   Layers 2 and 3 exist now, in Phase 0, because they are the vocabulary the
-   later phases spend: the trade analyzer's fairness bands (§6), the value
-   badge's source (§5 "provenance is a first-class field"), and every position
-   pill in the roster/needs UI (§7). Adding them here keeps colors out of
-   component files.
---------------------------------------------------------------------------- */
+     BOARD    the enamelled steel wall. The ground. Recessive, always.
+     CHANNEL  the extruded aluminium rail a row of plates seats into.
+     PLATE    an engraved laminate name plate. A PLAYER, and nothing else.
+     GREASE   the grease pencil. The single accent, and the annotation layer.
+
+   The one rule that keeps the world legible: a bone-coloured plate means a
+   player you can move. Panels, headers and sections are board, not plates,
+   so a page never dissolves into a field of floating cards.
+=========================================================================== */
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
+  --font-mono: var(--font-mono);
+  --font-heading: var(--font-plate);
+  --font-plate: var(--font-plate);
+
+  /* shadcn surface tokens, remapped onto board materials */
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  /* ---- the four materials, exposed as utilities ---- */
+  --color-board: var(--board);
+  --color-board-deep: var(--board-deep);
+  --color-board-panel: var(--board-panel);
+  --color-channel: var(--channel);
+  --color-channel-lip: var(--channel-lip);
+  --color-plate: var(--plate);
+  --color-plate-ink: var(--plate-ink);
+  --color-plate-edge: var(--plate-edge);
+  --color-chalk: var(--chalk);
+  --color-chalk-dim: var(--chalk-dim);
+  --color-grease: var(--grease);
+  --color-grease-ink: var(--grease-ink);
+  --color-strike: var(--strike);
 
   /* app semantic */
   --color-success: var(--success);
@@ -62,17 +85,22 @@
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
 
-  /* trade fairness bands (§6) */
+  /* trade fairness bands */
   --color-verdict-fair: var(--verdict-fair);
   --color-verdict-tilted: var(--verdict-tilted);
   --color-verdict-lopsided: var(--verdict-lopsided);
 
-  /* value provenance (§5) */
+  /* value provenance */
   --color-source-market: var(--source-market);
   --color-source-model: var(--source-model);
   --color-source-unvalued: var(--source-unvalued);
+  --color-source-market-plate: var(--source-market-plate);
+  --color-source-model-plate: var(--source-model-plate);
+  --color-source-unvalued-plate: var(--source-unvalued-plate);
 
-  /* positions */
+  --color-pos-ink: var(--pos-ink);
+
+  /* position laminate cores: the second layer an engraver cuts through to */
   --color-pos-qb: var(--pos-qb);
   --color-pos-rb: var(--pos-rb);
   --color-pos-wr: var(--pos-wr);
@@ -82,189 +110,536 @@
   --color-pos-flex: var(--pos-flex);
   --color-pos-bench: var(--pos-bench);
 
-  /* Every bare `transition-*` in the app — hovers, filter pills, drop-zone
-     borders — is state feedback, so the default duration is the fast token
-     rather than a number repeated in forty class lists. The three animations
-     that mean something override it explicitly. */
   --default-transition-duration: var(--motion-fast);
+  --default-transition-timing-function: var(--ease-out);
 
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
+  /* Machined edges, not soft ones. Everything in this world is cut aluminium
+     or engraved laminate, so the whole radius scale collapses to a chamfer.
+     One shape system, applied everywhere. */
+  --radius-sm: 1px;
+  --radius-md: 2px;
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --radius-xl: 3px;
+  --radius-2xl: 3px;
+  --radius-3xl: 4px;
+  --radius-4xl: 4px;
+
+  --ease-out: var(--ease-out);
+  --ease-in-out: var(--ease-in-out);
+  --ease-seat: var(--ease-seat);
 }
 
 :root {
-  --radius: 0.625rem;
+  --radius: 2px;
 
   /* ---------------------------------------------------------------------
-     Motion (§10). Three speeds, declared here for the same reason the colors
-     are: a duration chosen in a component file is a duration nothing else can
-     agree with, and nine phases of ad-hoc 200/300/420/500/700 do not read as
-     one system.
+     Motion. Three speeds, each a claim about what the motion is FOR, plus
+     three curves. The built-in CSS easings are too weak to read as
+     intentional, so nothing in this app uses a bare `ease-out` keyword.
 
-     Each speed is a claim about what the motion is *for*:
+       fast   state feedback: a hover, a plate lifting under a press.
+       base   an element arriving or being replaced.
+       slow   the two animations that ARE information: the beam tipping to
+              its verdict, and a bar filling to a value. These are read.
 
-     - fast   state feedback. A hover, a border lighting up under a drag, a
-              filter pill turning on. It must land before the user wonders
-              whether the click registered.
-     - base   an element arriving or being replaced. Card entrances, the
-              verdict crossfade, the package stack sliding. Long enough to be
-              seen as a change rather than a flicker.
-     - slow   the two animations that *are* information: the balance beam
-              tipping to its verdict (§10 — "the balance beam is the verdict")
-              and a bar or ring filling to a value. These are read, not
-              noticed, so they get time to be followed.
-
-     Anything that does not fit one of these three is decoration, and §10's
-     instruction for decoration is to cut it.
+       ease-out   entrances and exits. Starts fast, so it feels answered.
+       ease-in-out  something already on screen moving to a new place.
+       ease-seat  the signature: a plate dropping into its channel. Almost
+                  no bounce, a long tail, the way a machined part settles
+                  into a slot it fits exactly.
   --------------------------------------------------------------------- */
-  --motion-fast: 150ms;
-  --motion-base: 300ms;
-  --motion-slow: 700ms;
+  --motion-fast: 140ms;
+  --motion-base: 240ms;
+  --motion-slow: 680ms;
 
-  --background: oklch(0.986 0.004 150);
-  --foreground: oklch(0.19 0.018 160);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.19 0.018 160);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.19 0.018 160);
-  --primary: oklch(0.52 0.126 152);
-  --primary-foreground: oklch(0.985 0.008 150);
-  --secondary: oklch(0.962 0.009 150);
-  --secondary-foreground: oklch(0.27 0.03 158);
-  --muted: oklch(0.962 0.009 150);
-  --muted-foreground: oklch(0.52 0.021 156);
-  --accent: oklch(0.938 0.03 150);
-  --accent-foreground: oklch(0.27 0.045 156);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0.008 20);
-  --border: oklch(0.902 0.011 150);
-  --input: oklch(0.902 0.011 150);
-  --ring: oklch(0.52 0.126 152);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-seat: cubic-bezier(0.32, 0.72, 0, 1);
 
-  --success: oklch(0.6 0.145 150);
-  --success-foreground: oklch(0.985 0.008 150);
-  --warning: oklch(0.72 0.16 72);
-  --warning-foreground: oklch(0.24 0.05 72);
+  /* ---- LIGHT: the same board, in daylight ----------------------------
+     Not an inversion. The board stays the recessive plane and the plate
+     stays the advancing one, so hierarchy reads identically in both modes.
+     Here the wall is bare light steel and the plates are near-white stock. */
+  --board: oklch(0.858 0.005 250);
+  --board-deep: oklch(0.802 0.006 250);
+  --board-panel: oklch(0.928 0.004 250);
+  --channel: oklch(0.796 0.005 250);
+  --channel-lip: oklch(0.972 0.003 250);
+  --plate: oklch(0.988 0.004 85);
+  --plate-ink: oklch(0.205 0.012 250);
+  --plate-edge: oklch(0.74 0.008 250);
+  --chalk: oklch(0.188 0.013 250);
+  --chalk-dim: oklch(0.428 0.011 250);
+  --grease: oklch(0.556 0.148 58);
+  --grease-ink: oklch(0.985 0.006 85);
+  --strike: oklch(0.516 0.204 27);
 
-  --verdict-fair: oklch(0.6 0.145 150);
-  --verdict-tilted: oklch(0.72 0.16 72);
-  --verdict-lopsided: oklch(0.577 0.245 27.325);
+  --background: var(--board);
+  --foreground: var(--chalk);
+  --card: var(--board-panel);
+  --card-foreground: var(--chalk);
+  --popover: var(--board-panel);
+  --popover-foreground: var(--chalk);
+  --primary: var(--grease);
+  --primary-foreground: var(--grease-ink);
+  --secondary: var(--channel);
+  --secondary-foreground: var(--chalk);
+  --muted: var(--channel);
+  --muted-foreground: var(--chalk-dim);
+  --accent: oklch(0.848 0.024 58);
+  --accent-foreground: oklch(0.28 0.06 58);
+  --destructive: var(--strike);
+  --destructive-foreground: oklch(0.985 0.006 27);
+  --border: oklch(0.742 0.007 250);
+  --input: oklch(0.742 0.007 250);
+  --ring: var(--grease);
 
-  --source-market: oklch(0.52 0.126 152);
-  --source-model: oklch(0.55 0.115 255);
-  --source-unvalued: oklch(0.63 0.02 155);
+  --success: oklch(0.492 0.132 148);
+  --success-foreground: oklch(0.985 0.006 148);
+  --warning: oklch(0.556 0.148 58);
+  --warning-foreground: oklch(0.985 0.006 58);
 
-  --pos-qb: oklch(0.58 0.17 20);
-  --pos-rb: oklch(0.6 0.15 150);
-  --pos-wr: oklch(0.56 0.14 255);
-  --pos-te: oklch(0.66 0.15 60);
-  --pos-k: oklch(0.58 0.13 300);
-  --pos-def: oklch(0.5 0.06 220);
-  --pos-flex: oklch(0.6 0.1 190);
-  --pos-bench: oklch(0.63 0.02 155);
+  --verdict-fair: oklch(0.492 0.132 148);
+  --verdict-tilted: oklch(0.556 0.148 58);
+  --verdict-lopsided: var(--strike);
 
-  --chart-1: oklch(0.52 0.126 152);
-  --chart-2: oklch(0.56 0.14 255);
-  --chart-3: oklch(0.66 0.15 60);
-  --chart-4: oklch(0.58 0.17 20);
-  --chart-5: oklch(0.58 0.13 300);
+  --source-market: oklch(0.452 0.128 250);
+  --source-model: oklch(0.512 0.088 296);
+  --source-unvalued: oklch(0.548 0.012 250);
 
-  --sidebar: oklch(0.972 0.007 150);
-  --sidebar-foreground: oklch(0.19 0.018 160);
-  --sidebar-primary: oklch(0.52 0.126 152);
-  --sidebar-primary-foreground: oklch(0.985 0.008 150);
-  --sidebar-accent: oklch(0.938 0.03 150);
-  --sidebar-accent-foreground: oklch(0.27 0.045 156);
-  --sidebar-border: oklch(0.902 0.011 150);
-  --sidebar-ring: oklch(0.52 0.126 152);
+  /* The same three, as they read struck into a bone plate. Declared once and
+     never overridden in the dark block: a plate is bone in both rooms, so the
+     board-context values would be light-on-light there. */
+  --source-market-plate: oklch(0.452 0.128 250);
+  --source-model-plate: oklch(0.512 0.088 296);
+  --source-unvalued-plate: oklch(0.478 0.012 250);
+
+  --pos-qb: oklch(0.508 0.176 25);
+  --pos-rb: oklch(0.472 0.128 148);
+  --pos-wr: oklch(0.472 0.148 258);
+  --pos-te: oklch(0.548 0.132 68);
+  --pos-k: oklch(0.492 0.148 305);
+  --pos-def: oklch(0.462 0.062 224);
+  --pos-flex: oklch(0.482 0.098 196);
+  --pos-bench: oklch(0.512 0.014 250);
+  /* The code cut into a laminate core. Follows the core's own lightness: the
+     cores are dark in this room, so the code is struck in bone. */
+  --pos-ink: oklch(0.985 0.006 85);
+
+  --chart-1: var(--grease);
+  --chart-2: oklch(0.472 0.148 258);
+  --chart-3: oklch(0.492 0.132 148);
+  --chart-4: oklch(0.508 0.176 25);
+  --chart-5: oklch(0.492 0.148 305);
+
+  --sidebar: var(--board-deep);
+  --sidebar-foreground: var(--chalk);
+  --sidebar-primary: var(--grease);
+  --sidebar-primary-foreground: var(--grease-ink);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--grease);
 }
 
+/* ---- DARK: the room the board actually lives in ------------------------
+   A dim room, the board lit from a fixture above it. This is the primary
+   scene: a manager on a phone on a Sunday evening, and a desktop session
+   after work. Both happen with the lights low. */
 .dark {
-  --background: oklch(0.165 0.016 162);
-  --foreground: oklch(0.965 0.008 150);
-  --card: oklch(0.212 0.019 162);
-  --card-foreground: oklch(0.965 0.008 150);
-  --popover: oklch(0.212 0.019 162);
-  --popover-foreground: oklch(0.965 0.008 150);
-  --primary: oklch(0.72 0.145 152);
-  --primary-foreground: oklch(0.19 0.04 158);
-  --secondary: oklch(0.274 0.021 162);
-  --secondary-foreground: oklch(0.965 0.008 150);
-  --muted: oklch(0.274 0.021 162);
-  --muted-foreground: oklch(0.712 0.017 155);
-  --accent: oklch(0.3 0.04 158);
-  --accent-foreground: oklch(0.965 0.008 150);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.19 0.04 20);
-  --border: oklch(1 0 0 / 10%);
+  --board: oklch(0.192 0.011 254);
+  --board-deep: oklch(0.148 0.011 254);
+  --board-panel: oklch(0.232 0.011 254);
+  --channel: oklch(0.282 0.009 254);
+  --channel-lip: oklch(0.412 0.009 254);
+  --plate: oklch(0.902 0.014 85);
+  --plate-ink: oklch(0.212 0.013 254);
+  --plate-edge: oklch(0.702 0.016 85);
+  --chalk: oklch(0.948 0.006 85);
+  --chalk-dim: oklch(0.688 0.011 254);
+  --grease: oklch(0.828 0.152 78);
+  --grease-ink: oklch(0.192 0.038 78);
+  --strike: oklch(0.678 0.196 25);
+
+  --background: var(--board);
+  --foreground: var(--chalk);
+  --card: var(--board-panel);
+  --card-foreground: var(--chalk);
+  --popover: var(--board-panel);
+  --popover-foreground: var(--chalk);
+  --primary: var(--grease);
+  --primary-foreground: var(--grease-ink);
+  --secondary: var(--channel);
+  --secondary-foreground: var(--chalk);
+  --muted: var(--channel);
+  --muted-foreground: var(--chalk-dim);
+  --accent: oklch(0.322 0.042 78);
+  --accent-foreground: var(--chalk);
+  --destructive: var(--strike);
+  --destructive-foreground: oklch(0.172 0.038 25);
+  --border: oklch(1 0 0 / 11%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.72 0.145 152);
+  --ring: var(--grease);
 
-  --success: oklch(0.74 0.15 150);
-  --success-foreground: oklch(0.19 0.04 150);
-  --warning: oklch(0.8 0.15 76);
-  --warning-foreground: oklch(0.22 0.05 76);
+  --success: oklch(0.752 0.148 150);
+  --success-foreground: oklch(0.182 0.04 150);
+  --warning: var(--grease);
+  --warning-foreground: var(--grease-ink);
 
-  --verdict-fair: oklch(0.74 0.15 150);
-  --verdict-tilted: oklch(0.8 0.15 76);
-  --verdict-lopsided: oklch(0.704 0.191 22.216);
+  --verdict-fair: oklch(0.752 0.148 150);
+  --verdict-tilted: var(--grease);
+  --verdict-lopsided: var(--strike);
 
-  --source-market: oklch(0.72 0.145 152);
-  --source-model: oklch(0.7 0.13 255);
-  --source-unvalued: oklch(0.62 0.02 155);
+  --source-market: oklch(0.742 0.128 254);
+  --source-model: oklch(0.722 0.088 300);
+  --source-unvalued: oklch(0.632 0.014 254);
 
-  --pos-qb: oklch(0.7 0.16 20);
-  --pos-rb: oklch(0.74 0.15 150);
-  --pos-wr: oklch(0.7 0.14 255);
-  --pos-te: oklch(0.78 0.14 65);
-  --pos-k: oklch(0.7 0.13 300);
-  --pos-def: oklch(0.66 0.06 220);
-  --pos-flex: oklch(0.72 0.1 190);
-  --pos-bench: oklch(0.62 0.02 155);
+  --pos-qb: oklch(0.702 0.168 25);
+  --pos-rb: oklch(0.742 0.144 148);
+  --pos-wr: oklch(0.712 0.142 258);
+  --pos-te: oklch(0.792 0.138 68);
+  --pos-k: oklch(0.712 0.132 305);
+  --pos-def: oklch(0.672 0.062 224);
+  --pos-flex: oklch(0.722 0.098 196);
+  --pos-bench: oklch(0.642 0.016 254);
+  /* Cores are light in the dim room so they carry against the board, which
+     means the code has to be struck in ink rather than in bone. */
+  --pos-ink: oklch(0.172 0.022 254);
 
-  --chart-1: oklch(0.72 0.145 152);
-  --chart-2: oklch(0.7 0.14 255);
-  --chart-3: oklch(0.78 0.14 65);
-  --chart-4: oklch(0.7 0.16 20);
-  --chart-5: oklch(0.7 0.13 300);
+  --chart-1: var(--grease);
+  --chart-2: oklch(0.712 0.142 258);
+  --chart-3: oklch(0.752 0.148 150);
+  --chart-4: oklch(0.702 0.168 25);
+  --chart-5: oklch(0.712 0.132 305);
 
-  --sidebar: oklch(0.19 0.018 162);
-  --sidebar-foreground: oklch(0.965 0.008 150);
-  --sidebar-primary: oklch(0.72 0.145 152);
-  --sidebar-primary-foreground: oklch(0.19 0.04 158);
-  --sidebar-accent: oklch(0.3 0.04 158);
-  --sidebar-accent-foreground: oklch(0.965 0.008 150);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.72 0.145 152);
+  --sidebar: var(--board-deep);
+  --sidebar-foreground: var(--chalk);
+  --sidebar-primary: var(--grease);
+  --sidebar-primary-foreground: var(--grease-ink);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--chalk);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--grease);
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
-  body {
-    @apply bg-background text-foreground;
-  }
+
   html {
     @apply font-sans;
+    /* The board is one continuous surface; the browser's overscroll should
+       not reveal a different colour behind it. */
+    background-color: var(--board-deep);
+  }
+
+  body {
+    @apply text-foreground;
+    /* The wall: enamelled steel under a fixture mounted above the board. A
+       vertical light falloff from that fixture, plus a fine speckle in the
+       enamel.
+
+       Both scroll with the document rather than being pinned to the viewport.
+       `background-attachment: fixed` is the obvious way to write this and the
+       wrong one: it forces the compositor to repaint the whole background on
+       every scroll frame, which is exactly the cost the values board and the
+       waiver wire cannot afford on a phone. The light belongs at the top of
+       the board anyway, so letting it scroll away is also the truer reading. */
+    background-color: var(--board);
+    background-image:
+      linear-gradient(
+        to bottom,
+        color-mix(in oklch, var(--channel-lip) 18%, transparent) 0,
+        transparent 22rem
+      ),
+      radial-gradient(
+        color-mix(in oklch, var(--channel-lip) 26%, transparent) 0.5px,
+        transparent 0.5px
+      );
+    background-size:
+      100% 22rem,
+      4px 4px;
+    background-repeat: no-repeat, repeat;
+  }
+
+  /* Numbers in this product are measurements. They line up in columns or
+     they are not measurements. */
+  table,
+  [data-numeric] {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+
+  /* -- browser surfaces ------------------------------------------------
+     The parts nobody draws still belong to the design. A grease pencil
+     selection, a rail-channel scrollbar, an amber caret. */
+  ::selection {
+    background-color: color-mix(in oklch, var(--grease) 34%, transparent);
+    color: var(--foreground);
+  }
+
+  html {
+    caret-color: var(--grease);
+    scrollbar-color: var(--channel-lip) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 11px;
+    height: 11px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: color-mix(in oklch, var(--board-deep) 60%, transparent);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--channel);
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--channel-lip);
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* One focus ring for the whole app: a grease-pencil ring drawn around the
+     thing, offset off the surface so it reads as annotation rather than as
+     a border the component always had. */
+  :focus-visible {
+    outline: 2px solid var(--grease);
+    outline-offset: 2px;
+  }
+
+  a {
+    text-underline-offset: 0.22em;
+    text-decoration-thickness: 1px;
+  }
+}
+
+@layer components {
+  /* -- CHANNEL ---------------------------------------------------------
+     An extruded aluminium rail. Light catches the top lip and the bottom
+     falls into shadow, which is what makes a plate seated in it read as
+     seated rather than stacked on top. */
+  .rail {
+    background-image: linear-gradient(
+      to bottom,
+      color-mix(in oklch, var(--channel-lip) 55%, transparent) 0,
+      color-mix(in oklch, var(--channel-lip) 55%, transparent) 1px,
+      var(--channel) 1px,
+      var(--channel) calc(100% - 1px),
+      color-mix(in oklch, var(--board-deep) 70%, transparent) calc(100% - 1px)
+    );
+    box-shadow: inset 0 1px 2px color-mix(in oklch, var(--board-deep) 45%, transparent);
+  }
+
+  /* A hairline the width of the board, the way a rail reads at a distance. */
+  .rail-line {
+    background-image: linear-gradient(
+      to bottom,
+      color-mix(in oklch, var(--channel-lip) 60%, transparent) 0,
+      color-mix(in oklch, var(--channel-lip) 60%, transparent) 1px,
+      color-mix(in oklch, var(--board-deep) 55%, transparent) 1px,
+      color-mix(in oklch, var(--board-deep) 55%, transparent) 2px
+    );
+    height: 2px;
+  }
+
+  /* -- PLATE -----------------------------------------------------------
+     Engraved laminate: a bone face, a cut bottom edge, a light top edge,
+     and the sit-in-the-channel shadow underneath. `--plate-lift` is the
+     one variable the seat animation moves. */
+  .plate {
+    --plate-lift: 0px;
+    background-color: var(--plate);
+    color: var(--plate-ink);
+    border-radius: var(--radius);
+    transform: translateY(var(--plate-lift));
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklch, white 60%, transparent),
+      inset 0 -1px 0 var(--plate-edge),
+      0 calc(1px + var(--plate-lift) * -1) calc(2px + var(--plate-lift) * -2)
+        color-mix(in oklch, var(--board-deep) 55%, transparent);
+    transition:
+      transform var(--motion-fast) var(--ease-seat),
+      box-shadow var(--motion-fast) var(--ease-seat);
+  }
+
+  /* Nothing in the real world jumps off a wall, so a lifted plate rises a
+     hair and casts further. Gated behind a real pointer: on a phone the
+     hover fires on tap and the plate would appear to stick. */
+  @media (hover: hover) and (pointer: fine) {
+    .plate-liftable:hover {
+      --plate-lift: -2px;
+    }
+  }
+
+  .plate-liftable:active {
+    --plate-lift: 0px;
+    transition-duration: var(--motion-fast);
+  }
+
+  /* Engraved lettering: the cut is below the surface, so the light edge
+     sits under the stroke rather than over it. */
+  .engraved {
+    text-shadow: 0 1px 0 color-mix(in oklch, white 55%, transparent);
+  }
+
+  /* A provenance stamp struck into a plate rather than written on the board.
+     The plate is bone in both themes, so the stamp keeps the dark-ink pairing
+     in both; the board-context colours would be light-on-light here. */
+  .plate [data-slot="value-stamp"] {
+    background-color: color-mix(in oklch, var(--plate-ink) 8%, transparent);
+  }
+
+  .plate [data-slot="value-stamp"][data-source="market"] {
+    color: var(--source-market-plate);
+  }
+
+  .plate [data-slot="value-stamp"][data-source="model"],
+  .plate [data-slot="value-stamp"][data-source="model_capped"] {
+    color: var(--source-model-plate);
+  }
+
+  .plate [data-slot="value-stamp"][data-source="floor"] {
+    color: var(--source-unvalued-plate);
+  }
+
+  /* -- STENCIL ---------------------------------------------------------
+     Every region of this board names itself. Condensed caps, tracked out,
+     the way a label plate is stamped on a rail end. */
+  .stencil {
+    font-family: var(--font-plate);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    font-size: 0.6875rem;
+    line-height: 1;
+  }
+
+  /* -- TABLE HEAD ------------------------------------------------------
+     A table's head is the channel its column of plates seats under: the same
+     lit top lip and shadowed underside every other rail in the app has, so a
+     dense table still reads as part of the board rather than as a document
+     dropped onto it. */
+  .thead-rail {
+    background-image: linear-gradient(
+      to bottom,
+      color-mix(in oklch, var(--channel-lip) 45%, transparent) 0,
+      color-mix(in oklch, var(--channel-lip) 45%, transparent) 1px,
+      color-mix(in oklch, var(--channel) 55%, transparent) 1px,
+      color-mix(in oklch, var(--channel) 55%, transparent) calc(100% - 1px),
+      color-mix(in oklch, var(--board-deep) 60%, transparent) calc(100% - 1px)
+    );
+  }
+
+  /* -- CHIP ------------------------------------------------------------
+     A filter switch on the board: a stencilled tab that is either thrown or
+     not. Written once here because five surfaces had five hand-copied
+     versions of it, which is how a "system" quietly stops being one. */
+  .chip {
+    display: inline-flex;
+    height: 1.75rem;
+    align-items: center;
+    padding-inline: 0.75rem;
+    border-radius: var(--radius);
+    font-family: var(--font-plate);
+    font-weight: 600;
+    font-size: 0.625rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+    transition:
+      background-color var(--motion-fast) var(--ease-out),
+      color var(--motion-fast) var(--ease-out),
+      box-shadow var(--motion-fast) var(--ease-out);
+  }
+
+  .chip-on {
+    background-color: var(--primary);
+    color: var(--primary-foreground);
+    box-shadow: inset 0 1px 0 color-mix(in oklch, white 40%, transparent);
+  }
+
+  .chip-off {
+    color: var(--muted-foreground);
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--channel-lip) 30%, transparent);
+  }
+
+  .chip-off:hover {
+    background-color: color-mix(in oklch, var(--channel) 60%, transparent);
+    color: var(--foreground);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chip {
+      transition: none;
+    }
+  }
+
+  /* -- GREASE ----------------------------------------------------------
+     The annotation layer. Waxy, slightly transparent, sitting over the
+     board rather than in it. */
+  .grease-mark {
+    color: var(--grease);
+    font-family: var(--font-plate);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+
+  .grease-underline {
+    background-image: linear-gradient(
+      to right,
+      transparent 0,
+      color-mix(in oklch, var(--grease) 85%, transparent) 6%,
+      var(--grease) 50%,
+      color-mix(in oklch, var(--grease) 80%, transparent) 94%,
+      transparent 100%
+    );
+    background-repeat: no-repeat;
+    background-position: 0 100%;
+    background-size: 100% 2px;
+  }
+}
+
+@layer utilities {
+  /* A drawn, labelled measurement scale. Every bar and beam in the app sits
+     on one of these, so magnitude is readable by counting divisions instead
+     of by hovering something. */
+  .graticule {
+    background-image: repeating-linear-gradient(
+      to right,
+      color-mix(in oklch, var(--channel-lip) 42%, transparent) 0,
+      color-mix(in oklch, var(--channel-lip) 42%, transparent) 1px,
+      transparent 1px,
+      transparent 10%
+    );
+  }
+
+  .graticule-y {
+    background-image: repeating-linear-gradient(
+      to bottom,
+      color-mix(in oklch, var(--channel-lip) 42%, transparent) 0,
+      color-mix(in oklch, var(--channel-lip) 42%, transparent) 1px,
+      transparent 1px,
+      transparent 25%
+    );
   }
 }
 
 /* ---------------------------------------------------------------------------
-   §10: "respect `prefers-reduced-motion` throughout — a trade analyzer that
-   fights the user is worse than a plain one."
-
-   The reset is deliberately blunt and deliberately global. Components carry
-   `motion-reduce:` classes as well, but those are documentation of intent, not
-   the mechanism: a component that forgets one still animates nothing here.
-   Every animation in this app degrades to its own end state, which is always
-   the readable one — the beam is a still diagram at the right angle, the cards
-   are simply present, the counters show the number.
+   Reduced motion. The reset is deliberately blunt and deliberately global:
+   components carry `motion-reduce:` classes too, but those are documentation
+   of intent, not the mechanism. Every animation here degrades to its own end
+   state, which is always the readable one — the beam is a still diagram at
+   the right angle, the plates are simply seated, the counters show the number.
 --------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -276,23 +651,41 @@
     scroll-behavior: auto !important;
   }
 
-  /* The one exemption, and it is the reason this block is not simply the
-     copy-pasted internet default.
-
-     `animation-iteration-count: 1` freezes a spinner, and a *frozen* progress
-     indicator is not a calmer version of a spinning one — it is a lie about
-     whether work is still happening. Every spinner in this app marks a real
-     pending operation (a sync starting, a package search, a sign-in), several
-     of which take tens of seconds.
-
-     So it keeps turning, slower. Rotation in place is not the class of motion
-     the preference is asking about: there is no travel across the viewport and
-     no parallax, which is what triggers vestibular symptoms. This is §10's
-     rule applied honestly rather than mechanically — where animation serves
-     comprehension it stays, and here it is the only thing saying "still
-     working". */
+  /* The one exemption, and the reason this block is not the copy-pasted
+     internet default. `animation-iteration-count: 1` freezes a spinner, and
+     a frozen progress indicator is not a calmer version of a spinning one:
+     it is a lie about whether work is still happening. Every spinner here
+     marks a real pending operation, several of which take tens of seconds.
+     Rotation in place has no travel across the viewport and no parallax,
+     which is what the preference is actually asking about. */
   .animate-spin {
     animation-duration: 1.6s !important;
     animation-iteration-count: infinite !important;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* The signature entrance: a plate seated into its channel. Used once per
+     surface on the primary content group, never on every section. */
+  @keyframes seat-in {
+    from {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-seat {
+    animation: seat-in var(--motion-base) var(--ease-seat) backwards;
+  }
+
+  /* Stagger is decorative and never blocks interaction: the content is in
+     the DOM and hit-testable from the first frame. */
+  .stagger-seat > * {
+    animation: seat-in var(--motion-base) var(--ease-seat) backwards;
+    animation-delay: calc(var(--seat-index, 0) * 45ms);
   }
 }

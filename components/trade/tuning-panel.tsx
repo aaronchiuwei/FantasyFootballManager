@@ -24,7 +24,7 @@ const KNOBS: {
     symbol: "α",
     label: "Best player bonus",
     description:
-      "A share of the best asset on each side. FantasyCalc's curve already prices stars steeply, so §6 starts this low — at 0.15 the analyzer approves every 2-for-1.",
+      "A share of the best asset on each side. FantasyCalc's curve already prices stars steeply, so §6 starts this low. At 0.15 the analyzer approves every 2-for-1.",
   },
   {
     key: "beta",

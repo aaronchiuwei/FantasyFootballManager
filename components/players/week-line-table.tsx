@@ -23,17 +23,17 @@ export function WeekLineTable({ lines, position }: { lines: SeasonLines; positio
     <div className="overflow-x-auto">
       <table className="w-full min-w-[32rem] text-sm">
         <thead>
-          <tr className="border-b text-xs uppercase tracking-wide text-muted-foreground">
-            <th className="w-12 py-2 pr-3 text-left font-medium">Wk</th>
-            <th className="w-16 py-2 pr-3 text-right font-medium">Proj</th>
-            <th className="w-16 py-2 pr-3 text-right font-medium">Actual</th>
-            <th className="hidden w-16 py-2 pr-3 text-right font-medium sm:table-cell">
+          <tr className="thead-rail stencil text-chalk-dim">
+            <th className="w-12 py-2 pr-3 text-left font-semibold">Wk</th>
+            <th className="w-16 py-2 pr-3 text-right font-semibold">Proj</th>
+            <th className="w-16 py-2 pr-3 text-right font-semibold">Actual</th>
+            <th className="hidden w-16 py-2 pr-3 text-right font-semibold sm:table-cell">
               Δ
             </th>
             {columns.map((column) => (
               <th
                 key={column.key}
-                className="hidden py-2 pr-3 text-right font-medium md:table-cell"
+                className="hidden py-2 pr-3 text-right font-semibold md:table-cell"
               >
                 {column.label}
               </th>
@@ -54,7 +54,7 @@ export function WeekLineTable({ lines, position }: { lines: SeasonLines; positio
                 </td>
 
                 <td className="py-2 pr-3 text-right font-mono tabular-nums text-muted-foreground">
-                  {week.projected === null ? "—" : week.projected.toFixed(1)}
+                  {week.projected === null ? "--" : week.projected.toFixed(1)}
                 </td>
 
                 <td
@@ -63,19 +63,19 @@ export function WeekLineTable({ lines, position }: { lines: SeasonLines; positio
                     played ? "font-medium" : "text-muted-foreground",
                   )}
                 >
-                  {played ? week.actual!.toFixed(1) : "—"}
+                  {played ? week.actual!.toFixed(1) : "--"}
                 </td>
 
                 <td className="hidden py-2 pr-3 text-right font-mono text-xs sm:table-cell">
                   {delta === null ? (
-                    <span className="text-muted-foreground">—</span>
+                    <span className="text-muted-foreground">--</span>
                   ) : (
                     <span
                       className={cn(
                         delta >= 0 ? "text-success" : "text-destructive",
                       )}
                     >
-                      {delta >= 0 ? "+" : "−"}
+                      {delta >= 0 ? "+" : "-"}
                       {Math.abs(Math.round(delta * 100))}%
                     </span>
                   )}
