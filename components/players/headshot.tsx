@@ -1,4 +1,4 @@
-import { initials } from "@/lib/players/headshot";
+import { initials, isTeamLogo } from "@/lib/players/headshot";
 import { cn } from "@/lib/utils";
 
 /**
@@ -7,8 +7,18 @@ import { cn } from "@/lib/utils";
  * The design language's one rule is that bone means a player, so a photograph
  * of a player belongs on the plate rather than floating beside it. It is cut
  * square to the same 2px corner as everything else: this world has no pills,
- * and a circular avatar would be the only round object on the wall. Read it as
- * the ID photo laminated into the plate, which is exactly what it is.
+ * and a circular avatar would be the only round object on the wall.
+ *
+ * **The white field.** Sleeper serves a 350x254 photograph of a cut-out player
+ * standing on solid white. On a plate that white reads as a second material
+ * laid over the laminate, which is the one thing this world does not do. So on
+ * a plate the portrait is composited with `multiply`: white is the identity
+ * for that operation, so the field disappears into the bone exactly and the
+ * face is left printed on the plate with no tile and no frame around it. On
+ * the board there is no light material to multiply into, so the portrait keeps
+ * its bone tile and reads as the ID photo laminated onto the wall — which is
+ * what it is. A team logo is a transparent PNG rather than a cut-out on white,
+ * so it is never blended: multiply would eat the white in the mark itself.
  *
  * **No JavaScript.** A picture that needed a client component would put two
  * hundred of them on the values board to do nothing but catch a 404. Instead
@@ -20,9 +30,9 @@ import { cn } from "@/lib/utils";
  */
 
 const SIZES = {
-  sm: "size-6 text-[0.5rem]",
-  md: "size-8 text-[0.625rem]",
-  lg: "size-16 text-lg",
+  sm: "size-8 text-[0.625rem]",
+  md: "size-10 text-xs",
+  lg: "size-20 text-2xl",
 } as const;
 
 export type HeadshotSize = keyof typeof SIZES;
@@ -43,19 +53,22 @@ export function PlayerHeadshot({
   tone?: "board" | "plate";
   className?: string;
 }) {
+  const onPlate = tone === "plate";
+  const blend = onPlate && !isTeamLogo(src);
+
   return (
     <span
       data-slot="player-headshot"
       aria-hidden
       className={cn(
         "relative shrink-0 overflow-hidden rounded-xs",
-        // Sleeper's headshots are cut out onto a white field, so the tile is
-        // bone in both rooms whether or not the picture ever arrives -- the
-        // photo's own background and the fallback are then the same material.
-        "bg-plate",
-        tone === "plate"
-          ? "shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--plate-edge)_70%,transparent)]"
-          : "shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--plate-edge)_45%,transparent)]",
+        // On the board the tile is bone in both rooms whether or not the
+        // picture ever arrives, so the photo's own white field and the
+        // fallback mark are the same material. On a plate the laminate is
+        // already that material, so there is no tile to cut.
+        onPlate
+          ? "bg-transparent"
+          : "bg-plate shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--plate-edge)_45%,transparent)]",
         SIZES[size],
         className,
       )}
@@ -65,7 +78,7 @@ export function PlayerHeadshot({
       </span>
 
       {src ? (
-        // A remote CDN portrait at 24-64px gains nothing from the optimizer,
+        // A remote CDN portrait at 32-80px gains nothing from the optimizer,
         // and routing it through one would cost a `remotePatterns` allowance
         // plus a server round trip per player on a two-hundred-row board.
         // eslint-disable-next-line @next/next/no-img-element
@@ -74,7 +87,13 @@ export function PlayerHeadshot({
           alt=""
           loading="lazy"
           decoding="async"
-          className="relative size-full object-cover"
+          className={cn(
+            "relative size-full object-cover",
+            // The head sits in the top half of Sleeper's frame, so a square
+            // crop taken from the centre cuts the crown off.
+            "object-top",
+            blend && "mix-blend-multiply",
+          )}
         />
       ) : null}
     </span>

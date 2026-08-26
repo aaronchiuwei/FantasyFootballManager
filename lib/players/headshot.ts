@@ -61,6 +61,17 @@ export function playerHeadshotUrl({
 }
 
 /**
+ * Whether a portrait URL is a team logo rather than a photograph.
+ *
+ * The two differ in the one way the renderer cares about: a player's headshot
+ * is cut out onto a solid white field, and a logo is a PNG with a transparent
+ * one. Only the first can have its background blended away.
+ */
+export function isTeamLogo(src: string | null | undefined): boolean {
+  return Boolean(src && src.includes("/images/team_logos/"));
+}
+
+/**
  * The mark shown where a picture cannot be. Initials rather than a silhouette,
  * for the same reason the plate is engraved rather than printed: the fallback
  * should read as the board's own lettering, not as a broken photograph.

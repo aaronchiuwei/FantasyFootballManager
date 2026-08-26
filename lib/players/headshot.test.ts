@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   initials,
   isDefense,
+  isTeamLogo,
   playerHeadshotUrl,
   teamLogoUrl,
 } from "./headshot";
@@ -69,5 +70,19 @@ describe("initials", () => {
   it("handles a single word and an empty one", () => {
     expect(initials("Eagles")).toBe("E");
     expect(initials("   ")).toBe("--");
+  });
+});
+
+describe("isTeamLogo", () => {
+  it("separates a transparent logo from a cut-out on white", () => {
+    expect(isTeamLogo(teamLogoUrl("PHI"))).toBe(true);
+    expect(
+      isTeamLogo(playerHeadshotUrl({ sleeperId: "4034", position: "RB" })),
+    ).toBe(false);
+  });
+
+  it("treats a missing picture as not a logo", () => {
+    expect(isTeamLogo(null)).toBe(false);
+    expect(isTeamLogo(undefined)).toBe(false);
   });
 });
