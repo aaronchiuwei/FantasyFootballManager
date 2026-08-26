@@ -524,6 +524,34 @@
     line-height: 1;
   }
 
+  /* -- PORTRAIT MARK ---------------------------------------------------
+     The initials shown where a photograph cannot be, for a portrait that is
+     multiplied into a plate.
+
+     Those cannot use the usual trick of laying the mark underneath and
+     letting the picture cover it: multiply reads whatever is behind the
+     photograph's white field and prints it straight back through, so the
+     initials ghost over the player's face. Generated content on the image
+     itself is the one fallback that is conditional without JavaScript --
+     a browser paints it only when the image does not paint. */
+  .portrait-mark::after {
+    content: attr(data-initials);
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    /* Covers the broken-image glyph the browser draws once the image has
+       generated content to lay out. White is the identity for multiply, so
+       the patch itself prints nothing onto the plate. */
+    background-color: #fff;
+    font-family: var(--font-plate);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    line-height: 1;
+    color: color-mix(in oklch, var(--plate-ink) 45%, transparent);
+  }
+
   /* -- TABLE HEAD ------------------------------------------------------
      A table's head is the channel its column of plates seats under: the same
      lit top lip and shadowed underside every other rail in the app has, so a

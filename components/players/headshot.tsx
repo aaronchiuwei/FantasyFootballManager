@@ -21,12 +21,18 @@ import { cn } from "@/lib/utils";
  * so it is never blended: multiply would eat the white in the mark itself.
  *
  * **No JavaScript.** A picture that needed a client component would put two
- * hundred of them on the values board to do nothing but catch a 404. Instead
- * the fallback mark is rendered underneath and the image sits on top of it: a
- * portrait Sleeper does not have fails to paint, `alt=""` keeps the browser
- * from drawing a broken-image glyph in its place, and the initials that were
- * always there show through. Nothing has to notice the failure for the right
- * thing to be on screen.
+ * hundred of them on the values board to do nothing but catch a 403. So the
+ * fallback mark is conditional without anything watching for the failure, in
+ * one of two ways depending on how the portrait is composited:
+ *
+ * - Not blended: the mark is laid underneath and the opaque photograph covers
+ *   it. A portrait Sleeper does not have fails to paint, `alt=""` keeps the
+ *   browser from drawing a broken-image glyph in its place, and the initials
+ *   that were always there show through.
+ * - Blended: that trick inverts, because multiply prints whatever is behind
+ *   the white field straight back through it and the mark ghosts over the
+ *   player's face. So the mark becomes generated content on the image itself
+ *   (`.portrait-mark`), which a browser paints only when the image does not.
  */
 
 const SIZES = {
@@ -73,9 +79,11 @@ export function PlayerHeadshot({
         className,
       )}
     >
-      <span className="stencil absolute inset-0 grid place-items-center text-plate-ink/45">
-        {initials(name)}
-      </span>
+      {blend && src ? null : (
+        <span className="stencil absolute inset-0 grid place-items-center text-plate-ink/45">
+          {initials(name)}
+        </span>
+      )}
 
       {src ? (
         // A remote CDN portrait at 32-80px gains nothing from the optimizer,
@@ -85,6 +93,7 @@ export function PlayerHeadshot({
         <img
           src={src}
           alt=""
+          data-initials={blend ? initials(name) : undefined}
           loading="lazy"
           decoding="async"
           className={cn(
@@ -92,7 +101,7 @@ export function PlayerHeadshot({
             // The head sits in the top half of Sleeper's frame, so a square
             // crop taken from the centre cuts the crown off.
             "object-top",
-            blend && "mix-blend-multiply",
+            blend && "portrait-mark mix-blend-multiply",
           )}
         />
       ) : null}
