@@ -254,9 +254,6 @@ export function OpenTradeAnalyzer({
                 </option>
               ))}
             </select>
-            <span className="text-xs text-muted-foreground">
-              The market stops at 14.
-            </span>
           </label>
 
           <label className="flex flex-col gap-1">

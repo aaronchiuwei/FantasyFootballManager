@@ -6,6 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { GreaseNote, Stencil } from "@/components/board/panel";
 import { RailLine } from "@/components/board/rail";
+import { AppHeader } from "@/components/board/app-header";
 import { SiteHeader } from "@/components/board/site-header";
 import {
   OpenTradeAnalyzer,
@@ -86,7 +87,14 @@ export default async function OpenTradePage({
 
   return (
     <div className="flex min-h-svh flex-col">
-      <SiteHeader signedIn={Boolean(user)} />
+      {/* Signed in, this page is the Analyzer section of the board and keeps
+          the board's own head. Signed out it is the front door, and the head
+          is the one the landing page wears. */}
+      {user ? (
+        <AppHeader email={user.email} />
+      ) : (
+        <SiteHeader signedIn={false} />
+      )}
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 sm:py-10">
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
