@@ -30,6 +30,8 @@ export type WaiverPlayer = {
   position: string | null;
   nflTeam: string | null;
   injuryStatus: string | null;
+  /** Sleeper's portrait, already resolved on the player master. */
+  headshotUrl: string | null;
   /** §7: shown for continuity with the rest of the app, never the ordering. */
   value: number;
   source: ValueSource;
@@ -115,7 +117,7 @@ export async function loadWaiverBoard(
       db
         .from("league_free_agents")
         .select(
-          "player_id, full_name, position, nfl_team, injury_status, value, value_source, ros_points, projected_pts_ppr, computed_at, fetched_at",
+          "player_id, full_name, position, nfl_team, injury_status, headshot_url, value, value_source, ros_points, projected_pts_ppr, computed_at, fetched_at",
         )
         .eq("league_id", leagueId)
         // §7 ranks on rest-of-season projection, so the cut is made on the same
@@ -149,6 +151,7 @@ export async function loadWaiverBoard(
       position: row.position,
       nflTeam: row.nfl_team,
       injuryStatus: row.injury_status,
+      headshotUrl: row.headshot_url,
       value: row.value,
       // A source the enum does not know is a value we cannot vouch for; the
       // badge says "unvalued" rather than implying a price (§5).

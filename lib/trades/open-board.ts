@@ -34,6 +34,8 @@ export type OpenAsset = TradeAsset & {
   name: string;
   nflTeam: string | null;
   injuryStatus: string | null;
+  /** Sleeper's portrait, already resolved on the player master. */
+  headshotUrl: string | null;
   overallRank: number | null;
   positionRank: number | null;
   /** FantasyCalc's own 30-day drift, as a share. Context, never in the math. */
@@ -82,7 +84,7 @@ async function readBoard(
   // one page either way.
   const { data: players, error: playerError } = await db
     .from("players")
-    .select("id, full_name, position, nfl_team, injury_status")
+    .select("id, full_name, position, nfl_team, injury_status, headshot_url")
     .in(
       "id",
       rows.map((row) => row.player_id),
@@ -118,6 +120,7 @@ async function readBoard(
       position: player.position,
       nflTeam: player.nfl_team,
       injuryStatus: player.injury_status,
+      headshotUrl: player.headshot_url,
       value: row.value,
       // Every row on this board came from FantasyCalc. Nothing here is
       // modelled, so nothing here may claim to be anything else.

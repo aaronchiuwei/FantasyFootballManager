@@ -43,6 +43,14 @@ const assetSchema = z.object({
   position: z.string().nullable(),
   nflTeam: z.string().nullable(),
   injuryStatus: z.string().nullable(),
+  /**
+   * Sleeper's portrait. Optional, and deliberately not a version bump: a
+   * payload frozen before this field existed is still a correct description of
+   * the trade it describes, and invalidating every cached suggestion in the
+   * table to add a picture would be a re-run of §9's search for nothing. Those
+   * rows render the fallback mark until the next sync rewrites them.
+   */
+  headshot: z.string().nullish(),
   value: z.number(),
   source: z.enum(["market", "model", "model_capped", "floor"]),
   /** Rest-of-season projected points, the currency the lineup delta is in. */
@@ -91,6 +99,7 @@ export type NamedSuggestionAsset = SuggestionAsset & {
   name: string;
   nflTeam: string | null;
   injuryStatus: string | null;
+  headshotUrl: string | null;
 };
 
 export type SuggestionSideMeta = { teamId: string; teamName: string | null };
@@ -103,6 +112,7 @@ function freezeAsset(asset: NamedSuggestionAsset): SuggestionPayloadAsset {
     position: asset.position,
     nflTeam: asset.nflTeam,
     injuryStatus: asset.injuryStatus,
+    headshot: asset.headshotUrl,
     value: asset.value,
     source: asset.source,
     points: asset.points,

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { playerHeadshotUrl } from "@/lib/players/headshot";
 import { fetchAllPlayers, type SleeperPlayer } from "@/lib/sources/sleeper";
 import type { Db } from "@/lib/supabase/db";
 import type { Database } from "@/lib/supabase/database.types";
@@ -89,8 +90,13 @@ function toRow(player: SleeperPlayer): Database["public"]["Tables"]["players"]["
     injury_status: player.injuryStatus,
     birth_date: player.birthDate,
     // Sleeper serves headshots off a predictable CDN path rather than shipping
-    // a URL in the payload.
-    headshot_url: `https://sleepercdn.com/content/nfl/players/${player.sleeperId}.jpg`,
+    // a URL in the payload, so the address is derived rather than fetched --
+    // and a team defense is served from a different path than a person.
+    headshot_url: playerHeadshotUrl({
+      sleeperId: player.sleeperId,
+      position: player.position,
+      nflTeam: player.nflTeam,
+    }),
   };
 }
 

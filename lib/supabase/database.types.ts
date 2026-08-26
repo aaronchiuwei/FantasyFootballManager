@@ -658,6 +658,7 @@ export type Database = {
           position: string | null;
           nfl_team: string | null;
           injury_status: string | null;
+          headshot_url: string | null;
           projected_pts_ppr: number | null;
           fetched_at: string;
         };

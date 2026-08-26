@@ -4,11 +4,11 @@ import type { Metadata } from "next";
 import { ArrowLeft, Info } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { PlayerHeadshot } from "@/components/players/headshot";
 import { InjuryBadge } from "@/components/players/injury-badge";
 import { SeasonSummary } from "@/components/players/season-summary";
 import { WeekLineTable } from "@/components/players/week-line-table";
@@ -22,14 +22,6 @@ import { cn } from "@/lib/utils";
 export const metadata: Metadata = { title: "Player" };
 
 type Search = { season?: string };
-
-function initials(name: string) {
-  return name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((word) => word[0]?.toUpperCase() ?? "")
-    .join("");
-}
 
 function Stat({
   label,
@@ -146,12 +138,11 @@ export default async function PlayerPage({
       </Button>
 
       <div className="flex flex-wrap items-start gap-4">
-        <Avatar className="size-16 shrink-0">
-          {player.headshot_url ? (
-            <AvatarImage src={player.headshot_url} alt="" />
-          ) : null}
-          <AvatarFallback>{initials(player.full_name)}</AvatarFallback>
-        </Avatar>
+        <PlayerHeadshot
+          src={player.headshot_url}
+          name={player.full_name}
+          size="lg"
+        />
 
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex flex-wrap items-center gap-2">

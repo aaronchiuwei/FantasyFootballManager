@@ -5,6 +5,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { RotateCcw } from "lucide-react";
 
+import { PlayerHeadshot } from "@/components/players/headshot";
 import { InjuryBadge } from "@/components/players/injury-badge";
 import { NeedChip } from "@/components/needs/need-chip";
 import { Button } from "@/components/ui/button";
@@ -272,18 +273,28 @@ function Row({
       </td>
 
       <td className="py-2 pr-3">
-        <div className="flex items-center gap-2">
-          <Link
-            href={`/leagues/${leagueId}/players/${candidate.playerId}`}
-            className="truncate font-medium underline-offset-4 hover:underline"
-          >
-            {candidate.name}
-          </Link>
-          <InjuryBadge status={candidate.injuryStatus} />
+        <div className="flex items-center gap-2.5">
+          <PlayerHeadshot
+            src={candidate.headshotUrl}
+            name={candidate.name}
+            size="md"
+          />
+
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <Link
+                href={`/leagues/${leagueId}/players/${candidate.playerId}`}
+                className="truncate font-medium underline-offset-4 hover:underline"
+              >
+                {candidate.name}
+              </Link>
+              <InjuryBadge status={candidate.injuryStatus} />
+            </div>
+            <p className="truncate text-xs text-muted-foreground">
+              {candidate.nflTeam ?? "FA"}
+            </p>
+          </div>
         </div>
-        <p className="truncate text-xs text-muted-foreground">
-          {candidate.nflTeam ?? "FA"}
-        </p>
       </td>
 
       <td className="py-2 pr-3 text-right font-mono text-sm tabular-nums text-muted-foreground">

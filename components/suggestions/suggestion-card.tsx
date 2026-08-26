@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AlertTriangle, ArrowRight, Info } from "lucide-react";
 
+import { PlayerHeadshot } from "@/components/players/headshot";
 import { InjuryBadge } from "@/components/players/injury-badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { PositionBadge } from "@/components/values/position-badge";
@@ -55,6 +56,11 @@ function Side({
       <ul className="space-y-1.5">
         {side.assets.map((asset) => (
           <li key={asset.playerId} className="flex items-center gap-2">
+            <PlayerHeadshot
+              src={asset.headshot}
+              name={asset.name}
+              size="sm"
+            />
             <PositionBadge position={asset.position} />
             <span className="min-w-0 flex-1 truncate text-sm font-medium">
               {asset.name}

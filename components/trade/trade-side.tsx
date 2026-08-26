@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Plus, X } from "lucide-react";
 
+import { PlayerHeadshot } from "@/components/players/headshot";
 import { InjuryBadge } from "@/components/players/injury-badge";
 import { ValueBadge } from "@/components/values/value-badge";
 import { Panel, Stencil } from "@/components/board/panel";
@@ -153,7 +154,13 @@ export function TradeSide({
                   className="plate flex h-10 items-stretch overflow-hidden"
                 >
                   <PlateCore position={asset.position} />
-                  <span className="flex min-w-0 flex-1 items-center gap-2 px-2.5">
+                  <span className="flex min-w-0 flex-1 items-center gap-2 px-2">
+                    <PlayerHeadshot
+                      src={asset.headshotUrl}
+                      name={asset.name}
+                      size="sm"
+                      tone="plate"
+                    />
                     <span className="engraved min-w-0 flex-1 truncate font-plate text-sm font-semibold text-plate-ink">
                       {asset.name}
                     </span>
@@ -245,7 +252,13 @@ export function TradeSide({
                         )}
                       >
                         <PlateCore position={asset.position} />
-                        <span className="flex min-w-0 flex-1 items-center gap-2 px-2.5">
+                        <span className="flex min-w-0 flex-1 items-center gap-2 px-2">
+                          <PlayerHeadshot
+                            src={asset.headshotUrl}
+                            name={asset.name}
+                            size="sm"
+                            tone="plate"
+                          />
                           <span className="min-w-0 flex-1 truncate">
                             <span className="engraved font-plate text-sm font-semibold text-plate-ink">
                               {asset.name}

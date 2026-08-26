@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Loader2, Search, X } from "lucide-react";
 
+import { PlayerHeadshot } from "@/components/players/headshot";
 import { InjuryBadge } from "@/components/players/injury-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -152,6 +153,11 @@ export function BuilderPanel({
                     onClick={() => choose(asset)}
                     className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted motion-reduce:transition-none"
                   >
+                    <PlayerHeadshot
+                      src={asset.headshotUrl}
+                      name={asset.name}
+                      size="sm"
+                    />
                     <PositionBadge position={asset.position} />
                     <span className="min-w-0 flex-1 truncate text-sm font-medium">
                       {asset.name}

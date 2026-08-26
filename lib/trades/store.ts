@@ -27,6 +27,8 @@ export type TradeBoardAsset = {
   position: string | null;
   nflTeam: string | null;
   injuryStatus: string | null;
+  /** Sleeper's portrait, already resolved on the player master. */
+  headshotUrl: string | null;
   value: number;
   source: ValueSource;
   teamId: string;
@@ -161,7 +163,7 @@ export async function loadTradeBoard(
     db
       .from("league_player_values")
       .select(
-        "player_id, full_name, position, nfl_team, injury_status, value, value_source, team_id, slot, is_starter, projected_pts_ppr, ros_points, computed_at",
+        "player_id, full_name, position, nfl_team, injury_status, headshot_url, value, value_source, team_id, slot, is_starter, projected_pts_ppr, ros_points, computed_at",
       )
       .eq("league_id", leagueId)
       .not("team_id", "is", null)
@@ -203,6 +205,7 @@ export async function loadTradeBoard(
       position: row.position,
       nflTeam: row.nfl_team,
       injuryStatus: row.injury_status,
+      headshotUrl: row.headshot_url,
       value: row.value,
       // A source the enum does not know is a value we cannot vouch for, so it
       // is treated as unvalued — which refuses a verdict rather than quietly

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowDownIcon, ArrowUpIcon } from "lucide-react";
 
+import { PlayerHeadshot } from "@/components/players/headshot";
 import { InjuryBadge } from "@/components/players/injury-badge";
 import { PositionBadge } from "@/components/values/position-badge";
 import { ValueBadge } from "@/components/values/value-badge";
@@ -61,20 +62,30 @@ export function PlayerValueRow({
       </td>
 
       <td className="py-2.5 pr-3">
-        <div className="flex items-center gap-2">
-          {/* The way into the player's stats surface. */}
-          <Link
-            href={`/leagues/${leagueId}/players/${row.player_id}`}
-            className="truncate font-plate text-sm font-semibold text-foreground underline-offset-4 hover:underline"
-          >
-            {row.full_name}
-          </Link>
-          <InjuryBadge status={row.injury_status} />
+        <div className="flex items-center gap-2.5">
+          <PlayerHeadshot
+            src={row.headshot_url}
+            name={row.full_name}
+            size="md"
+          />
+
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              {/* The way into the player's stats surface. */}
+              <Link
+                href={`/leagues/${leagueId}/players/${row.player_id}`}
+                className="truncate font-plate text-sm font-semibold text-foreground underline-offset-4 hover:underline"
+              >
+                {row.full_name}
+              </Link>
+              <InjuryBadge status={row.injury_status} />
+            </div>
+            <p className="stencil mt-0.5 truncate text-chalk-dim">
+              {row.nfl_team ?? "FA"}
+              {row.position_rank ? ` · ${row.position}${row.position_rank}` : ""}
+            </p>
+          </div>
         </div>
-        <p className="stencil mt-0.5 truncate text-chalk-dim">
-          {row.nfl_team ?? "FA"}
-          {row.position_rank ? ` · ${row.position}${row.position_rank}` : ""}
-        </p>
       </td>
 
       <td className="hidden py-2.5 pr-3 sm:table-cell">
