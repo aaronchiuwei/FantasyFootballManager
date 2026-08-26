@@ -9,7 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { PlayerHeadshot } from "@/components/players/headshot";
-import { InjuryBadge } from "@/components/players/injury-badge";
+import {
+  InjuryBadge,
+  injuryDescription,
+} from "@/components/players/injury-badge";
 import { SeasonSummary } from "@/components/players/season-summary";
 import { WeekLineTable } from "@/components/players/week-line-table";
 import { PositionBadge } from "@/components/values/position-badge";
@@ -150,7 +153,10 @@ export default async function PlayerPage({
               {player.full_name}
             </h1>
             <PositionBadge position={player.position} />
-            <InjuryBadge status={player.injury_status} />
+            <InjuryBadge
+              status={player.injury_status}
+              note={value?.injury_note}
+            />
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -172,6 +178,17 @@ export default async function PlayerPage({
               <Badge variant="outline">Free agent</Badge>
             )}
           </div>
+
+          {/*
+            The badge is two letters because a table row has no width for more.
+            This page does, so the status gets spelled out and Yahoo's note --
+            the *why* Sleeper's status never says -- gets printed next to it.
+          */}
+          {injuryDescription(player.injury_status, value?.injury_note) ? (
+            <p className="stencil text-destructive">
+              {injuryDescription(player.injury_status, value?.injury_note)}
+            </p>
+          ) : null}
         </div>
       </div>
 

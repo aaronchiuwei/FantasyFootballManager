@@ -65,7 +65,7 @@ function Side({
             <span className="min-w-0 flex-1 truncate text-sm font-medium">
               {asset.name}
             </span>
-            <InjuryBadge status={asset.injuryStatus} />
+            <InjuryBadge status={asset.injuryStatus} note={asset.injuryNote} />
             <span className="shrink-0 font-mono text-sm tabular-nums text-muted-foreground">
               {asset.value.toLocaleString()}
             </span>

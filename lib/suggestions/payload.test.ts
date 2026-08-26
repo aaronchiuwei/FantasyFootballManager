@@ -32,6 +32,7 @@ function asset(
     position,
     nflTeam: "CIN",
     injuryStatus: null,
+    injuryNote: null,
     headshotUrl: null,
     value,
     points,

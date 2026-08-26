@@ -162,7 +162,7 @@ export function BuilderPanel({
                     <span className="min-w-0 flex-1 truncate text-sm font-medium">
                       {asset.name}
                     </span>
-                    <InjuryBadge status={asset.injuryStatus} />
+                    <InjuryBadge status={asset.injuryStatus} note={asset.injuryNote} />
                     <span className="hidden truncate text-xs text-muted-foreground sm:inline">
                       {names[asset.teamId]}
                     </span>

@@ -633,6 +633,8 @@ export type Database = {
           position: string | null;
           nfl_team: string | null;
           injury_status: string | null;
+          /** Yahoo's free-text reason ("Knee"). Label only -- never valued. */
+          injury_note: string | null;
           headshot_url: string | null;
           projected_pts_ppr: number | null;
           slot: string | null;
@@ -658,6 +660,8 @@ export type Database = {
           position: string | null;
           nfl_team: string | null;
           injury_status: string | null;
+          /** Yahoo's free-text reason ("Knee"). Label only -- never valued. */
+          injury_note: string | null;
           headshot_url: string | null;
           projected_pts_ppr: number | null;
           fetched_at: string;

@@ -164,7 +164,7 @@ export function TradeSide({
                     <span className="engraved min-w-0 flex-1 truncate font-plate text-sm font-semibold text-plate-ink">
                       {asset.name}
                     </span>
-                    <InjuryBadge status={asset.injuryStatus} />
+                    <InjuryBadge status={asset.injuryStatus} note={asset.injuryNote} />
                     <span
                       data-numeric
                       className="engraved shrink-0 font-plate text-sm font-bold tabular-nums text-plate-ink"
@@ -268,7 +268,7 @@ export function TradeSide({
                               {asset.slot ? ` · ${asset.slot}` : ""}
                             </span>
                           </span>
-                          <InjuryBadge status={asset.injuryStatus} />
+                          <InjuryBadge status={asset.injuryStatus} note={asset.injuryNote} />
                           <span
                             data-numeric
                             className="engraved shrink-0 font-plate text-sm font-bold tabular-nums text-plate-ink"

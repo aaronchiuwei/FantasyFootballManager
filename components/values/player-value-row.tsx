@@ -78,7 +78,7 @@ export function PlayerValueRow({
               >
                 {row.full_name}
               </Link>
-              <InjuryBadge status={row.injury_status} />
+              <InjuryBadge status={row.injury_status} note={row.injury_note} />
             </div>
             <p className="stencil mt-0.5 truncate text-chalk-dim">
               {row.nfl_team ?? "FA"}

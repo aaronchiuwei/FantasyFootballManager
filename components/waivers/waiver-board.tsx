@@ -288,7 +288,10 @@ function Row({
               >
                 {candidate.name}
               </Link>
-              <InjuryBadge status={candidate.injuryStatus} />
+              <InjuryBadge
+                status={candidate.injuryStatus}
+                note={candidate.injuryNote}
+              />
             </div>
             <p className="truncate text-xs text-muted-foreground">
               {candidate.nflTeam ?? "FA"}

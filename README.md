@@ -283,6 +283,14 @@ Two decisions worth stating plainly:
   knew about the injury, so discounting them again charges the same news twice
   and costs the one property that makes a verdict arguable with a leaguemate:
   that the number is quotable. Injury *status* rides along on every row instead.
+- **Yahoo's injury note is label, never input.** Sleeper says how available a
+  player is (`Q`, `OUT`, `IR`); Yahoo's `injury_note` says why (`Knee`,
+  `Hamstring`). The status drives §6's multipliers because it is an enum with a
+  known severity order; the note is free text a third party writes, and there
+  is no defensible number to turn `Hamstring` into. It rides on the two
+  league-scoped read models — `league_player_values` and `league_free_agents` —
+  as the badge's tooltip, and spelled out on the player page. The open trade
+  analyzer runs without a Yahoo import, so it has no note and shows none.
 - **Nothing is ever worth zero.** `player_values` has a `check (value > 0)` on
   it, because a zero is indistinguishable from a missing value by the time it
   reaches trade math.

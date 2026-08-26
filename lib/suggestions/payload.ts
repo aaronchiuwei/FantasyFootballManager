@@ -44,6 +44,13 @@ const assetSchema = z.object({
   nflTeam: z.string().nullable(),
   injuryStatus: z.string().nullable(),
   /**
+   * Yahoo's free-text reason for that status ("Knee"). Optional for the same
+   * reason `headshot` is, and frozen for the same reason `injuryStatus` is: a
+   * suggestion is a snapshot of the trade as it was priced, and the note is
+   * part of what a manager was looking at when it was.
+   */
+  injuryNote: z.string().nullish(),
+  /**
    * Sleeper's portrait. Optional, and deliberately not a version bump: a
    * payload frozen before this field existed is still a correct description of
    * the trade it describes, and invalidating every cached suggestion in the
@@ -99,6 +106,7 @@ export type NamedSuggestionAsset = SuggestionAsset & {
   name: string;
   nflTeam: string | null;
   injuryStatus: string | null;
+  injuryNote: string | null;
   headshotUrl: string | null;
 };
 
@@ -112,6 +120,7 @@ function freezeAsset(asset: NamedSuggestionAsset): SuggestionPayloadAsset {
     position: asset.position,
     nflTeam: asset.nflTeam,
     injuryStatus: asset.injuryStatus,
+    injuryNote: asset.injuryNote,
     headshot: asset.headshotUrl,
     value: asset.value,
     source: asset.source,
