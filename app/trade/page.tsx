@@ -114,12 +114,17 @@ export default async function OpenTradePage({
             </p>
           </div>
 
-          <Button asChild variant="outline" size="sm">
-            <Link href={user ? "/leagues" : "/signup"}>
-              {user ? "Your leagues" : "Connect Yahoo"}
-              <ArrowRight className="size-4" aria-hidden />
-            </Link>
-          </Button>
+          {/* Only for a stranger. A signed-in manager already has Leagues
+              ruled across the header above this, and the same door does not
+              need two handles. */}
+          {user ? null : (
+            <Button asChild variant="outline" size="sm">
+              <Link href="/signup">
+                Connect Yahoo
+                <ArrowRight className="size-4" aria-hidden />
+              </Link>
+            </Button>
+          )}
         </div>
 
         {board.assets.length === 0 ? (

@@ -34,8 +34,10 @@ export function AppHeader({ email }: { email?: string | null }) {
       ].join(" ")}
     >
       <div className="mx-auto flex w-full max-w-6xl items-center gap-x-5 px-4 sm:px-6">
+        {/* The wall's title is the way back out to the front of the building,
+            not a fifth section. Dashboard is already ruled across beside it. */}
         <Link
-          href="/dashboard"
+          href="/"
           className="group/mark flex min-w-0 shrink-0 items-center gap-2.5 py-2.5"
         >
           <span aria-hidden className="h-6 w-1 shrink-0 rounded-xs bg-grease" />
