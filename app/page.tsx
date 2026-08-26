@@ -5,7 +5,7 @@ import { Plate, PlateBody, PlateCore, PlateName, PlateMeta, PlateValue } from "@
 import { Rail, RailLine } from "@/components/board/rail";
 import { Stencil, GreaseNote } from "@/components/board/panel";
 import { ExampleBoard } from "@/components/marketing/example-board";
-import { ThemeToggle } from "@/components/board/theme-toggle";
+import { SiteHeader } from "@/components/board/site-header";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -52,31 +52,7 @@ export default async function HomePage() {
 
   return (
     <div className="flex min-h-svh flex-col">
-      <header className="mx-auto flex w-full max-w-6xl items-center gap-4 px-4 py-4 sm:px-6">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span aria-hidden className="h-6 w-1 shrink-0 rounded-xs bg-grease" />
-          <span className="flex min-w-0 flex-col leading-none">
-            <span className="stencil text-[0.5625rem] text-chalk-dim">
-              Fantasy Football
-            </span>
-            <span className="stencil mt-0.5 text-[0.8125rem] text-foreground">
-              Manager
-            </span>
-          </span>
-        </div>
-        <div className="ml-auto flex items-center gap-1.5">
-          <ThemeToggle />
-          {user ? (
-            <Button asChild size="sm">
-              <Link href="/dashboard">Dashboard</Link>
-            </Button>
-          ) : (
-            <Button asChild variant="outline" size="sm">
-              <Link href="/login">Sign in</Link>
-            </Button>
-          )}
-        </div>
-      </header>
+      <SiteHeader signedIn={Boolean(user)} />
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 sm:px-6">
         {/* HERO. Split, not centred: the claim on the left, the working board
@@ -92,22 +68,27 @@ export default async function HomePage() {
               source attached.
             </p>
 
+            {/* The analyzer leads, even for a signed-in manager. It is the
+                thing the visitor came to do, it needs no account and no
+                import, and a landing page whose first button is a signup form
+                is asking for a commitment before it has given anything. */}
             <div className="mt-7 flex flex-wrap items-center gap-2.5">
+              <Button asChild size="lg">
+                <Link href="/trade">Analyze a trade</Link>
+              </Button>
               {user ? (
-                <Button asChild size="lg">
+                <Button asChild size="lg" variant="outline">
                   <Link href="/dashboard">Open your board</Link>
                 </Button>
               ) : (
-                <>
-                  <Button asChild size="lg">
-                    <Link href="/signup">Get started</Link>
-                  </Button>
-                  <Button asChild size="lg" variant="outline">
-                    <Link href="/login">Sign in</Link>
-                  </Button>
-                </>
+                <Button asChild size="lg" variant="outline">
+                  <Link href="/signup">Connect Yahoo</Link>
+                </Button>
               )}
             </div>
+            <p className="mt-3 text-sm text-muted-foreground">
+              No account needed to price two packages against the market.
+            </p>
           </div>
 
           <div
@@ -235,11 +216,16 @@ export default async function HomePage() {
           <h2 className="max-w-[16ch] text-balance font-plate text-3xl leading-[1.05] font-bold tracking-[-0.015em] text-foreground sm:text-4xl">
             Connect Yahoo. Your board builds itself.
           </h2>
-          <Button asChild size="lg">
-            <Link href={user ? "/dashboard" : "/signup"}>
-              {user ? "Open your board" : "Get started"}
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Button asChild size="lg">
+              <Link href={user ? "/dashboard" : "/signup"}>
+                {user ? "Open your board" : "Get started"}
+              </Link>
+            </Button>
+            <Button asChild size="lg" variant="outline">
+              <Link href="/trade">Or just analyze a trade</Link>
+            </Button>
+          </div>
         </section>
       </main>
 

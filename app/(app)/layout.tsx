@@ -63,6 +63,7 @@ export default async function AppLayout({
             items={[
               { href: "/dashboard", label: "Dashboard" },
               { href: "/leagues", label: "Leagues" },
+              { href: "/trade", label: "Analyzer" },
             ]}
           />
 
@@ -84,6 +85,7 @@ export default async function AppLayout({
             items={[
               { href: "/dashboard", label: "Dashboard" },
               { href: "/leagues", label: "Leagues" },
+              { href: "/trade", label: "Analyzer" },
             ]}
           />
         </div>

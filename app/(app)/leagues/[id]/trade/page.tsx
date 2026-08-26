@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { AlertTriangle } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { SyncButton } from "@/components/sync/sync-button";
 import {
@@ -133,12 +134,18 @@ export default async function TradePage({
               the rosters from Yahoo and prices every player on them. The
               analyzer runs entirely on those cached values.
             </p>
-            <div className="flex justify-center">
+            <div className="flex flex-wrap items-center justify-center gap-2">
               <SyncButton
                 leagueId={league.id}
                 initialRun={run}
                 label="Sync this league"
               />
+              {/* A sync takes minutes and this question does not have to
+                  wait for one: the open analyzer prices the same two packages
+                  off the market board, without the rosters. */}
+              <Button asChild variant="outline" size="sm">
+                <Link href="/trade">Price a trade without the rosters</Link>
+              </Button>
             </div>
           </CardContent>
         </Card>

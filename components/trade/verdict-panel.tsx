@@ -8,9 +8,9 @@ import { RailLine } from "@/components/board/rail";
 import {
   BAND_META,
   type TradeAnalysis,
+  type TradeAsset,
   type TradeSideKey,
 } from "@/lib/trades/analyze";
-import type { TradeBoardAsset } from "@/lib/trades/store";
 import { cn } from "@/lib/utils";
 
 import { BalanceBeam, type BeamTone } from "./balance-beam";
@@ -38,14 +38,20 @@ function percent(value: number): string {
  * The surface resolves to one sentence. Every figure on it exists to support
  * that sentence, and the sentence is written on the board in grease pencil
  * rather than boxed, because it is the thing the manager leaves with.
+ *
+ * Generic over the asset, and `leagueId` is optional, because the open
+ * analyzer renders this exact panel with no league behind it. Without one
+ * there is no identity screen to send anybody to, so the unvalued warning
+ * still says what is wrong and simply stops offering a fix that does not
+ * exist.
  */
-export function VerdictPanel({
+export function VerdictPanel<T extends TradeAsset & { name: string }>({
   analysis,
   leagueId,
   names,
 }: {
-  analysis: TradeAnalysis<TradeBoardAsset>;
-  leagueId: string;
+  analysis: TradeAnalysis<T>;
+  leagueId?: string | null;
   names: Record<TradeSideKey, string>;
 }) {
   const { verdict, blocks } = analysis;
@@ -132,13 +138,18 @@ export function VerdictPanel({
               <span>
                 {block.assets.map((asset) => asset.name).join(", ")} has no
                 resolved value, so this trade gets no verdict.{" "}
-                <Link
-                  href={`/leagues/${leagueId}/identity`}
-                  className="underline underline-offset-4 decoration-grease decoration-2"
-                >
-                  Resolve identity
-                </Link>{" "}
-                and sync. A missing value must never be summed as a zero.
+                {leagueId ? (
+                  <>
+                    <Link
+                      href={`/leagues/${leagueId}/identity`}
+                      className="underline underline-offset-4 decoration-grease decoration-2"
+                    >
+                      Resolve identity
+                    </Link>{" "}
+                    and sync.{" "}
+                  </>
+                ) : null}
+                A missing value must never be summed as a zero.
               </span>
             </p>
           ),

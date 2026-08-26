@@ -3,8 +3,15 @@ import { createServerClient } from "@supabase/ssr";
 
 import type { Database } from "./database.types";
 
-/** Routes a signed-out visitor may reach. Everything else redirects to /login. */
-const PUBLIC_PATHS = ["/", "/login", "/signup", "/auth"];
+/**
+ * Routes a signed-out visitor may reach. Everything else redirects to /login.
+ *
+ * `/trade` is the open analyzer: it prices two packages against the market
+ * board and reads nothing that belongs to anybody, so requiring an account to
+ * see it would gate the one answer the product exists to give behind the one
+ * step most visitors will not take.
+ */
+const PUBLIC_PATHS = ["/", "/trade", "/login", "/signup", "/auth"];
 
 function isPublic(pathname: string) {
   return PUBLIC_PATHS.some(

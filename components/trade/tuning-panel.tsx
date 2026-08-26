@@ -58,7 +58,12 @@ export function TuningPanel({
 }: {
   params: TradeParams;
   onChange: (params: TradeParams) => void;
-  onCommit: (params: TradeParams) => void;
+  /**
+   * Where a released slider is persisted. Optional: the open analyzer has no
+   * league to calibrate, so its knobs live and die with the tab, and the
+   * control is the same control either way.
+   */
+  onCommit?: (params: TradeParams) => void;
 }) {
   const [open, setOpen] = useState(false);
   const modified = KNOBS.some(
@@ -96,7 +101,7 @@ export function TuningPanel({
               variant="ghost"
               onClick={() => {
                 onChange(DEFAULT_TRADE_PARAMS);
-                onCommit(DEFAULT_TRADE_PARAMS);
+                onCommit?.(DEFAULT_TRADE_PARAMS);
               }}
             >
               <RotateCcw className="size-3.5" aria-hidden />
@@ -137,7 +142,7 @@ export function TuningPanel({
                       onChange({ ...params, [knob.key]: next })
                     }
                     onValueCommit={([next]) =>
-                      onCommit({ ...params, [knob.key]: next })
+                      onCommit?.({ ...params, [knob.key]: next })
                     }
                   />
 
