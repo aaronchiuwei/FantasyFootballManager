@@ -49,7 +49,7 @@ function Bar({
 
       <div className="h-2 overflow-hidden rounded-4xl bg-muted">
         <div
-          className={cn("h-full rounded-4xl transition-[width] duration-700", tone)}
+          className={cn("h-full rounded-4xl transition-[width] duration-[var(--motion-slow)] motion-reduce:transition-none", tone)}
           style={{ width: `${grown ? Math.round(share * 100) : 0}%` }}
         />
       </div>

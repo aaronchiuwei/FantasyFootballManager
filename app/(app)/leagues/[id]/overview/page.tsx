@@ -1,10 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { AlertTriangle, ArrowLeft } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { SyncButton } from "@/components/sync/sync-button";
 import { TeamNeedsCard } from "@/components/needs/team-needs-card";
@@ -64,13 +63,6 @@ export default async function OverviewPage({
 
   return (
     <div className="space-y-6">
-      <Button asChild variant="ghost" size="sm" className="-ml-2">
-        <Link href={`/leagues/${league.id}`}>
-          <ArrowLeft className="size-4" aria-hidden />
-          {league.name}
-        </Link>
-      </Button>
-
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight">

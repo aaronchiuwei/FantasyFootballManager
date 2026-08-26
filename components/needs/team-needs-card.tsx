@@ -57,7 +57,7 @@ export function TeamNeedsCard({
     <Card
       style={{ animationDelay: `${delay}ms` }}
       className={cn(
-        "animate-in fade-in slide-in-from-bottom-2 duration-500 motion-reduce:animate-none",
+        "animate-in fade-in slide-in-from-bottom-2 duration-[var(--motion-base)] motion-reduce:animate-none",
         team.isUsersTeam && "border-primary/60 bg-primary/5",
       )}
     >

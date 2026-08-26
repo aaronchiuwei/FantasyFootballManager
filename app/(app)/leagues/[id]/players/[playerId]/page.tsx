@@ -257,7 +257,7 @@ export default async function PlayerPage({
                 key={season}
                 href={logHref(season)}
                 className={cn(
-                  "inline-flex h-7 items-center rounded-4xl border px-3 text-xs font-medium transition-colors",
+                  "inline-flex h-7 items-center rounded-4xl border px-3 text-xs font-medium transition-colors motion-reduce:transition-none",
                   season === shown.season
                     ? "border-primary bg-primary text-primary-foreground"
                     : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",

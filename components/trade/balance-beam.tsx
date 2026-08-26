@@ -80,13 +80,17 @@ export function BalanceBeam({
 
   const style = TONES[tone];
   const swing =
-    "transition-transform duration-700 ease-out motion-reduce:transition-none";
+    "transition-transform duration-[var(--motion-slow)] ease-out motion-reduce:transition-none";
 
   return (
     <svg
       viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
       className={cn("h-32 w-full", className)}
-      role="img"
+      // Hidden rather than labelled: the verdict, the margin and both totals
+      // are already text directly above and below it, so a description here
+      // would be a screen reader saying the same thing three times. It had a
+      // `role="img"` alongside this, which is a contradiction — an image with
+      // no accessible name that is also not in the tree.
       aria-hidden
     >
       {/* Plinth and fulcrum: the fixed half of the picture. */}

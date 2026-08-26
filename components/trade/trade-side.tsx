@@ -111,8 +111,12 @@ export function TradeSide({
           )}
         >
           {totals.assets.length === 0 ? (
+            /* Leads with the interaction that works everywhere. Dragging is
+               the pleasant path on a desktop and is not available at all on a
+               touch screen, so an empty zone that opens by asking for a drag
+               is instructions a phone cannot follow. */
             <p className="grid h-20 place-items-center px-4 text-center text-xs text-muted-foreground">
-              Drag players here, or pick them from the roster below.
+              Pick players from the roster below — or drag them in here.
             </p>
           ) : (
             <ul className="space-y-1.5">

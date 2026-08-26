@@ -174,7 +174,7 @@ export function SuggestionCard({
           </p>
 
           {suggestion.withinNoise ? (
-            <p className="flex items-start gap-2 text-[var(--warning)]">
+            <p className="flex items-start gap-2 text-warning">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
               <span>
                 The {percent(suggestion.pct)} margin is inside what the modelled
@@ -184,7 +184,7 @@ export function SuggestionCard({
           ) : null}
 
           {empty > 0 ? (
-            <p className="flex items-start gap-2 text-[var(--warning)]">
+            <p className="flex items-start gap-2 text-warning">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
               <span>
                 {empty} starting slot{empty === 1 ? "" : "s"} would be left

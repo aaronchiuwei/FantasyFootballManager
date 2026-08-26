@@ -44,13 +44,11 @@ export function TeamCard({
   team: TeamRow;
   leagueId: string;
 }) {
+  // No transition on the card: it has no hover state, so the `transition-colors`
+  // that used to sit here animated nothing. §10 — where motion does not serve
+  // comprehension, cut it.
   return (
-    <Card
-      className={cn(
-        "transition-colors",
-        team.is_users_team && "border-primary/60 bg-primary/5",
-      )}
-    >
+    <Card className={cn(team.is_users_team && "border-primary/60 bg-primary/5")}>
       <CardContent className="flex items-start gap-3">
         <span className="w-6 shrink-0 pt-1 text-right font-mono text-sm text-muted-foreground">
           {team.rank ?? "—"}

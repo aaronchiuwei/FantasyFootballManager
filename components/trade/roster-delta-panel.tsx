@@ -109,7 +109,7 @@ export function RosterDeltaPanel({
         </div>
 
         {unprojected > 0 || empty > 0 ? (
-          <p className="flex items-start gap-2 text-xs text-[var(--warning)]">
+          <p className="flex items-start gap-2 text-xs text-warning">
             <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
             <span>
               {unprojected > 0

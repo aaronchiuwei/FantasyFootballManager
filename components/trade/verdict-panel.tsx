@@ -89,7 +89,7 @@ export function VerdictPanel({
         {/* The crossfade §10 asks for: a new band is a new element. */}
         <div
           key={verdict ? verdict.band : headline}
-          className="space-y-1 text-center animate-in fade-in slide-in-from-bottom-1 duration-300 motion-reduce:animate-none"
+          className="space-y-1 text-center animate-in fade-in slide-in-from-bottom-1 duration-[var(--motion-base)] motion-reduce:animate-none"
         >
           <p
             className={cn(
@@ -115,7 +115,7 @@ export function VerdictPanel({
           ) : (
             <p
               key={`unvalued-${block.side}`}
-              className="flex items-start justify-center gap-2 text-center text-sm text-[var(--warning)]"
+              className="flex items-start justify-center gap-2 text-center text-sm text-warning"
             >
               <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
               <span>
@@ -145,7 +145,7 @@ export function VerdictPanel({
             </p>
 
             {verdict.withinNoise ? (
-              <p className="flex items-start gap-2 text-[var(--warning)]">
+              <p className="flex items-start gap-2 text-warning">
                 <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
                 <span>
                   The {percent(verdict.pct)} margin is inside the{" "}

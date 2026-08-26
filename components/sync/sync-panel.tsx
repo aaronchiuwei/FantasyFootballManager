@@ -102,7 +102,7 @@ export function SyncPanel({
               ) : broken ? (
                 <X className="size-4 text-destructive" aria-hidden />
               ) : run?.status === "succeeded" ? (
-                <Check className="size-4 text-[var(--success)]" aria-hidden />
+                <Check className="size-4 text-success" aria-hidden />
               ) : (
                 <RefreshCw className="size-4 text-muted-foreground" aria-hidden />
               )}

@@ -2,8 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { createClient } from "@/lib/supabase/client";
-
 import {
   isStalled,
   toSyncRun,
@@ -83,28 +81,56 @@ export function useSyncRun(
     }
   }, []);
 
+  /**
+   * §10's performance guardrail — "dynamic-import [the heavy things]" — applied
+   * to the heaviest thing this app actually ships to the browser.
+   *
+   * The Supabase browser client drags `realtime-js` and its WebSocket stack in
+   * behind it, and a `SyncButton` sits on every league screen, so a static
+   * import put that on the critical path of the values board, the waiver wire
+   * and the analyzer alike — pages whose entire argument is that they run their
+   * own arithmetic locally and fast. It is imported here, inside the effect,
+   * so it loads after the page is interactive and in parallel with nothing the
+   * user is waiting on.
+   *
+   * Nothing about the behaviour changes: the subscription is opened on mount as
+   * before, and the poll in the next effect is the fallback it always was — so
+   * a run that settles before the chunk arrives is still picked up.
+   */
   useEffect(() => {
-    const supabase = createClient();
+    let cancelled = false;
+    let close: (() => void) | null = null;
 
-    const channel = supabase
-      .channel(`sync_runs:${leagueId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "sync_runs",
-          filter: `league_id=eq.${leagueId}`,
-        },
-        (payload) => {
-          const record = payload.new as SyncRunRecord;
-          if (record?.id) accept(toSyncRun(record));
-        },
-      )
-      .subscribe();
+    void (async () => {
+      const { createClient } = await import("@/lib/supabase/client");
+      // Unmounted while the chunk was in flight: opening a socket now would
+      // leak one nothing is left to close.
+      if (cancelled) return;
+
+      const supabase = createClient();
+      const channel = supabase
+        .channel(`sync_runs:${leagueId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "sync_runs",
+            filter: `league_id=eq.${leagueId}`,
+          },
+          (payload) => {
+            const record = payload.new as SyncRunRecord;
+            if (record?.id) accept(toSyncRun(record));
+          },
+        )
+        .subscribe();
+
+      close = () => void supabase.removeChannel(channel);
+    })();
 
     return () => {
-      void supabase.removeChannel(channel);
+      cancelled = true;
+      close?.();
     };
   }, [leagueId, accept]);
 

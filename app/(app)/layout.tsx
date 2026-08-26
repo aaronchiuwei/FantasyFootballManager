@@ -26,23 +26,29 @@ export default async function AppLayout({
   return (
     <div className="flex min-h-svh flex-col">
       <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-6 py-3">
-          <div className="flex items-center gap-6">
-            <Link href="/dashboard" className="font-semibold tracking-tight">
-              Fantasy Football Manager
-            </Link>
-            <nav className="flex items-center gap-4 text-sm text-muted-foreground">
-              <Link href="/dashboard" className="hover:text-foreground">
-                Dashboard
-              </Link>
-              <Link href="/leagues" className="hover:text-foreground">
-                Leagues
-              </Link>
-            </nav>
-          </div>
+        {/* Three items on one row is 415px of content on a 375px screen, so on
+            a phone the nav drops to a second row instead of squeezing the
+            wordmark or the sign-out control. `order-*` puts it back beside the
+            wordmark from `sm` up, where it fits. */}
+        <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
+          <Link
+            href="/dashboard"
+            className="min-w-0 flex-1 truncate font-semibold tracking-tight sm:flex-none"
+          >
+            Fantasy Football Manager
+          </Link>
 
-          <div className="flex items-center gap-3">
-            <span className="hidden text-sm text-muted-foreground sm:inline">
+          <nav className="order-last flex w-full items-center gap-4 text-sm text-muted-foreground sm:order-none sm:mr-auto sm:w-auto">
+            <Link href="/dashboard" className="hover:text-foreground">
+              Dashboard
+            </Link>
+            <Link href="/leagues" className="hover:text-foreground">
+              Leagues
+            </Link>
+          </nav>
+
+          <div className="flex shrink-0 items-center gap-3">
+            <span className="hidden max-w-[16rem] truncate text-sm text-muted-foreground md:inline">
               {user.email}
             </span>
             <form action={signOut}>
@@ -54,7 +60,9 @@ export default async function AppLayout({
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">
+      {/* `px-4` on a phone: the values board and the waiver wire are tables
+          that already scroll sideways, and twelve pixels a side is a column. */}
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6">
         {children}
       </main>
     </div>

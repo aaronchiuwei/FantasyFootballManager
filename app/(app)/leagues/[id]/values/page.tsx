@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { AlertTriangle, ArrowLeft, Info } from "lucide-react";
+import { AlertTriangle, Info, Search as SearchIcon, X } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { SyncButton } from "@/components/sync/sync-button";
 import {
@@ -15,6 +16,7 @@ import {
 import { latestRun } from "@/lib/sync/run";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
+import { MIN_QUERY_LENGTH, searchLabel, searchPattern } from "@/lib/values/search";
 
 export const metadata: Metadata = { title: "Player values" };
 
@@ -33,7 +35,7 @@ const AVAILABILITY = [
   { key: "free", label: "Free agents" },
 ] as const;
 
-type Search = { pos?: string; avail?: string; team?: string };
+type Search = { pos?: string; avail?: string; team?: string; q?: string };
 
 function href(leagueId: string, search: Search, patch: Search) {
   const params = new URLSearchParams();
@@ -41,6 +43,7 @@ function href(leagueId: string, search: Search, patch: Search) {
   if (merged.pos) params.set("pos", merged.pos);
   if (merged.avail && merged.avail !== "all") params.set("avail", merged.avail);
   if (merged.team) params.set("team", merged.team);
+  if (merged.q) params.set("q", merged.q);
   const query = params.toString();
   return `/leagues/${leagueId}/values${query ? `?${query}` : ""}`;
 }
@@ -54,7 +57,7 @@ function FilterLink({
     <Link
       {...props}
       className={cn(
-        "inline-flex h-7 items-center rounded-4xl border px-3 text-xs font-medium transition-colors",
+        "inline-flex h-7 items-center rounded-4xl border px-3 text-xs font-medium transition-colors motion-reduce:transition-none",
         active
           ? "border-primary bg-primary text-primary-foreground"
           : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -118,6 +121,8 @@ export default async function ValuesPage({
   const availability =
     AVAILABILITY.find((entry) => entry.key === search.avail)?.key ?? "all";
   const teamId = search.team && UUID.test(search.team) ? search.team : null;
+  const typed = searchLabel(search.q);
+  const pattern = searchPattern(search.q);
 
   const { data: filteredTeam } = teamId
     ? await supabase
@@ -135,6 +140,12 @@ export default async function ValuesPage({
     .order("overall_rank")
     .limit(PAGE_SIZE);
 
+  // A name search is the one filter that has to reach past `PAGE_SIZE`: the
+  // board is ranked, so "what is he worth" about anybody outside the top 200
+  // is otherwise unanswerable. It matches the name as displayed, which is the
+  // name the user is looking at — deliberately not §4's normalization, whose
+  // job is joining two providers rather than reading a manager's typing.
+  if (pattern) query = query.ilike("full_name", pattern);
   if (position) query = query.eq("position", position);
   if (availability === "mine") query = query.eq("is_users_team", true);
   if (availability === "free") query = query.is("team_id", null);
@@ -187,13 +198,6 @@ export default async function ValuesPage({
 
   return (
     <div className="space-y-6">
-      <Button asChild variant="ghost" size="sm" className="-ml-2">
-        <Link href={`/leagues/${league.id}`}>
-          <ArrowLeft className="size-4" aria-hidden />
-          {league.name}
-        </Link>
-      </Button>
-
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight">Player values</h1>
@@ -266,6 +270,50 @@ export default async function ValuesPage({
         </Card>
       ) : (
         <section className="space-y-4">
+          {/* A plain GET form, so search is a URL: shareable, back-button
+              friendly, and working before any JavaScript has loaded. The other
+              filters are already links for the same reason, and this keeps
+              them all one mechanism. */}
+          <form method="get" className="flex items-center gap-2">
+            {position ? <input type="hidden" name="pos" value={position} /> : null}
+            {availability !== "all" ? (
+              <input type="hidden" name="avail" value={availability} />
+            ) : null}
+            {filteredTeam ? (
+              <input type="hidden" name="team" value={filteredTeam.id} />
+            ) : null}
+
+            <div className="relative min-w-0 flex-1 sm:max-w-sm">
+              <SearchIcon
+                className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
+              <Input
+                type="search"
+                name="q"
+                defaultValue={typed}
+                placeholder="Find a player by name"
+                aria-label="Find a player by name"
+                maxLength={60}
+                autoComplete="off"
+                className="h-9 pl-8"
+              />
+            </div>
+
+            <Button type="submit" size="sm" variant="outline">
+              Search
+            </Button>
+
+            {typed ? (
+              <Button asChild size="sm" variant="ghost">
+                <Link href={href(league.id, search, { q: undefined })}>
+                  <X className="size-4" aria-hidden />
+                  Clear
+                </Link>
+              </Button>
+            ) : null}
+          </form>
+
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <div className="flex flex-wrap items-center gap-1.5">
               <FilterLink
@@ -314,9 +362,40 @@ export default async function ValuesPage({
               <AlertDescription>{error.message}</AlertDescription>
             </Alert>
           ) : (rows ?? []).length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              Nothing matches that filter.
-            </p>
+            /* Three different claims, and they must not render the same way:
+               the search was ignored, the search found nobody, or the filters
+               did. Only the middle one is a fact about this league. */
+            <div className="space-y-2 py-8 text-center text-sm text-muted-foreground">
+              {typed && !pattern ? (
+                <p>
+                  Type at least {MIN_QUERY_LENGTH} letters — a shorter search
+                  matches most of the board, so it is not run.
+                </p>
+              ) : pattern ? (
+                <>
+                  <p>
+                    Nobody priced in this league is called{" "}
+                    <span className="font-medium text-foreground">{typed}</span>
+                    .
+                  </p>
+                  <p className="text-xs">
+                    The engine prices the market&rsquo;s board, every rostered
+                    player and Yahoo&rsquo;s available list — a player outside
+                    all three has no row here. If they are on a roster, they may
+                    be waiting on the{" "}
+                    <Link
+                      href={`/leagues/${league.id}/identity`}
+                      className="underline underline-offset-4"
+                    >
+                      identity screen
+                    </Link>
+                    .
+                  </p>
+                </>
+              ) : (
+                <p>Nothing matches that filter.</p>
+              )}
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[36rem] text-sm">
@@ -350,8 +429,16 @@ export default async function ValuesPage({
 
           {(rows ?? []).length === PAGE_SIZE ? (
             <p className="text-center text-xs text-muted-foreground">
-              Showing the top {PAGE_SIZE}. Filter by position to see further down
-              the board.
+              Showing the top {PAGE_SIZE}
+              {pattern ? " match" : ""}. {pattern ? "Narrow the search" : "Filter by position"}{" "}
+              to see further down the board.
+            </p>
+          ) : pattern ? (
+            <p className="text-center text-xs text-muted-foreground">
+              {(rows ?? []).length} match
+              {(rows ?? []).length === 1 ? "" : "es"} for{" "}
+              <span className="text-foreground">{typed}</span>, ranked as the
+              whole board is.
             </p>
           ) : null}
         </section>

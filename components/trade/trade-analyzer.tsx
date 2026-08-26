@@ -357,7 +357,7 @@ export function TradeAnalyzer({
           disabled={saving || analysis.verdict === null}
         >
           {saving ? (
-            <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden />
+            <Loader2 className="size-4 animate-spin" aria-hidden />
           ) : (
             <Save className="size-4" aria-hidden />
           )}

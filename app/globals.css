@@ -82,6 +82,12 @@
   --color-pos-flex: var(--pos-flex);
   --color-pos-bench: var(--pos-bench);
 
+  /* Every bare `transition-*` in the app — hovers, filter pills, drop-zone
+     borders — is state feedback, so the default duration is the fast token
+     rather than a number repeated in forty class lists. The three animations
+     that mean something override it explicitly. */
+  --default-transition-duration: var(--motion-fast);
+
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -93,6 +99,32 @@
 
 :root {
   --radius: 0.625rem;
+
+  /* ---------------------------------------------------------------------
+     Motion (§10). Three speeds, declared here for the same reason the colors
+     are: a duration chosen in a component file is a duration nothing else can
+     agree with, and nine phases of ad-hoc 200/300/420/500/700 do not read as
+     one system.
+
+     Each speed is a claim about what the motion is *for*:
+
+     - fast   state feedback. A hover, a border lighting up under a drag, a
+              filter pill turning on. It must land before the user wonders
+              whether the click registered.
+     - base   an element arriving or being replaced. Card entrances, the
+              verdict crossfade, the package stack sliding. Long enough to be
+              seen as a change rather than a flicker.
+     - slow   the two animations that *are* information: the balance beam
+              tipping to its verdict (§10 — "the balance beam is the verdict")
+              and a bar or ring filling to a value. These are read, not
+              noticed, so they get time to be followed.
+
+     Anything that does not fit one of these three is decoration, and §10's
+     instruction for decoration is to cut it.
+  --------------------------------------------------------------------- */
+  --motion-fast: 150ms;
+  --motion-base: 300ms;
+  --motion-slow: 700ms;
 
   --background: oklch(0.986 0.004 150);
   --foreground: oklch(0.19 0.018 160);
@@ -223,7 +255,17 @@
   }
 }
 
-/* §10 performance guardrail: motion serves comprehension, never fights the user. */
+/* ---------------------------------------------------------------------------
+   §10: "respect `prefers-reduced-motion` throughout — a trade analyzer that
+   fights the user is worse than a plain one."
+
+   The reset is deliberately blunt and deliberately global. Components carry
+   `motion-reduce:` classes as well, but those are documentation of intent, not
+   the mechanism: a component that forgets one still animates nothing here.
+   Every animation in this app degrades to its own end state, which is always
+   the readable one — the beam is a still diagram at the right angle, the cards
+   are simply present, the counters show the number.
+--------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -232,5 +274,25 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  /* The one exemption, and it is the reason this block is not simply the
+     copy-pasted internet default.
+
+     `animation-iteration-count: 1` freezes a spinner, and a *frozen* progress
+     indicator is not a calmer version of a spinning one — it is a lie about
+     whether work is still happening. Every spinner in this app marks a real
+     pending operation (a sync starting, a package search, a sign-in), several
+     of which take tens of seconds.
+
+     So it keeps turning, slower. Rotation in place is not the class of motion
+     the preference is asking about: there is no travel across the viewport and
+     no parallax, which is what triggers vestibular symptoms. This is §10's
+     rule applied honestly rather than mechanically — where animation serves
+     comprehension it stays, and here it is the only thing saying "still
+     working". */
+  .animate-spin {
+    animation-duration: 1.6s !important;
+    animation-iteration-count: infinite !important;
   }
 }

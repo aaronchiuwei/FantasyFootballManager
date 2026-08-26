@@ -160,7 +160,13 @@ export function CycleCard({
           </p>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-3">
+        {/* Three at `lg`, not at `sm`. A leg is a whole ledger — a player list
+            with a position badge, a name, a price and a provenance badge on
+            each row — and three of them across a 592px container is 185px a
+            column, where every name truncates to nothing. Stacked is the
+            honest small-screen answer: the ring order is still the reading
+            order, which is what the layout was carrying. */}
+        <div className="grid gap-3 lg:grid-cols-3">
           {cycle.legs.map((leg, index) => (
             <Leg
               key={leg.teamId}
@@ -191,7 +197,7 @@ export function CycleCard({
           </p>
 
           {cycle.withinNoise ? (
-            <p className="flex items-start gap-2 text-[var(--warning)]">
+            <p className="flex items-start gap-2 text-warning">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
               <span>
                 The widest leg&rsquo;s {percent(cycle.maxPct)} margin is inside
@@ -202,7 +208,7 @@ export function CycleCard({
           ) : null}
 
           {empty > 0 ? (
-            <p className="flex items-start gap-2 text-[var(--warning)]">
+            <p className="flex items-start gap-2 text-warning">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
               <span>
                 {empty} starting slot{empty === 1 ? "" : "s"} across the three

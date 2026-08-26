@@ -17,12 +17,12 @@ function StageIcon({ status }: { status: StageStatus }) {
     case "running":
       return (
         <Loader2
-          className={cn(base, "animate-spin text-primary motion-reduce:animate-none")}
+          className={cn(base, "animate-spin text-primary")}
           aria-hidden
         />
       );
     case "done":
-      return <Check className={cn(base, "text-[var(--success)]")} aria-hidden />;
+      return <Check className={cn(base, "text-success")} aria-hidden />;
     case "skipped":
       return <Minus className={cn(base, "text-muted-foreground")} aria-hidden />;
     case "failed":
@@ -95,7 +95,7 @@ export function StageChecklist({ stages }: { stages: StageState[] }) {
               {(stage?.warnings ?? []).map((warning) => (
                 <p
                   key={warning}
-                  className="flex items-start gap-1.5 text-xs text-[var(--warning)]"
+                  className="flex items-start gap-1.5 text-xs text-warning"
                 >
                   <AlertTriangle className="mt-0.5 size-3 shrink-0" aria-hidden />
                   <span>{warning}</span>

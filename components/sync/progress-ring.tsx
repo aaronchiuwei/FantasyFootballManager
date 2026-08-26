@@ -21,7 +21,7 @@ export function ProgressRing({
 }) {
   const stroke = {
     primary: "stroke-primary",
-    success: "stroke-[var(--success)]",
+    success: "stroke-success",
     destructive: "stroke-destructive",
     muted: "stroke-muted-foreground",
   }[tone];
@@ -48,7 +48,7 @@ export function ProgressRing({
           strokeDashoffset={CIRCUMFERENCE * (1 - Math.min(1, Math.max(0, progress)))}
           className={cn(
             stroke,
-            "transition-[stroke-dashoffset] duration-500 ease-out motion-reduce:transition-none",
+            "transition-[stroke-dashoffset] duration-[var(--motion-slow)] ease-out motion-reduce:transition-none",
           )}
         />
       </svg>

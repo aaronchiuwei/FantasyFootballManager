@@ -3,17 +3,21 @@
 Yahoo fantasy football league companion — market-grounded player values, trade
 analysis, waiver recommendations. See [PLAN.md](PLAN.md) for the full design.
 
-**Status: Phase 9 (three-team trades) complete.** On top of Phases 0–8
-(Supabase auth + RLS, Yahoo OAuth2 with encrypted tokens, league + team import,
-the Sleeper/FantasyCalc/DynastyProcess adapters, the player-identity crosswalk,
-the value engine, the one-button sync, the stats surface, the trade analyzer,
-the needs vector and the two suggestion engines): the search now closes rings as
-well as pairs. A three-team trade is a cycle — you give to one manager, they
-give to a second, the second gives back to you — and it is the deal to make when
-the manager holding what you want does not want what you have. It is found by a
-**bounded beam search**, which is not exhaustive and says so, and every one of
-the three managers is priced on their own ledger by Phase 6's verdict function,
-because a ring that balances overall can still be robbing one of the three.
+**Status: all ten phases complete (Phase 10, polish).** Supabase auth + RLS,
+Yahoo OAuth2 with encrypted tokens, league + team import, the
+Sleeper/FantasyCalc/DynastyProcess adapters, the player-identity crosswalk, the
+value engine, the one-button sync, the stats surface, the trade analyzer, the
+needs vector, both suggestion engines and the three-team cycle search — and
+then a pass over the whole thing to make it feel built rather than assembled:
+one motion vocabulary instead of nine phases of ad-hoc durations, error and
+loading boundaries on every route, a league that can be navigated without going
+back to its front page, a board that can be searched, and 55 kB of WebSocket
+client taken off the critical path of pages that never open a socket.
+
+The documented limits below are still the limits. Polish did not close any of
+them, and the "Where it falls short" sections are the honest inventory: no NFL
+schedule source, so no bye weeks and no playoff schedule; no trade deadline
+read out of Yahoo; a cycle beam that is bounded rather than exhaustive.
 
 ## Stack
 
@@ -73,20 +77,28 @@ faster local loop.
 
 ```
 app/
+  error.tsx          root boundary — plain elements, imports nothing (see below)
+  not-found.tsx      the app's own 404
   (auth)/            login + signup, auth server actions
   (app)/             signed-in shell — re-checks the user, not just middleware
-    leagues/[id]/    league + teams, identity resolution, the values board
-      players/[playerId]/  one player: value, stats, week-by-week
-      trade/           the trade analyzer, and the trades kept from it
-      overview/        the twelve teams as positional strength radars
-      waivers/         the available pool, ranked and need-weighted
-      suggestions/     the win-win board, the build-around-a-player panel, and
-                       the three-team cycles this team could be in
+    error.tsx        in-shell boundary: keeps the header, offers `reset()`
+    leagues/
+      loading.tsx    stands in for Yahoo's live league discovery
+      not-found.tsx  a league that is missing, or is not yours — same answer
+      [id]/          league + teams, identity resolution, the values board
+        layout.tsx   breadcrumb + the section strip every screen below shares
+        loading.tsx  one skeleton for all seven, inside that layout
+        players/[playerId]/  one player: value, stats, week-by-week
+        trade/           the trade analyzer, and the trades kept from it
+        overview/        the twelve teams as positional strength radars
+        waivers/         the available pool, ranked and need-weighted
+        suggestions/     the win-win board, the build-around-a-player panel,
+                         and the three-team cycles this team could be in
   auth/callback/     code → session exchange (email links, future OAuth)
   api/yahoo/         OAuth authorize + callback
 components/
   ui/                vendored shadcn components (ours to edit)
-  leagues/           league and team UI
+  leagues/           league and team UI, and the league section nav
 lib/supabase/
   client.ts          browser, anon key
   server.ts          RSC / route handlers / server actions, cookie session, RLS
@@ -107,6 +119,7 @@ lib/crosswalk/
   resolve.ts         the resolution ladder, pure and unit-tested
   store.ts           seeding, persistence, the league resolution run
 lib/values/
+  search.ts          the board's name filter — pure, escapes the wildcards
   vor.ts             replacement level, VOR, rest-of-season points
   isotonic.ts        PAVA regression + Spearman, both pure
   engine.ts          Tier A/B, guardrails, provenance — the value engine
@@ -118,7 +131,7 @@ lib/sync/
   stages.ts          what each of the eight stages actually does
   market.ts          sync stage 3 — the FantasyCalc board, persisted
   pipeline.ts        stage execution, HMAC-signed chaining
-  use-sync-run.ts    the browser's Realtime subscription
+  use-sync-run.ts    the browser's Realtime subscription, dynamically imported
 lib/trades/
   analyze.ts         §6's bonus math and fairness bands — pure, runs in the browser
   saved.ts           the frozen payload a saved trade stores, parsed with Zod
@@ -140,7 +153,9 @@ lib/players/
   stats.ts           sync stages 4 and 5 — season totals and the weekly grid
   stat-lines.ts      actuals against projections, pure and unit-tested
   detail.ts          the player page's four reads
-lib/leagues/import.ts  Yahoo league, teams and matchups → Postgres
+lib/leagues/
+  import.ts          Yahoo league, teams and matchups → Postgres
+  nav.ts             the seven sections, and which one a path is in — pure
 app/api/sync/          POST to start or resume; POST /[stage] to run one stage
 components/
   players/           identity resolution UI, the stat surface
@@ -151,6 +166,7 @@ components/
   suggestions/       the package card, the stack that cycles them, the builder,
                      and the three-team ring card and its per-team board
   sync/              the sync button, progress ring and staged checklist
+  leagues/           the section strip, and the import / disconnect buttons
 supabase/migrations/
 ```
 
@@ -1276,6 +1292,291 @@ the user's RLS-bound client: there is no cookie session in a machine-to-machine
 hop, so the pipeline uses the service role, scoped by the `league_id` on a run
 row that an authenticated owner created. That row is the authorization record.
 
+## How the interface holds together
+
+§10 gives this app a substrate (Tailwind + shadcn, vendored), a list of the
+surfaces that deserve motion, and one instruction about all of it: "animation
+serves comprehension here (the balance beam *is* the verdict); where it does
+not, cut it." Nine phases each built their screen and each made that call
+locally. This section is the pass that made them agree.
+
+### Colors are tokens, and there are three layers of them
+
+`app/globals.css` declares everything, and no component file contains a color:
+
+| Layer | What it is | Where it is spent |
+|---|---|---|
+| shadcn surfaces | background / card / muted / border / primary | every screen |
+| app semantics | success, warning, and §6's three verdict bands | the beam, the verdict panel, every warning line |
+| domain | six position colors, three value-provenance colors | position badges, the radar's axes, every value badge |
+
+The verdict bands are the reason this is worth stating. §6 draws four fairness
+bands and they use **three** colors, so exactly one boundary — the 8% one —
+carries a color change. That is not a palette decision, it is the same claim
+§9's win-win search makes when it keeps `pct < 8%` and calls what survives
+*fair by value*, expressed in the only medium a glance can read.
+
+The one lapse this phase found was cosmetic and worth fixing anyway: eleven
+places wrote `text-[var(--warning)]` where `text-warning` exists. Both resolve
+to the token, but only one of them is a rule anyone can follow.
+
+### Motion is three speeds, and each one is a claim
+
+```css
+--motion-fast: 150ms;   /* state feedback  */
+--motion-base: 300ms;   /* arriving or being replaced */
+--motion-slow: 700ms;   /* the animation IS the information */
+```
+
+Before this phase the app used 200, 300, 420, 500 and 700ms, chosen a screen
+at a time. The three that survive are chosen by *what the motion is for*:
+
+- **fast** — a hover, a filter pill turning on, a drop zone's border lighting
+  up under a drag. It has to land before the user wonders whether the click
+  registered. Tailwind's `--default-transition-duration` is set to this token,
+  so every bare `transition-*` in the app is already on it and nothing has to
+  remember.
+- **base** — an element arriving or being swapped: the overview's staggered
+  cards, the verdict crossfade, the front card of the package stack.
+- **slow** — the two animations that are read rather than noticed. The balance
+  beam tipping to its verdict, and a bar or a progress ring filling to a value.
+  §10 says the beam *is* the verdict; a verdict is worth 700ms.
+
+Anything that fits none of the three is decoration. The audit found one:
+`TeamCard` carried `transition-colors` and had no hover state, so it was
+animating nothing. It is gone.
+
+The one number still living in JavaScript is the analyzer's count-up, at 420ms,
+because it is a `requestAnimationFrame` ease rather than a CSS transition. It
+sits between *base* and *slow* on purpose — long enough to read as a scale
+being loaded, short enough to keep up with typing.
+
+### Reduced motion is enforced globally, with one deliberate exemption
+
+Components carry `motion-reduce:` classes, but those are documentation of
+intent rather than the mechanism. The mechanism is a global block in
+`globals.css`, so a component that forgets one still animates nothing. Every
+animation degrades to its own end state, and every end state is the readable
+one: the beam is a still diagram at the correct angle, the cards are simply
+present, the counters show the number.
+
+The exemption is the spinner, and it is the part that is not the copy-pasted
+internet default. `animation-iteration-count: 1` freezes a spinner, and a
+frozen progress indicator is not a calmer version of a spinning one — it is a
+lie about whether work is still happening. Every spinner in this app marks a
+real pending operation and several of them run for tens of seconds. So it keeps
+turning, at 1.6s instead of 1s. Rotation in place is not the class of motion
+the preference is about: no travel across the viewport, no parallax. This is
+§10's rule applied rather than obeyed.
+
+Three per-component `motion-reduce:animate-none` overrides were removed as part
+of that, so all ten spinners now behave identically instead of three of them
+stopping and seven of them not.
+
+### Small screens
+
+The app was built desktop-first across nine phases and this is what that cost:
+
+- **The header** put a wordmark, two nav links and a sign-out control on one
+  row — 415px of content on a 375px screen. The nav now drops to a second row
+  below `sm` and goes back beside the wordmark above it.
+- **The league had no navigation.** Seven screens, each with a back button to
+  the league page and nothing else, so comparing the waiver wire against the
+  overview that says what a team is thin at cost three navigations, one of them
+  through a page nobody wanted to look at. `leagues/[id]/layout.tsx` now
+  carries a breadcrumb and a horizontally-scrolling section strip, and the
+  seven back buttons are gone. It scrolls rather than wraps because a nav that
+  reflows to three lines pushes the page's own heading below the fold.
+- **The three-team cycle card** went to three columns at `sm`, which is 185px
+  per ledger — a player list with a badge, a name, a price and a provenance
+  chip in it, every name truncated to nothing. Three columns now start at `lg`.
+- **The trade analyzer's drop zone** opened by asking for a drag, which is an
+  instruction a touch screen cannot follow. It leads with the tap now; the drag
+  is still there and still pleasant.
+- **Page padding** is `px-4` below `sm`, because the values board and the
+  waiver wire are tables that already scroll sideways and twelve pixels a side
+  is a column.
+
+The data-dense tables keep their existing arrangement — a `min-w` and an
+`overflow-x-auto`, with the least load-bearing columns hidden below `sm` and
+`md`. A table of ranked numbers that reflows into stacked cards stops being a
+ranking, and the horizontal scroll is the honest version.
+
+### Every route has a boundary now
+
+There were none. A `notFound()` — five pages call it — produced Next's default
+404, and a thrown read produced Next's default error page, both of them outside
+the app's own shell and its tokens.
+
+| File | Catches |
+|---|---|
+| `app/error.tsx` | the landing page, auth, and the app shell's *own layout* — where `getUser()` runs |
+| `app/(app)/error.tsx` | anything inside the signed-in shell, keeping the header |
+| `app/not-found.tsx` | any 404 outside a league |
+| `app/(app)/leagues/not-found.tsx` | a league that is missing, is not yours, or a player with no row |
+
+Two decisions inside those four files:
+
+- **`reset()` is the primary action**, not advice in a sentence. Nearly
+  everything that throws on these screens is transient — a dropped Supabase
+  connection, a Yahoo call that timed out, a token refreshed in another tab —
+  so re-rendering the segment is the correct first response and it should cost
+  one click. The digest is shown underneath, because Next replaces a server
+  error's message with a generic one in production and the digest is then the
+  only thing tying what the user saw to what the server logged.
+- **The root boundary imports nothing.** It is a client component wrapped
+  around every route in the app, so anything it imports lands in the first load
+  of the landing page and the sign-in screen — the two pages that otherwise
+  ship no application JavaScript. Written with the button and card components
+  it cost 16 kB there, for a page nobody should ever see. Written in plain
+  elements with the same token classes it costs ~5 kB and looks identical.
+
+The league's missing/not-yours boundary sits *above* `[id]` rather than inside
+it, so it renders whether the page or the league layout was the thing that
+could not find anything — a boundary that needs the segment it reports on to
+have rendered is a boundary that does not work in the one case it exists for.
+It also does not distinguish the two cases: RLS makes another user's league
+indistinguishable from a deleted one at the read, and confirming to a stranger
+that a league exists is telling them something.
+
+### Loading states, where waiting is real
+
+Two `loading.tsx` files, both earning their place rather than decorating:
+
+- `leagues/[id]/loading.tsx` covers all seven league screens at once, because a
+  loading boundary wraps its segment *and* everything nested under it. Those
+  pages do between three and seven Supabase round trips and a tab click used to
+  do nothing visible for as long as they took. It renders inside the league
+  layout, so the breadcrumb and the section strip stay put and stay clickable
+  while the page underneath swaps — which is the thing that makes the strip
+  feel like navigation rather than a set of full page loads.
+- `leagues/loading.tsx` stands in for a genuinely slow third party: that page
+  calls Yahoo live to discover the account's leagues, and Yahoo answers when it
+  answers. It is also the screen a new user sees first.
+
+They are grey blocks and nothing else. A skeleton that imitates a balance beam
+or a radar is a worse lie than a rectangle.
+
+### The values board can be searched
+
+The board pages the top 200 of a ~630-row table ranked by value, which is fine
+for browsing and useless for the question people actually bring to it — *what
+is he worth*. Position and availability filters narrow the board; they do not
+find a player.
+
+It is a plain GET form, so a search is a URL: shareable, back-button friendly,
+and working before any JavaScript has loaded. The other filters have always
+been links for the same reason, and this keeps them one mechanism.
+
+`lib/values/search.ts` is pure and tested, because the two things worth getting
+right here are both testable without a database. What counts as a search at all
+— under two letters it matches most of the board, so it is not run. And what a
+user's punctuation means: `%` and `_` are SQL's wildcards and get escaped, `\`
+gets escaped *first* or the escaping introduces pairs that mean something else,
+and `*` is PostgREST's own spelling of `%`, substituted textually before
+Postgres sees the pattern, so no backslash can escape it and it is dropped
+instead. Any of the three, left alone, silently turns a search into a match on
+the entire board.
+
+The empty state distinguishes three claims that must not render the same way:
+the search was too short to run, the search ran and this league prices nobody
+by that name, or the *filters* are what emptied the table. The middle one links
+to the identity screen, because a rostered player with no row here is usually
+one the crosswalk has not settled.
+
+It matches the name as displayed rather than §4's normalization. That is a real
+limit — `jamarr` will not find `Ja'Marr` — and it is the right trade: the
+crosswalk's normalization exists to join two providers, not to read a manager's
+typing, and borrowing it here would mean a second query against a 12,000-row
+global table on every keystroke-shaped request.
+
+### 55 kB off every league page
+
+§10's performance guardrail is to dynamic-import the heavy things. The heaviest
+thing this app actually shipped was not an animation library — there are none —
+it was the Supabase browser client, which drags `realtime-js` and a WebSocket
+stack behind it. A `SyncButton` sits on every league screen, so a static import
+put all of that on the critical path of the values board, the waiver wire and
+the analyzer alike: pages whose entire argument is that they run their own
+arithmetic locally and fast.
+
+It is now imported inside the effect that opens the subscription. Nothing about
+the behaviour changes — the channel opens on mount as before, and the 4-second
+poll that has always run alongside it still catches a run that settles while
+the chunk is in flight.
+
+| First Load JS | Before | After |
+|---|---|---|
+| `/leagues/[id]` | 217 kB | **159 kB** |
+| `/leagues/[id]/values` | 212 kB | **154 kB** |
+| `/leagues/[id]/trade` | 233 kB | **177 kB** |
+| `/leagues/[id]/waivers` | 226 kB | **168 kB** |
+| `/leagues/[id]/suggestions` | 222 kB | **165 kB** |
+| `/` and `/login` | 131 / 144 kB | 135 / 152 kB |
+
+The last row is the price and it is stated rather than buried: the root error
+boundary is a client component around every route, so the pages that shipped no
+application JavaScript now ship about 5 kB of it. That is what a working error
+state costs on a page that should never error, and it is worth it.
+
+§10's other two guardrails were already held and still are. There is no WebGL
+anywhere — the radar is plain SVG in a server component, the balance beam is
+plain SVG, and the package stack is two CSS transforms and a pointer handler
+rather than the React Bits component that would have pulled GSAP or OGL. And
+the bundle rule holds: every client component imports *types* from the modules
+that carry Zod parsers, never values, so no parser the browser never runs ships
+to it.
+
+### Where it falls short
+
+**No shared-element transition, still.** §10 pairs the overview grid with one
+into a team detail page. There is still no team detail page — a card links to
+the values board filtered to that roster — so there is still nothing to
+transition into. Phase 7 recorded this and Phase 10 did not build a screen to
+fix a transition.
+
+**The landing page is not what §10 describes.** It asks for a "React Bits
+animated background + text reveal" on the landing and auth surfaces, and what
+is there is a headline, a paragraph and two buttons. The section immediately
+below it says to keep WebGL off the data-dense pages, which the landing page is
+not — so this one is a straight omission rather than a considered exception. It
+would be the cheapest remaining win in the app, and it is the only §10 line
+item this phase left untouched.
+
+**Search is one field.** No sort control on the values board, no "value
+between", no multi-position selection. The board is ranked and that ranking is
+the argument (§5), so a sort control would mostly be a way to make it say
+something less true — but "show me every WR the market prices above 2,000" is a
+real question the board cannot answer.
+
+**Nothing here was verified in a browser against a live league.** The reduced
+motion rules, the token utilities and the media queries were checked in the
+compiled CSS, and the route boundaries through the production build; the
+screens themselves were read rather than walked. A real 12-team league on a
+real phone is the check this phase did not get to run.
+
+## Against §13's validation checks
+
+§13 lists five. Four are enforced by the app on every sync rather than by the
+test suite, because they are properties of the data — `sync_runs` records them
+under the stage that raised them, which is where someone will actually read
+them.
+
+| Check | Status |
+|---|---|
+| **Crosswalk ≥95% auto-resolution**, every miss in `unmatched_players` | **Met, and measured.** The name rungs match 191/191 of FantasyCalc's board against its authoritative `sleeperId`. Stage 7 computes the rate per run and raises a warning below 95%; the identity screen shows it against the target. The "never silently dropped" half is structural: an ambiguous match is not a match, and 25 colliding name+position keys in the master make that not hypothetical. |
+| **Value engine: rank correlation ≥0.98** on the overlap | **Not met — 0.928, and documented rather than hidden.** Within a position it is far closer (QB 0.971, RB 0.974, WR 0.950, TE 0.865); the gap is cross-position, because one curve has to span a market that prices QBs far below their VOR in a 1QB league. It matters less than the number suggests: the seam clamps pin the whole model tier to the market's floor regardless, and §5's own arithmetic says every trade worth proposing is 100% market-valued. Per-position fits are the known fix. |
+| **Trade analyzer: golden-file tests** on hand-checked adversarial trades | **Met.** `lib/trades/analyze.test.ts` carries the table, including the 4-for-1 packages, the two-superstar swaps and the K/DEF-inflated junk §13 names. The two rows that are Requirement 6 in miniature: 9,000 for four players summing to 9,000 is a *clear winner*; summing to 9,800 is *even*. |
+| **Sync: kill a stage mid-run, confirm resume** | **Met in the code and in one test, not as a drill.** A killed stage cannot record anything, so a silent `running` row is treated as stalled by the UI after 90s and by the next sync after 5min, and resuming reopens the same row from the first unfinished stage. A partial unique index makes two concurrent syncs of one league unrepresentable. What has not happened is somebody actually killing a stage against a live league. |
+| **Seam check: no Tier B player outranks a Tier A player at the same position** | **Met, and enforced rather than asserted.** The clamp is in the engine, and stage 8 re-checks it on every run and writes the result to the stage. |
+
+Two of the five, then, are unqualified passes; two are met with the caveat that
+they have been verified against synthetic or recorded data rather than a live
+season in progress; and one — the isotonic fit's correlation — is a documented
+miss with a stated reason and a stated fix. That is the honest reading, and it
+has not changed in this phase: polish did not touch any of the math these
+checks are about.
+
 ## Conventions
 
 - **`getUser()`, never `getSession()`** on the server. It revalidates the token
@@ -1285,7 +1586,17 @@ row that an authenticated owner created. That row is the authorization record.
 - **Secrets stay server-side.** The browser gets the anon key and nothing else —
   no service-role key, and (Phase 1) no Yahoo token, ever.
 - **Colors come from tokens**, not from component files. Position, provenance,
-  and trade-verdict colors are all declared in `app/globals.css`.
+  and trade-verdict colors are all declared in `app/globals.css`. Use the
+  utility (`text-warning`), not the variable (`text-[var(--warning)]`) — both
+  resolve to the token but only one is a rule.
+- **Durations come from tokens too**, and there are three: `--motion-fast` for
+  state feedback, `--motion-base` for something arriving or being replaced,
+  `--motion-slow` for the two animations that carry the information. A duration
+  that fits none of them is decoration, and §10 says to cut decoration.
+- **Reduced motion is a global rule, not a per-component promise.** The block
+  in `globals.css` is what actually stops everything; `motion-reduce:` classes
+  on components document the intent. The single exemption is the spinner, and
+  the reasoning for it is written where the exemption is.
 - **One adapter per external source** under `lib/sources/`, with the pure
   parsing split out so it can be tested against recorded fixtures.
 - **Global reference data is service-role only.** `players`, `player_crosswalk`,
