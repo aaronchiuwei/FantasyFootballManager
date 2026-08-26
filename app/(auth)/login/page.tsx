@@ -8,9 +8,20 @@ export const metadata: Metadata = { title: "Sign in" };
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; deleted?: string }>;
 }) {
-  const { next } = await searchParams;
+  const { next, deleted } = await searchParams;
 
-  return <AuthForm mode="sign-in" action={signIn} next={next} />;
+  return (
+    <AuthForm
+      mode="sign-in"
+      action={signIn}
+      next={next}
+      notice={
+        deleted
+          ? "Your account and everything on its board have been deleted."
+          : undefined
+      }
+    />
+  );
 }

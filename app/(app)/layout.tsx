@@ -64,13 +64,18 @@ export default async function AppLayout({
               { href: "/dashboard", label: "Dashboard" },
               { href: "/leagues", label: "Leagues" },
               { href: "/trade", label: "Analyzer" },
+              { href: "/account", label: "Account" },
             ]}
           />
 
           <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:ml-0">
-            <span className="hidden max-w-[15rem] truncate text-xs text-muted-foreground lg:inline">
+            {/* The address is the account, so it is the way into it. */}
+            <Link
+              href="/account"
+              className="hidden max-w-[15rem] truncate text-xs text-muted-foreground underline-offset-4 transition-colors duration-(--motion-fast) ease-(--ease-out) hover:text-foreground hover:underline hover:decoration-grease hover:decoration-2 lg:inline"
+            >
               {user.email}
-            </span>
+            </Link>
             <ThemeToggle />
             <form action={signOut}>
               <Button type="submit" variant="outline" size="sm">
@@ -86,6 +91,7 @@ export default async function AppLayout({
               { href: "/dashboard", label: "Dashboard" },
               { href: "/leagues", label: "Leagues" },
               { href: "/trade", label: "Analyzer" },
+              { href: "/account", label: "Account" },
             ]}
           />
         </div>

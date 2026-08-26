@@ -63,10 +63,13 @@ export function AuthForm({
   mode,
   action,
   next,
+  notice,
 }: {
   mode: Mode;
   action: (state: AuthState, formData: FormData) => Promise<AuthState>;
   next?: string;
+  /** A line from wherever the visitor arrived from, e.g. a deleted account. */
+  notice?: string;
 }) {
   const copy = COPY[mode];
   const [state, formAction] = useActionState<AuthState, FormData>(action, {});
@@ -77,6 +80,16 @@ export function AuthForm({
       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
         {copy.description}
       </p>
+
+      {notice ? (
+        <p
+          role="status"
+          className="mt-3 flex items-start gap-2 text-sm leading-relaxed text-muted-foreground"
+        >
+          <CircleCheckIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
+          {notice}
+        </p>
+      ) : null}
 
       <RailLine className="my-5" />
 

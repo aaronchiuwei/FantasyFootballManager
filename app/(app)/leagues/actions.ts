@@ -57,4 +57,5 @@ export async function disconnectYahooAction() {
 
   revalidatePath("/leagues");
   revalidatePath("/dashboard");
+  revalidatePath("/account");
 }
