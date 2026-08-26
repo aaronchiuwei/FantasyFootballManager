@@ -44,10 +44,18 @@ describe("parseFantasyCalcValues", () => {
     });
   });
 
-  it("prefers redraftValue when the payload carries one", () => {
-    expect(parseFantasyCalcValues([entry({ redraftValue: 6400 })])[0].value).toBe(
-      6400,
-    );
+  /**
+   * The regression that made the scoring controls do nothing. `redraftValue`
+   * is a 12-team full-PPR baseline that ignores numTeams and ppr, so taking it
+   * over `value` discards the very parameters the board was requested with —
+   * and every row still gets filed under the params key that was asked for,
+   * so nothing downstream can tell.
+   */
+  it("takes value, not redraftValue, so the requested board is the one stored", () => {
+    expect(
+      parseFantasyCalcValues([entry({ value: 8771, redraftValue: 8915 })])[0]
+        .value,
+    ).toBe(8771);
   });
 
   it("skips rows that do not parse instead of failing the whole pull", () => {

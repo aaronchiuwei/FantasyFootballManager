@@ -70,6 +70,36 @@ describe("side totals", () => {
     expect(a.depthPenalty).toBeCloseTo(beta * 3 * 2500, 6);
   });
 
+  /**
+   * The bug the difference-based charge exists to kill: two three-player
+   * packages, equal in value, where one side's middle player is cheaper. On
+   * the per-side form each side is billed `beta × 2 × its own median`, the
+   * bills differ, and a dead-even trade acquires a winner out of nowhere.
+   */
+  it("charges nothing when both sides send the same number of players", () => {
+    const { a, b, verdict } = analyzeTrade(
+      [asset(1, 6000), asset(2, 3000), asset(3, 1000)],
+      [asset(4, 6000), asset(5, 2000), asset(6, 2000)],
+    );
+
+    expect(a.depthPenalty).toBe(0);
+    expect(b.depthPenalty).toBe(0);
+    expect(a.median).not.toBe(b.median);
+    expect(verdict?.band).toBe("even");
+    expect(verdict?.winner).toBeNull();
+  });
+
+  it("charges only the side sending more, and only for the surplus bodies", () => {
+    const { a, b } = analyzeTrade(
+      [asset(1, 5000), asset(2, 3000), asset(3, 1000)],
+      [asset(4, 6000), asset(5, 2000)],
+    );
+
+    // Three for two: one body of consolidation, not two.
+    expect(a.depthPenalty).toBeCloseTo(beta * 1 * 3000, 6);
+    expect(b.depthPenalty).toBe(0);
+  });
+
   it("assembles the total as base + bonus − penalty", () => {
     const { a } = analyzeTrade(
       [asset(1, 5000), asset(2, 3000)],

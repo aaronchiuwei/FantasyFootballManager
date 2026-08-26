@@ -53,16 +53,23 @@ export type OpenScoring = {
 /**
  * Every board this page will ask FantasyCalc for.
  *
- * The list is short on purpose. Each unseen combination costs a live pull from
- * an undocumented third-party API and ~192 upserted rows, and this route is
- * reachable without an account — so the set of boards an anonymous visitor can
- * cause to exist is bounded to these thirty rather than to whatever their
- * query string says. They also happen to be the configurations real redraft
- * leagues actually use.
+ * Two separate reasons the list is exactly this.
+ *
+ * **It is bounded** because each unseen combination costs a live pull from an
+ * undocumented third-party API and ~192 upserted rows, and this route is
+ * reachable without an account — so what an anonymous query string can cause
+ * to exist is these eighteen boards rather than whatever it asks for.
+ *
+ * **It stops at 14 teams** because that is where FantasyCalc's boards stop.
+ * Ask it for 16 — or 4, 6, 13, 15, 20 — and it does not error: it returns the
+ * 12-team board, byte for byte. A picker offering a 16-team option that
+ * silently prices a 12-team league is worse than one that does not offer it,
+ * because the user has no way to find out. The note beside the control says
+ * where the range ends.
  */
 export const SCORING_CHOICES = {
   numQbs: [1, 2],
-  numTeams: [8, 10, 12, 14, 16],
+  numTeams: [8, 10, 12, 14],
   ppr: [0, 0.5, 1],
 } as const;
 

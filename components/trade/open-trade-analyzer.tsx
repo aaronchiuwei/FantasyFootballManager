@@ -217,17 +217,22 @@ export function OpenTradeAnalyzer({
         </Button>
       </div>
 
-      {/* The board's own settings. A trade is only fair *at a scoring
-          configuration*: the same two players swap places between 1QB and
-          superflex, and a tool that hid that would be confidently wrong for
-          half its users. */}
+      {/* The board's own settings, with their real weights stated.
+          Format is the one that moves a verdict — a quarterback is worth
+          roughly twice as much in superflex — and league size and scoring
+          shift the board by a percent or two, which is inside the even band.
+          Saying so beats letting somebody flip a control, watch nothing
+          happen, and conclude the tool is broken. */}
       <Panel
         label="Market board"
         note={
           <>
-            FantasyCalc prices a scoring format, not a league, so the verdict
-            above is only as right as these three settings.{" "}
-            {switching ? "Re-pricing…" : "Changing one re-prices the trade."}
+            FantasyCalc prices a scoring format, not a league.{" "}
+            <strong className="font-medium text-foreground">Format</strong> is
+            the setting that moves a verdict: a quarterback is worth about
+            twice as much in superflex. League size and scoring shift the board
+            by a percent or two — real, but usually inside the even band.{" "}
+            {switching ? "Re-pricing…" : null}
           </>
         }
         inset
@@ -249,6 +254,9 @@ export function OpenTradeAnalyzer({
                 </option>
               ))}
             </select>
+            <span className="text-xs text-muted-foreground">
+              The market stops at 14.
+            </span>
           </label>
 
           <label className="flex flex-col gap-1">

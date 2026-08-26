@@ -26,6 +26,15 @@ describe("parseScoring", () => {
     );
   });
 
+  it("refuses a team count FantasyCalc does not publish a board for", () => {
+    // 16 is the trap: the API answers it with the 12-team board rather than
+    // an error, so offering it would price a 16-team league as a 12-team one
+    // with nothing on screen to say so.
+    expect(parseScoring({ teams: "16" }).numTeams).toBe(
+      DEFAULT_OPEN_SCORING.numTeams,
+    );
+  });
+
   it("ignores junk rather than failing on it", () => {
     expect(parseScoring({})).toEqual(DEFAULT_OPEN_SCORING);
     expect(parseScoring({ teams: "abc", ppr: "", qb: undefined })).toEqual(

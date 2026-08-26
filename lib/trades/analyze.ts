@@ -148,7 +148,7 @@ export type SideTotals<T extends TradeAsset = TradeAsset> = {
   bonus: number;
   /** `gamma × value(best)`, only on the side holding the deal's best player. */
   headlineBonus: number;
-  /** `beta × (n − 1) × median`. */
+  /** `beta × (bodies this side sends beyond the other's count) × median`. */
   depthPenalty: number;
   total: number;
   /** Share of `base` that carries a market price. */
@@ -205,9 +205,11 @@ function median(values: number[]): number {
 }
 
 /**
- * Everything about one package that does not depend on the other one. `gamma`
- * does — it needs to know which side holds the best player in the deal — so it
- * is applied afterwards by `analyzeTrade`.
+ * Everything about one package that does not depend on the other one.
+ *
+ * `gamma` and `beta` both do — one needs to know which side holds the best
+ * player in the deal, the other how many bodies the other side is sending —
+ * so both are applied afterwards by `analyzeTrade`.
  */
 function summarizeSide<T extends TradeAsset>(
   assets: T[],
@@ -226,10 +228,6 @@ function summarizeSide<T extends TradeAsset>(
   // exactly one superstar regardless of scale, which is trivially exploitable.
   const bonus = best === null ? 0 : params.alpha * best.value;
 
-  // The necessary counterweight. Roster spots are finite, so the fourth body
-  // in a package is worth less than its value says it is.
-  const depthPenalty = params.beta * Math.max(0, assets.length - 1) * middle;
-
   const marketValue = assets
     .filter((asset) => asset.source === "market")
     .reduce((sum, asset) => sum + asset.value, 0);
@@ -242,8 +240,10 @@ function summarizeSide<T extends TradeAsset>(
     best,
     bonus,
     headlineBonus: 0,
-    depthPenalty,
-    total: base + bonus - depthPenalty,
+    // Depends on the other package's size, so `analyzeTrade` charges it after
+    // both sides are summarized.
+    depthPenalty: 0,
+    total: base + bonus,
     marketShare: base === 0 ? 1 : marketValue / base,
     // Linear rather than in quadrature: the errors on two modelled values are
     // not independent (they come off one isotonic fit), and a verdict that
@@ -287,6 +287,39 @@ function awardHeadline<T extends TradeAsset>(
   side.total += side.headlineBonus;
 }
 
+/**
+ * §6's beta, charged on the **difference** in package size rather than on each
+ * side's own size.
+ *
+ * The literal reading — "beta per extra body, per side" — charges both halves
+ * of a three-for-three, which is wrong twice over. Nobody's roster gets tighter
+ * in an even swap: three players leave and three arrive, and the number of
+ * spots in use afterwards is exactly what it was before. Worse, the charge is
+ * scaled by each side's own median, so two packages of equal size are billed
+ * *different* amounts, and a genuinely even 3-for-3 picks up a tilt toward
+ * whichever side happens to hold the cheaper middle player. That is a verdict
+ * invented by the formula rather than found in the trade.
+ *
+ * On the difference it does the job it was introduced for and nothing else.
+ * Consolidation is what costs roster spots: sending three for one means the
+ * other manager has to find two spots and drop two players, so the three-side's
+ * package is discounted for the two bodies it sends *in excess*. Between equal
+ * counts it collapses to zero — the same property `awardHeadline` above exists
+ * to preserve, for the same reason.
+ *
+ * The median is the paying side's own, because the marginal bodies are theirs:
+ * what the deal costs in roster spots is roughly the middle player of the pile
+ * being sent, times how many of them are surplus to the swap.
+ */
+function chargeDepth<T extends TradeAsset>(
+  side: SideTotals<T>,
+  extraBodies: number,
+  beta: number,
+): void {
+  side.depthPenalty = beta * extraBodies * side.median;
+  side.total -= side.depthPenalty;
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -320,6 +353,11 @@ export function analyzeTrade<T extends TradeAsset>(
 
   if (bestA > bestB) awardHeadline(a, bestA - bestB, params.gamma);
   else if (bestB > bestA) awardHeadline(b, bestB - bestA, params.gamma);
+
+  // Only the side sending more players pays for roster spots, and only for the
+  // bodies beyond the even swap. A 3-for-3 costs nobody anything.
+  if (a.count > b.count) chargeDepth(a, a.count - b.count, params.beta);
+  else if (b.count > a.count) chargeDepth(b, b.count - a.count, params.beta);
 
   const blocks: TradeBlock<T>[] = [];
 

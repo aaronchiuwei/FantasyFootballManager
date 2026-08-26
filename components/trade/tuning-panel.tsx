@@ -31,7 +31,7 @@ const KNOBS: {
     symbol: "β",
     label: "Roster spot cost",
     description:
-      "Charged per extra body against the package's median. Without it the calculator happily approves 4-for-1s that no real manager would accept.",
+      "Charged only on the bodies one side sends beyond the other's count, against that side's median. A 3-for-3 costs nobody anything; without it the calculator happily approves 4-for-1s that no real manager would accept.",
   },
   {
     key: "gamma",

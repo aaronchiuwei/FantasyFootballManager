@@ -125,9 +125,12 @@ export function OpenTradeSide({
               className="font-plate text-2xl font-bold tabular-nums text-foreground"
             />
             <p className="stencil mt-0.5 text-chalk-dim">
+              {/* "Plate" is what the design language calls the object; it is
+                  not what a manager calls a running back. The metaphor stays
+                  in the styling and out of the sentence. */}
               {totals.count === 0
                 ? "nothing yet"
-                : `${totals.count} plate${totals.count === 1 ? "" : "s"}`}
+                : `${totals.count} player${totals.count === 1 ? "" : "s"}`}
             </p>
           </div>
         </div>

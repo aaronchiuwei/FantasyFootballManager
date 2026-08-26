@@ -60,10 +60,19 @@ export function parseFantasyCalcValues(raw: unknown[]): FantasyCalcPlayer[] {
       nflTeam: p.player.maybeTeam ?? null,
       birthday: p.player.maybeBirthday ?? null,
       draftYear: p.player.maybeDraftInfo?.year ?? null,
-      // isDynasty=false returns redraft values directly in `value`; keep the
-      // explicit fallback in case a caller ever passes isDynasty=true, where
-      // `value` is the dynasty scale and `redraftValue` is the one we want.
-      value: p.redraftValue ?? p.value,
+      // `value`, never `redraftValue`, and the distinction is not cosmetic.
+      //
+      // Every request this app makes carries `isDynasty=false` (§1.1), and on
+      // that request `value` is the redraft board **for the parameters that
+      // were asked for** — it moves with numQbs, numTeams and ppr alike.
+      // `redraftValue` is a fixed 12-team, full-PPR baseline: it tracks
+      // numQbs and ignores the other two outright. Preferring it therefore
+      // threw away half the parameterization silently, pricing an 8-team
+      // standard league off the 12-team PPR board while the params key on the
+      // row claimed otherwise. Measured on the live API: Puka Nacua at 8 / 12
+      // / 14 teams is 8,771 / 8,915 / 9,008 in `value` and 8,915 in all three
+      // in `redraftValue`.
+      value: p.value,
       overallRank: p.overallRank,
       positionRank: p.positionRank,
       trend30Day: p.trend30Day ?? null,
