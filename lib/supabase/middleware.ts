@@ -11,7 +11,7 @@ import type { Database } from "./database.types";
  * see it would gate the one answer the product exists to give behind the one
  * step most visitors will not take.
  */
-const PUBLIC_PATHS = ["/", "/trade", "/login", "/signup", "/auth"];
+const PUBLIC_PATHS = ["/", "/trade", "/login", "/signup", "/auth", "/api/cron"];
 
 function isPublic(pathname: string) {
   return PUBLIC_PATHS.some(
