@@ -12,9 +12,17 @@ import type {
   CrosswalkCandidate,
   UnmatchedPayload,
 } from "@/lib/crosswalk/resolve";
+import { providerLabels } from "@/lib/leagues/provider";
 
 export type UnmatchedView = {
   id: string;
+  /**
+   * The provider's own id for this player.
+   *
+   * Named for Yahoo because the column is — every provider id lives under the
+   * `yahoo` crosswalk source, ESPN's included. What it is *called on screen*
+   * comes from the league, not from this name.
+   */
   yahooPlayerId: string;
   payload: UnmatchedPayload;
   suggestions: CrosswalkCandidate[];
@@ -27,9 +35,12 @@ function describe(position: string | null, team: string | null) {
 export function UnmatchedPlayerCard({
   leagueId,
   entry,
+  source,
 }: {
   leagueId: string;
   entry: UnmatchedView;
+  /** `leagues.source`, so an ESPN id is not labelled as Yahoo's. */
+  source: string;
 }) {
   const [pending, startTransition] = useTransition();
 
@@ -53,8 +64,8 @@ export function UnmatchedPlayerCard({
           <div className="space-y-0.5">
             <p className="font-medium">{entry.payload.name}</p>
             <p className="font-mono text-xs text-muted-foreground">
-              {describe(entry.payload.position, entry.payload.nflTeam)} · yahoo
-              #{entry.yahooPlayerId}
+              {describe(entry.payload.position, entry.payload.nflTeam)} ·{" "}
+              {providerLabels(source).idPrefix} #{entry.yahooPlayerId}
             </p>
           </div>
 
