@@ -50,6 +50,13 @@ export async function kickStage(runId: string, stageId: StageId): Promise<void> 
       body: JSON.stringify({ runId }),
       signal: AbortSignal.timeout(KICK_TIMEOUT_MS),
       cache: "no-store",
+      // Never follow a redirect. Nothing this endpoint can legitimately answer
+      // with is a 3xx, and following one is how the missing middleware
+      // exemption stayed hidden: the auth redirect to `/login` was followed to
+      // a perfectly good 200, which read as the stage having started. A
+      // redirect here means something in front of the route answered instead
+      // of the route, and that is a failure whatever it redirects to.
+      redirect: "manual",
     });
   } catch {
     // An abort means the request was sent and the stage is running; a genuine

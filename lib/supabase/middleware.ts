@@ -10,8 +10,30 @@ import type { Database } from "./database.types";
  * board and reads nothing that belongs to anybody, so requiring an account to
  * see it would gate the one answer the product exists to give behind the one
  * step most visitors will not take.
+ *
+ * `/api/cron` and `/api/sync` are not public in the sense `/trade` is — they
+ * are *not session-authenticated*, which is a different thing. The cron route
+ * checks `CRON_SECRET`; `/api/sync/[stage]` checks an HMAC over the run id,
+ * because it is called by the previous stage rather than by a browser and has
+ * no cookie to present; and `/api/sync` itself calls `auth.getUser()` and
+ * answers 401 on its own. Every one of them turns an unauthorized caller away
+ * on its own terms, and a redirect to a login page is not an answer any of
+ * them can parse.
+ *
+ * Leaving `/api/sync` out of this list broke the pipeline outright: the
+ * server-to-server call that hands one stage to the next was answered with a
+ * 307 to `/login`, `fetch` followed it, and the 200 that came back looked like
+ * success — so every run sat at "running" until it was reaped as stalled.
  */
-const PUBLIC_PATHS = ["/", "/trade", "/login", "/signup", "/auth", "/api/cron"];
+const PUBLIC_PATHS = [
+  "/",
+  "/trade",
+  "/login",
+  "/signup",
+  "/auth",
+  "/api/cron",
+  "/api/sync",
+];
 
 function isPublic(pathname: string) {
   return PUBLIC_PATHS.some(
