@@ -39,13 +39,75 @@ export function verifyRunToken(runId: string, token: string | null): boolean {
 const KICK_TIMEOUT_MS = 2_000;
 
 /** Hands the next stage to a fresh invocation and stops caring what it says. */
+/**
+ * Records a handoff that never landed, on the run it was meant to advance.
+ *
+ * This used to be swallowed. The reasoning was that a dead kick leaves the run
+ * visibly stuck and the UI calls it a stall, so there was nothing useful to
+ * say — but "stopped responding" ninety seconds later is the *symptom*, and it
+ * points at the stage rather than at the hop that failed to reach it. The
+ * common cause is mundane and completely invisible from that message: the app
+ * chains stages over HTTP to its own origin, so a `NEXT_PUBLIC_SITE_URL`
+ * pointing somewhere other than the server actually running means every stage
+ * after the first is handed to a different deployment, or to nothing at all.
+ */
+async function recordDeadKick(
+  runId: string,
+  stageId: StageId,
+  detail: string,
+  protectedDeployment = false,
+): Promise<void> {
+  const remedy = protectedDeployment
+    ? `Point NEXT_PUBLIC_SITE_URL at the production domain, which is not protected, or set VERCEL_AUTOMATION_BYPASS_SECRET so the app can call itself.`
+    : `If ${getSiteUrl()} is not the server you are running, set NEXT_PUBLIC_SITE_URL to the origin that is.`;
+
+  try {
+    await markRunFailed(
+      createAdminClient(),
+      runId,
+      stageId,
+      `${detail} Stages are chained over HTTP to ${getSiteUrl()}. ${remedy}`,
+    );
+  } catch {
+    // Reporting the failure failed. The run still stalls and the UI still
+    // offers a retry, which is where this came in.
+  }
+}
+
+/**
+ * Vercel's own way past Deployment Protection.
+ *
+ * Preview deployments are protected by default, and the protection sits in
+ * front of the function rather than inside it — so an app that chains its own
+ * stages over HTTP cannot reach itself, and the 401 it gets back is Vercel's,
+ * not this app's. Setting the project's automation bypass secret makes the
+ * self-call work without turning protection off for everyone else.
+ *
+ * Absent everywhere else, where it costs nothing to send nothing.
+ */
+function bypassHeaders(): Record<string, string> {
+  const secret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  return secret ? { "x-vercel-protection-bypass": secret } : {};
+}
+
+/** Vercel's protection payload, as distinct from a 401 this app produced. */
+async function isDeploymentProtection(response: Response): Promise<boolean> {
+  try {
+    const body = await response.text();
+    return body.includes('"protection"') || body.includes("Protected deployment");
+  } catch {
+    return false;
+  }
+}
+
 export async function kickStage(runId: string, stageId: StageId): Promise<void> {
   try {
-    await fetch(`${getSiteUrl()}/api/sync/${stageId}`, {
+    const response = await fetch(`${getSiteUrl()}/api/sync/${stageId}`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${runToken(runId)}`,
+        ...bypassHeaders(),
       },
       body: JSON.stringify({ runId }),
       signal: AbortSignal.timeout(KICK_TIMEOUT_MS),
@@ -58,10 +120,40 @@ export async function kickStage(runId: string, stageId: StageId): Promise<void> 
       // of the route, and that is a failure whatever it redirects to.
       redirect: "manual",
     });
-  } catch {
-    // An abort means the request was sent and the stage is running; a genuine
-    // network failure leaves the run visibly stuck, which the UI reports as a
-    // stall and offers to retry. Either way there is nothing useful to do here.
+
+    // A 2xx means the stage is running and will report on itself. Anything
+    // else is an answer from something that is not going to run it: a stale
+    // deployment with no such route, or one whose signing secret differs.
+    if (!response.ok) {
+      // A 401 has two very different causes and only one of them is ours, so
+      // the message says which. Vercel's protection answers before the route
+      // is ever reached, and telling someone to check a signing secret when
+      // the request never arrived sends them a long way in the wrong
+      // direction.
+      const protectedDeployment =
+        response.status === 401 && (await isDeploymentProtection(response));
+
+      await recordDeadKick(
+        runId,
+        stageId,
+        protectedDeployment
+          ? `Vercel Deployment Protection refused the ${stageId} stage: the app cannot call itself at a protected deployment URL.`
+          : `The sync pipeline answered ${response.status} instead of starting the ${stageId} stage.`,
+        protectedDeployment,
+      );
+    }
+  } catch (cause) {
+    // The timeout is the *expected* path, not a failure: the request was
+    // delivered and the receiving function runs to completion whether or not
+    // anyone waits for its response. Only a genuine transport failure —
+    // refused connection, unresolvable host — means nobody got it.
+    if (cause instanceof Error && cause.name === "TimeoutError") return;
+
+    await recordDeadKick(
+      runId,
+      stageId,
+      "The sync pipeline could not be reached to start the next stage.",
+    );
   }
 }
 

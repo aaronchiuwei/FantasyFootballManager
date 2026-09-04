@@ -106,6 +106,10 @@ export type Database = {
           yahoo_league_key: string;
           yahoo_game_key: string | null;
           name: string;
+          /** True once the user renamed it; sync then leaves `name` alone. */
+          name_overridden: boolean;
+          /** What the provider last called it. Null on a manual league. */
+          provider_name: string | null;
           season: number;
           num_teams: number | null;
           scoring_type: string | null;
@@ -127,6 +131,8 @@ export type Database = {
           id?: string;
           user_id: string;
           source?: string;
+          name_overridden?: boolean;
+          provider_name?: string | null;
           yahoo_league_key: string;
           yahoo_game_key?: string | null;
           name: string;

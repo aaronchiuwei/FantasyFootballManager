@@ -257,20 +257,39 @@ export default async function ValuesPage({
         <Card>
           <CardContent className="space-y-3 py-8 text-center">
             <p className="text-sm text-muted-foreground">
-              No values yet for the {league.season} season. One sync pulls the
-              market, resolves identity and prices everyone. Values are keyed
-              to matched players, so the crosswalk runs first either way.
+              {manual ? (
+                <>
+                  No values yet for the {league.season} season. This board
+                  prices itself from the trade market and projections, and it
+                  reprices whenever you change the league — so if you have just
+                  set it up, give the first refresh a moment and reload.
+                </>
+              ) : (
+                <>
+                  No values yet for the {league.season} season. One sync pulls
+                  the market, resolves identity and prices everyone. Values are
+                  keyed to matched players, so the crosswalk runs first either
+                  way.
+                </>
+              )}
             </p>
-            <div className="flex justify-center gap-2">
-              <Button asChild size="sm" variant="ghost">
-                <Link href={`/leagues/${league.id}/identity`}>Player identity</Link>
-              </Button>
-              {manual ? null : <SyncButton
-                leagueId={league.id}
-                initialRun={run}
-                label="Sync this league"
-              />}
-            </div>
+            {/* A manual league has no identity queue — its players were picked
+                off the master list, so they arrive matched — and no sync
+                button, because editing the league is what schedules one. */}
+            {manual ? null : (
+              <div className="flex justify-center gap-2">
+                <Button asChild size="sm" variant="ghost">
+                  <Link href={`/leagues/${league.id}/identity`}>
+                    Player identity
+                  </Link>
+                </Button>
+                <SyncButton
+                  leagueId={league.id}
+                  initialRun={run}
+                  label="Sync this league"
+                />
+              </div>
+            )}
           </CardContent>
         </Card>
       ) : (
@@ -386,15 +405,20 @@ export default async function ValuesPage({
                   <p className="text-xs">
                     The engine prices the market&rsquo;s board, every rostered
                     player and the league&rsquo;s available list. A player outside
-                    all three has no row here. If they are on a roster, they may
-                    be waiting on the{" "}
-                    <Link
-                      href={`/leagues/${league.id}/identity`}
-                      className="underline underline-offset-4"
-                    >
-                      identity screen
-                    </Link>
-                    .
+                    all three has no row here.
+                    {manual ? null : (
+                      <>
+                        {" "}
+                        If they are on a roster, they may be waiting on the{" "}
+                        <Link
+                          href={`/leagues/${league.id}/identity`}
+                          className="underline underline-offset-4"
+                        >
+                          identity screen
+                        </Link>
+                        .
+                      </>
+                    )}
                   </p>
                 </>
               ) : (
