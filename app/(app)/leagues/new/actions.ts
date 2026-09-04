@@ -1,11 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { redirect } from "next/navigation";
 
 import type { ManualFormState } from "@/components/leagues/manual-league-form";
 import { createManualLeague } from "@/lib/leagues/manual";
 import { planManualLeague } from "@/lib/leagues/manual-input";
+import { startInitialSync } from "@/lib/sync/auto";
+import { kickStage } from "@/lib/sync/pipeline";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -37,6 +40,13 @@ export async function createManualLeagueAction(
       error: cause instanceof Error ? cause.message : "Something went wrong.",
     };
   }
+
+  // The board is marked dirty at birth, so the layout would start this on the
+  // next page load anyway — but the roster picker searches Sleeper's master
+  // list, and starting the pull now rather than one navigation later is the
+  // difference between an empty picker and a working one.
+  const pending = await startInitialSync(supabase, user.id, leagueId);
+  if (pending) after(() => kickStage(pending.runId, pending.stageId));
 
   revalidatePath("/leagues");
   revalidatePath("/dashboard");

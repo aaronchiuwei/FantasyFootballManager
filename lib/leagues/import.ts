@@ -48,6 +48,20 @@ export async function saveLeague(
   { league, teams }: { league: LeagueImport; teams: TeamImport[] },
   { source, writeUsersTeam }: SaveLeagueOptions,
 ): Promise<ImportResult> {
+  // A league the user renamed keeps its name. The provider is the authority on
+  // what a league is called right up until a human disagrees, and overwriting
+  // their choice on every sync would make the rename look like it worked and
+  // then quietly undo it.
+  const { data: existing } = await db
+    .from("leagues")
+    .select("name, name_overridden")
+    .eq("user_id", userId)
+    .eq("yahoo_league_key", league.leagueKey)
+    .maybeSingle();
+
+  const name =
+    existing?.name_overridden && existing.name ? existing.name : league.name;
+
   const { data: leagueRow, error: leagueError } = await db
     .from("leagues")
     .upsert(
@@ -56,7 +70,11 @@ export async function saveLeague(
         source,
         yahoo_league_key: league.leagueKey,
         yahoo_game_key: league.gameKey,
-        name: league.name,
+        name,
+        // Recorded on every sync, override or not: a reset should restore what
+        // the provider calls the league *now*, not what it called it when the
+        // user first renamed it.
+        provider_name: league.name,
         season: league.season,
         num_teams: league.numTeams,
         scoring_type: league.scoringType,
