@@ -14,6 +14,7 @@ import {
   type ValueRowData,
 } from "@/components/values/player-value-row";
 import { latestRun } from "@/lib/sync/run";
+import { isManualLeague } from "@/lib/leagues/manual";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 import { MIN_QUERY_LENGTH, searchLabel, searchPattern } from "@/lib/values/search";
@@ -111,11 +112,13 @@ export default async function ValuesPage({
 
   const { data: league } = await supabase
     .from("leagues")
-    .select("id, name, season")
+    .select("id, name, season, source")
     .eq("id", id)
     .maybeSingle();
 
   if (!league) notFound();
+
+  const manual = isManualLeague(league.source);
 
   const run = await latestRun(supabase, league.id);
 
@@ -212,7 +215,7 @@ export default async function ValuesPage({
           </p>
         </div>
 
-        <SyncButton leagueId={league.id} initialRun={run} />
+        {manual ? null : <SyncButton leagueId={league.id} initialRun={run} />}
       </div>
 
       <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -262,11 +265,11 @@ export default async function ValuesPage({
               <Button asChild size="sm" variant="ghost">
                 <Link href={`/leagues/${league.id}/identity`}>Player identity</Link>
               </Button>
-              <SyncButton
+              {manual ? null : <SyncButton
                 leagueId={league.id}
                 initialRun={run}
                 label="Sync this league"
-              />
+              />}
             </div>
           </CardContent>
         </Card>

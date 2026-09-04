@@ -17,7 +17,6 @@ const FORM = {
   lineup: "QB, 2×RB, 3×WR, TE, W/R/T, K, DEF, 6×BN",
   teams: "Ditka\nPapa Bear\nMonsters\nSweetness",
   scoringLabel: "Half PPR",
-  currentWeek: "",
   startWeek: "1",
   endWeek: "16",
 };
@@ -130,7 +129,6 @@ describe("planManualLeague", () => {
     expect(result.plan.numTeams).toBe(4);
     expect(result.plan.teamNames).toHaveLength(4);
     expect(result.plan.isDynasty).toBe(false);
-    expect(result.plan.currentWeek).toBeNull();
     expect(result.plan.startWeek).toBe(1);
     expect(result.plan.endWeek).toBe(16);
     expect(formatLineup(result.plan.rosterSlots)).toBe(FORM.lineup);
@@ -192,5 +190,15 @@ describe("planManualSettings", () => {
     expect(
       planManualSettings({ ...SETTINGS_ONLY, lineup: "LB" }),
     ).toMatchObject({ ok: false });
+  });
+});
+
+describe("the current week is not a form field", () => {
+  it("ignores one even when a caller sends it", () => {
+    // It belongs to sync stage 1, which reads the live NFL week from Sleeper.
+    // A typed answer is right for a week and wrong for the rest of the season.
+    const plan = planManualLeague({ ...FORM, currentWeek: "7" });
+    expect(plan.ok).toBe(true);
+    expect(plan.ok && "currentWeek" in plan.plan).toBe(false);
   });
 });

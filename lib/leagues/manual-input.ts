@@ -294,7 +294,10 @@ const leagueFields = {
   lineup: trimmed.min(1, "Describe the starting lineup."),
   isDynasty: checkbox,
   scoringLabel: z.preprocess(blankToNull, trimmed.max(40).nullable()),
-  currentWeek: optionalInt(1, 25),
+  // No `currentWeek`. It is not a preference, it is a fact about today, and
+  // sync stage 1 already reads the live NFL week from Sleeper on every run.
+  // Asking for it would mean a number that is right for a week and then wrong
+  // for the rest of the season, with nothing to correct it.
   startWeek: optionalInt(1, 25),
   endWeek: optionalInt(1, 25),
 };
@@ -333,7 +336,6 @@ export type ManualLeagueSettings = {
   scoringType: string | null;
   rosterSlots: RosterSlot[];
   isDynasty: boolean;
-  currentWeek: number | null;
   startWeek: number | null;
   endWeek: number | null;
 };
@@ -387,7 +389,6 @@ export function planManualSettings(raw: unknown): Planned<ManualLeagueSettings> 
       scoringType: form.scoringLabel,
       rosterSlots: slots,
       isDynasty: form.isDynasty,
-      currentWeek: form.currentWeek,
       startWeek: form.startWeek,
       endWeek: form.endWeek,
     },

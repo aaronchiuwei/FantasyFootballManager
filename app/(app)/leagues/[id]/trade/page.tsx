@@ -14,6 +14,7 @@ import {
 import type { SavedTradeView } from "@/components/trade/saved-trades";
 import { latestRun } from "@/lib/sync/run";
 import { loadSavedTrades, loadTradeBoard } from "@/lib/trades/store";
+import { isManualLeague } from "@/lib/leagues/manual";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Trade analyzer" };
@@ -67,11 +68,13 @@ export default async function TradePage({
 
   const { data: league } = await supabase
     .from("leagues")
-    .select("id, name, season")
+    .select("id, name, season, source")
     .eq("id", id)
     .maybeSingle();
 
   if (!league) notFound();
+
+  const manual = isManualLeague(league.source);
 
   const [board, saved, run] = await Promise.all([
     loadTradeBoard(supabase, league.id),
@@ -101,7 +104,7 @@ export default async function TradePage({
           </p>
         </div>
 
-        <SyncButton leagueId={league.id} initialRun={run} />
+        {manual ? null : <SyncButton leagueId={league.id} initialRun={run} />}
       </div>
 
       {board.unresolved > 0 ? (
@@ -135,11 +138,11 @@ export default async function TradePage({
               analyzer runs entirely on those cached values.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-2">
-              <SyncButton
+              {manual ? null : <SyncButton
                 leagueId={league.id}
                 initialRun={run}
                 label="Sync this league"
-              />
+              />}
               {/* A sync takes minutes and this question does not have to
                   wait for one: the open analyzer prices the same two packages
                   off the market board, without the rosters. */}

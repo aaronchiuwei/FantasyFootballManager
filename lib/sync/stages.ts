@@ -112,6 +112,18 @@ const state: StageRunner = async ({ db, leagueId }) => {
     ppr: Number(league.ppr),
   };
 
+  // A Yahoo league is told what week it is by Yahoo, in stage 6. A manual
+  // league has nobody to tell it, so the season clock this stage just read is
+  // the answer — written back to the row here rather than typed into a form,
+  // because "what week is it" is a fact about today and a form answer goes
+  // stale the following Tuesday.
+  if (isManualLeague(league.source) && league.current_week !== currentWeek) {
+    await db
+      .from("leagues")
+      .update({ current_week: currentWeek })
+      .eq("id", leagueId);
+  }
+
   return {
     detail: isRegularSeason
       ? `Week ${currentWeek} of ${league.season} · ${context.weeksRemaining} weeks left`

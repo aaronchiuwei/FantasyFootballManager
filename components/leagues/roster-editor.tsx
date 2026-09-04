@@ -74,7 +74,7 @@ export function RosterEditor({
         label={`Add to ${teamName}`}
         note={
           disabled
-            ? "The player list arrives with the first sync. Run one from the league page, then come back."
+            ? "The player list is still being fetched. Give it a moment and reload."
             : "Picking a player who is already on another roster in this league moves him here."
         }
         inset

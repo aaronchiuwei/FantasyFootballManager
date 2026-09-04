@@ -1,6 +1,11 @@
 import "server-only";
 
-import { removeRosterEntry, requireManualLeague, setRosterEntry } from "@/lib/leagues/manual";
+import {
+  removeRosterEntry,
+  requireManualLeague,
+  setRosterEntry,
+  teamIdsOf,
+} from "@/lib/leagues/manual";
 import type { Db } from "@/lib/supabase/db";
 
 import { kindFor, validateMove, type MoveItem, type MoveKind } from "./moves";
@@ -50,6 +55,30 @@ export async function recordMove(
 
   const kind = kindFor(input.items);
   if (!kind) throw new Error("Nothing about this move changes a roster.");
+
+  /**
+   * Every leg is checked before any leg is applied.
+   *
+   * PostgREST gives no transaction to hold across these writes, so the legs
+   * commit one at a time and a throw part-way leaves a trade half-done — two
+   * of four players moved, and no ledger entry to say what was meant to
+   * happen. That is the worst state this table can be in, and it is much worse
+   * than refusing the move outright.
+   *
+   * Checking first does not make the apply atomic; nothing here can. It
+   * removes the one failure that is actually likely — a team id that is not in
+   * this league, which is the only precondition either writer enforces — and
+   * leaves only a mid-flight database error, which no amount of application
+   * code prevents.
+   */
+  const teamIds = new Set(await teamIdsOf(db, leagueId));
+  for (const item of input.items) {
+    for (const side of [item.fromTeamId, item.toTeamId]) {
+      if (side !== null && !teamIds.has(side)) {
+        throw new Error("That move names a team that is not in this league.");
+      }
+    }
+  }
 
   for (const item of input.items) {
     if (item.toTeamId !== null) {

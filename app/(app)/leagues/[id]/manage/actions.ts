@@ -77,7 +77,10 @@ export async function updateSettingsAction(
 
   refresh(leagueId);
   revalidatePath("/leagues");
-  return {};
+  return {
+    message:
+      "Settings saved. Values, needs and suggestions are recomputed automatically.",
+  };
 }
 
 // ---------------------------------------------------------------------------

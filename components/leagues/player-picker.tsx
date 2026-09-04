@@ -148,8 +148,8 @@ export function PlayerPicker({
         </ul>
       ) : searched && !pending ? (
         <p className="text-sm text-muted-foreground">
-          No player matches “{query.trim()}”. The master list arrives with the
-          first sync — if it has never run, there is nothing here to find yet.
+          No player matches “{query.trim()}”. If this league is new, the master
+          list may still be on its way — give it a moment and reload.
         </p>
       ) : null}
     </div>

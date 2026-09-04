@@ -38,11 +38,12 @@ export default function NewLeaguePage() {
 
       <Alert>
         <Info />
-        <AlertTitle>Three steps, in this order</AlertTitle>
+        <AlertTitle>Two steps</AlertTitle>
         <AlertDescription>
-          Settings and team names here, then run a sync to pull the player list
-          and the trade market, then fill in the rosters. A second sync after
-          that prices the league and reads what every team is short of.
+          Settings and team names here, then fill in the rosters. The player
+          list, the trade market and the projections are fetched for you, and
+          the board reprices itself whenever you change it — there is nothing to
+          press.
         </AlertDescription>
       </Alert>
 

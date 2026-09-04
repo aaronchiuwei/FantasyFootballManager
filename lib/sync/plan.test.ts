@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  afterLeague,
   initialStages,
   isStalled,
-  nextInQueue,
   nextStage,
   patchStage,
   progressOf,
@@ -15,7 +13,6 @@ import {
   STALL_AFTER_MS,
   toSyncRun,
   type StageState,
-  type SyncBatch,
   type SyncRun,
 } from "./plan";
 
@@ -172,57 +169,5 @@ describe("toSyncRun", () => {
     expect(mapped.leagueId).toBe("league-1");
     expect(mapped.status).toBe("succeeded");
     expect(mapped.stages).toHaveLength(8);
-  });
-});
-
-describe("nextInQueue", () => {
-  const batch: SyncBatch = { queue: ["a", "b", "c"], done: 0, total: 3 };
-
-  it("takes the head and hands the rest to it", () => {
-    expect(nextInQueue(batch)).toEqual({
-      leagueId: "a",
-      carry: { queue: ["b", "c"], done: 0, total: 3 },
-    });
-  });
-
-  it("leaves the count alone — taking a league is not finishing one", () => {
-    expect(nextInQueue(batch)?.carry.done).toBe(0);
-  });
-
-  it("has nothing to hand out once the queue is empty", () => {
-    expect(nextInQueue({ queue: [], done: 3, total: 3 })).toBeNull();
-  });
-
-  it("does not mutate the batch it was given", () => {
-    nextInQueue(batch);
-    expect(batch.queue).toEqual(["a", "b", "c"]);
-  });
-});
-
-describe("afterLeague", () => {
-  it("counts one league as dealt with", () => {
-    expect(afterLeague({ queue: ["b"], done: 0, total: 2 })).toEqual({
-      queue: ["b"],
-      done: 1,
-      total: 2,
-    });
-  });
-
-  it("never counts past the total", () => {
-    expect(afterLeague({ queue: [], done: 3, total: 3 }).done).toBe(3);
-  });
-
-  it("walks a whole batch to exactly total, one league at a time", () => {
-    let batch: SyncBatch = { queue: ["a", "b", "c"], done: 0, total: 3 };
-    const labels: string[] = [];
-
-    for (let step = nextInQueue(batch); step; step = nextInQueue(batch)) {
-      // What the button prints while that league is the one being synced.
-      labels.push(`${step.carry.done + 1} of ${step.carry.total}`);
-      batch = afterLeague(step.carry);
-    }
-
-    expect(labels).toEqual(["1 of 3", "2 of 3", "3 of 3"]);
-    expect(batch.done).toBe(3);
   });
 });

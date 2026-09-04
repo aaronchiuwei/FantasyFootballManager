@@ -9,7 +9,6 @@ import { Panel, Stencil } from "@/components/board/panel";
 import { RailLine } from "@/components/board/rail";
 import { DisconnectYahooButton } from "@/components/leagues/disconnect-yahoo-button";
 import { ImportLeagueButton } from "@/components/leagues/import-league-button";
-import { SyncAllButton } from "@/components/sync/sync-all-button";
 import { createClient } from "@/lib/supabase/server";
 import {
   getYahooConnection,
@@ -201,19 +200,7 @@ export default async function LeaguesPage({
         </Panel>
       ) : null}
 
-      <Panel
-        label="Your leagues"
-        note={
-          imported && imported.length > 1
-            ? "Syncing every board runs them one after another: the first pays for the shared player list and market pull, the rest find it already on disk."
-            : undefined
-        }
-        action={
-          imported && imported.length > 0 ? (
-            <SyncAllButton leagueCount={imported.length} />
-          ) : null
-        }
-      >
+      <Panel label="Your leagues">
         {imported && imported.length > 0 ? (
           <ul className="flex flex-col">
             {imported.map((league, i) => (

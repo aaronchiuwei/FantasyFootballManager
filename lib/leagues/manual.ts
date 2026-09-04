@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 
 import type { RosterSlot } from "@/lib/sources/yahoo-parse";
+import { markLeagueDirty } from "@/lib/sync/auto";
 import type { Db } from "@/lib/supabase/db";
 import type { Json } from "@/lib/supabase/database.types";
 import { searchPattern } from "@/lib/values/search";
@@ -108,7 +109,9 @@ export async function createManualLeague(
       num_qbs: plan.numQbs,
       roster_slots: plan.rosterSlots as unknown as Json,
       is_dynasty: plan.isDynasty,
-      current_week: plan.currentWeek,
+      // `current_week` is left for the season clock to fill in on the first
+      // sync. A league created in March has no current week, and inventing one
+      // would stamp a wrong week badge on the board that nothing corrects.
       start_week: plan.startWeek,
       end_week: plan.endWeek,
     })
@@ -157,16 +160,23 @@ export async function updateManualLeague(
       num_qbs: plan.numQbs,
       roster_slots: plan.rosterSlots as unknown as Json,
       is_dynasty: plan.isDynasty,
-      current_week: plan.currentWeek,
+      // Deliberately not written: the settings form no longer carries it, and
+      // saving settings must not wipe what the last sync worked out.
       start_week: plan.startWeek,
       end_week: plan.endWeek,
     })
     .eq("id", leagueId);
 
   if (error) throw new Error(`Could not save the settings: ${error.message}`);
+  // PPR, the lineup and the QB count are what the value engine is
+  // parameterised by, so every price in the league is now out of date.
+  await markLeagueDirty(db, leagueId);
 }
 
-/** Keeps `num_teams` honest after a team is added or removed. */
+/**
+ * Keeps `num_teams` honest after a team is added or removed, and marks the
+ * league for recomputation — team count sets every replacement rank in §5.
+ */
 async function syncTeamCount(db: Db, leagueId: string): Promise<void> {
   const { count } = await db
     .from("teams")
@@ -175,7 +185,7 @@ async function syncTeamCount(db: Db, leagueId: string): Promise<void> {
 
   await db
     .from("leagues")
-    .update({ num_teams: count ?? 0 })
+    .update({ num_teams: count ?? 0, last_synced_at: null })
     .eq("id", leagueId);
 }
 
@@ -281,12 +291,34 @@ export async function setUsersTeam(
   if (error) throw new Error(`Could not set your team: ${error.message}`);
 }
 
+/** Below this a league cannot hold a matchup, a trade, or a needs comparison. */
+const MIN_TEAMS = 2;
+
 export async function deleteManualTeam(
   db: Db,
   leagueId: string,
   teamId: string,
 ): Promise<void> {
   await requireManualLeague(db, leagueId);
+
+  const { data: teams, error: readError } = await db
+    .from("teams")
+    .select("id, is_users_team")
+    .eq("league_id", leagueId);
+
+  if (readError) throw new Error(`Could not read the teams: ${readError.message}`);
+
+  const rows = teams ?? [];
+  const doomed = rows.find((team) => team.id === teamId);
+  if (!doomed) throw new Error("That team is not in this league.");
+
+  // The button is disabled at this point too, but a disabled button is a
+  // courtesy and this is the rule. A one-team league prices nothing: every
+  // needs vector is measured against the rest of the league, and there is no
+  // rest of the league.
+  if (rows.length <= MIN_TEAMS) {
+    throw new Error(`A league needs at least ${MIN_TEAMS} teams.`);
+  }
 
   const { error } = await db
     .from("teams")
@@ -295,6 +327,15 @@ export async function deleteManualTeam(
     .eq("league_id", leagueId);
 
   if (error) throw new Error(`Could not remove the team: ${error.message}`);
+
+  // Deleting your own team would otherwise leave the league with no point of
+  // view: "My team" on the values board matches nothing, and the trade
+  // analyzer opens on an arbitrary side. The flag moves rather than vanishing.
+  if (doomed.is_users_team) {
+    const heir = rows.find((team) => team.id !== teamId);
+    if (heir) await setUsersTeam(db, leagueId, heir.id);
+  }
+
   await syncTeamCount(db, leagueId);
 }
 
@@ -303,7 +344,7 @@ export async function deleteManualTeam(
 // ---------------------------------------------------------------------------
 
 /** Every team id in a league, for the "is he already owned here" checks. */
-async function teamIdsOf(db: Db, leagueId: string): Promise<string[]> {
+export async function teamIdsOf(db: Db, leagueId: string): Promise<string[]> {
   const { data, error } = await db
     .from("teams")
     .select("id")
@@ -361,6 +402,7 @@ export async function setRosterEntry(
   );
 
   if (error) throw new Error(`Could not save the roster: ${error.message}`);
+  await markLeagueDirty(db, leagueId);
 }
 
 export async function removeRosterEntry(
@@ -371,6 +413,13 @@ export async function removeRosterEntry(
 ): Promise<void> {
   await requireManualLeague(db, leagueId);
 
+  // Scoped the same way `setRosterEntry` is. RLS already confines this to
+  // leagues the caller owns, so an unchecked `teamId` was never a way into
+  // someone else's data — but it was a way to delete a roster row from
+  // *another of your own* leagues, which is a bug rather than an attack.
+  const teamIds = await teamIdsOf(db, leagueId);
+  if (!teamIds.includes(teamId)) throw new Error("That team is not in this league.");
+
   const { error } = await db
     .from("rosters")
     .delete()
@@ -378,6 +427,7 @@ export async function removeRosterEntry(
     .eq("player_id", playerId);
 
   if (error) throw new Error(`Could not drop the player: ${error.message}`);
+  await markLeagueDirty(db, leagueId);
 }
 
 export type RosterEntry = {

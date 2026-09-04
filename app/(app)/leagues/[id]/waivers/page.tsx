@@ -8,6 +8,7 @@ import { SyncButton } from "@/components/sync/sync-button";
 import { WaiverBoard } from "@/components/waivers/waiver-board";
 import { latestRun } from "@/lib/sync/run";
 import { loadWaiverBoard } from "@/lib/waivers/store";
+import { isManualLeague } from "@/lib/leagues/manual";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Waiver wire" };
@@ -30,11 +31,13 @@ export default async function WaiversPage({
 
   const { data: league } = await supabase
     .from("leagues")
-    .select("id, name, season")
+    .select("id, name, season, source")
     .eq("id", id)
     .maybeSingle();
 
   if (!league) notFound();
+
+  const manual = isManualLeague(league.source);
 
   const [board, run] = await Promise.all([
     loadWaiverBoard(supabase, league.id),
@@ -55,7 +58,7 @@ export default async function WaiversPage({
           </p>
         </div>
 
-        <SyncButton leagueId={league.id} initialRun={run} />
+        {manual ? null : <SyncButton leagueId={league.id} initialRun={run} />}
       </div>
 
       {board.players.length > 0 && !board.hasNeeds ? (
@@ -79,11 +82,11 @@ export default async function WaiversPage({
               them to a player, and projects the rest of their season.
             </p>
             <div className="flex justify-center">
-              <SyncButton
+              {manual ? null : <SyncButton
                 leagueId={league.id}
                 initialRun={run}
                 label="Sync this league"
-              />
+              />}
             </div>
           </CardContent>
         </Card>

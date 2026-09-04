@@ -10,6 +10,7 @@ import { TeamNeedsCard } from "@/components/needs/team-needs-card";
 import { startingStrength } from "@/lib/needs/needs";
 import { loadLeagueNeeds } from "@/lib/needs/store";
 import { latestRun } from "@/lib/sync/run";
+import { isManualLeague } from "@/lib/leagues/manual";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "League overview" };
@@ -39,11 +40,13 @@ export default async function OverviewPage({
 
   const { data: league } = await supabase
     .from("leagues")
-    .select("id, name, season")
+    .select("id, name, season, source")
     .eq("id", id)
     .maybeSingle();
 
   if (!league) notFound();
+
+  const manual = isManualLeague(league.source);
 
   const [needs, run] = await Promise.all([
     loadLeagueNeeds(supabase, league.id),
@@ -76,7 +79,7 @@ export default async function OverviewPage({
           </p>
         </div>
 
-        <SyncButton leagueId={league.id} initialRun={run} />
+        {manual ? null : <SyncButton leagueId={league.id} initialRun={run} />}
       </div>
 
       {needs.unresolved > 0 ? (
@@ -109,11 +112,11 @@ export default async function OverviewPage({
               against the rest of the league.
             </p>
             <div className="flex justify-center">
-              <SyncButton
+              {manual ? null : <SyncButton
                 leagueId={league.id}
                 initialRun={run}
                 label="Sync this league"
-              />
+              />}
             </div>
           </CardContent>
         </Card>

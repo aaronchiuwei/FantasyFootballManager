@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Panel, Stencil } from "@/components/board/panel";
 import { RailLine } from "@/components/board/rail";
-import { SyncAllButton } from "@/components/sync/sync-all-button";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Dashboard" };
@@ -40,12 +39,9 @@ export default async function DashboardPage() {
         <Panel
           label={`Leagues · ${leagues!.length}`}
           action={
-            <div className="flex items-center gap-1.5">
-              <SyncAllButton leagueCount={leagues!.length} />
-              <Button asChild size="sm" variant="ghost">
-                <Link href="/leagues">Add</Link>
-              </Button>
-            </div>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/leagues">Add a league</Link>
+            </Button>
           }
         >
           {/* A rail per league, not a card per league. The name reads along

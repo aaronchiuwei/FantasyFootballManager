@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { CheckCircle2, Info } from "lucide-react";
 
@@ -8,6 +8,7 @@ import { Separator } from "@/components/ui/separator";
 import { SyncButton } from "@/components/sync/sync-button";
 import { UnmatchedPlayerCard } from "@/components/players/unmatched-player-card";
 import { getIdentityStatus } from "@/lib/crosswalk/store";
+import { isManualLeague } from "@/lib/leagues/manual";
 import { latestRun } from "@/lib/sync/run";
 import { createClient } from "@/lib/supabase/server";
 
@@ -58,11 +59,16 @@ export default async function IdentityPage({
 
   const { data: league } = await supabase
     .from("leagues")
-    .select("id, name")
+    .select("id, name, source")
     .eq("id", id)
     .maybeSingle();
 
   if (!league) notFound();
+  // §4's ladder only ever runs against Yahoo ids, so on a hand-kept league
+  // this is a queue that can never have anything in it. The tab is already
+  // hidden; this closes the door someone reaches by typing the URL, the same
+  // way `/manage` and `/moves` turn a Yahoo league away.
+  if (isManualLeague(league.source)) redirect(`/leagues/${league.id}`);
 
   const [status, run] = await Promise.all([
     getIdentityStatus(league.id),
