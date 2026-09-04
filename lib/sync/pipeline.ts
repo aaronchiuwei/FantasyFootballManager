@@ -133,12 +133,20 @@ export async function kickStage(runId: string, stageId: StageId): Promise<void> 
       const protectedDeployment =
         response.status === 401 && (await isDeploymentProtection(response));
 
+      // `redirect: "manual"` above is what makes this reachable. Followed, a
+      // 307 to /login ends at a cheerful 200 and the kick reads as success —
+      // which is exactly how the missing middleware exemption stayed hidden
+      // for as long as it did.
+      const redirected = response.status >= 300 && response.status < 400;
+
       await recordDeadKick(
         runId,
         stageId,
         protectedDeployment
           ? `Vercel Deployment Protection refused the ${stageId} stage: the app cannot call itself at a protected deployment URL.`
-          : `The sync pipeline answered ${response.status} instead of starting the ${stageId} stage.`,
+          : redirected
+            ? `Something in front of the route redirected the ${stageId} stage (${response.status}) instead of running it — usually auth middleware that has not exempted /api/sync.`
+            : `The sync pipeline answered ${response.status} instead of starting the ${stageId} stage.`,
         protectedDeployment,
       );
     }
