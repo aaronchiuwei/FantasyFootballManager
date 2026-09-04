@@ -5,6 +5,7 @@ import { getSiteUrl } from "@/lib/site-url";
 import { YahooReauthRequired } from "@/lib/sources/yahoo-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+import { advanceBatch } from "./batch";
 import { nextStage, type StageId, type SyncContext } from "./plan";
 import {
   contextOf,
@@ -66,6 +67,26 @@ function describe(cause: unknown): string {
 }
 
 /**
+ * Starts the next league in a batch, if this run was part of one.
+ *
+ * Never throws, and never runs inside the stage's own try. This run is already
+ * recorded by the time it is called, and a failure to hand the queue on must
+ * not be written down as that league's stage failing — the batch simply stops
+ * where it is, with every league before it synced and saying so.
+ */
+async function handOff(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+  context: SyncContext,
+): Promise<void> {
+  try {
+    await advanceBatch(admin, userId, context.batch);
+  } catch (cause) {
+    console.error("Failed to advance the sync batch:", cause);
+  }
+}
+
+/**
  * Runs one stage to completion, records the outcome, and hands off.
  *
  * Never throws: a stage that fails is recorded as failed on the run so the UI
@@ -90,6 +111,7 @@ export async function executeStage(
       stageId,
       "The sync lost its season context. Start a fresh sync.",
     );
+    await handOff(admin, row.user_id, context);
     return;
   }
 
@@ -106,13 +128,18 @@ export async function executeStage(
     const next = nextStage(stageId);
     if (next) {
       await kickStage(runId, next);
-    } else {
-      await markRunSucceeded(admin, runId);
+      return;
     }
+
+    await markRunSucceeded(admin, runId);
   } catch (cause) {
     const patch: Partial<SyncContext> =
       cause instanceof YahooReauthRequired ? { needsReauth: true } : {};
 
     await markRunFailed(admin, runId, stageId, describe(cause), patch);
   }
+
+  // Both ways a run can end lead here, and only the ends do — the mid-pipeline
+  // path returned above.
+  await handOff(admin, row.user_id, context);
 }

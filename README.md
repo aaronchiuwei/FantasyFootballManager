@@ -155,7 +155,12 @@ lib/players/
   detail.ts          the player page's four reads
 lib/leagues/
   import.ts          Yahoo league, teams and matchups → Postgres
-  nav.ts             the seven sections, and which one a path is in — pure
+  manual.ts          the same rows, written by hand instead of fetched
+  manual-input.ts    lineup / team / settings parsing for the manual forms — pure
+  nav.ts             a league's sections, and which one a path is in — pure
+lib/transactions/
+  moves.ts           what an add, a drop and a trade are — pure
+  store.ts           records a move and applies it to the rosters
 app/api/sync/          POST to start or resume; POST /[stage] to run one stage
 components/
   players/           identity resolution UI, the stat surface
@@ -166,7 +171,9 @@ components/
   suggestions/       the package card, the stack that cycles them, the builder,
                      and the three-team ring card and its per-team board
   sync/              the sync button, progress ring and staged checklist
-  leagues/           the section strip, and the import / disconnect buttons
+  leagues/           the section strip, the import / disconnect buttons, and
+                     the manual league form, team list and roster editor
+  transactions/      the move form and the ledger it writes to
 supabase/migrations/
 ```
 
@@ -191,6 +198,32 @@ Zod. Those parsers are pure and covered by fixture tests — `npm test`.
 Scoring is read from the league, never hardcoded: PPR comes from the receptions
 stat modifier, `num_qbs` from the starting roster slots (superflex counts as
 two), and both are what the value engine sends to FantasyCalc.
+
+## Leagues without Yahoo
+
+Yahoo's API is the fastest way in, not the only one. `/leagues/new` takes the
+same information an import would have read — settings, the starting lineup,
+team names — and writes it to the same `leagues` and `teams` rows, marked
+`source = 'manual'`. Rosters are then built on `/leagues/[id]/manage` by
+picking real players out of Sleeper's master list, and kept up to date on
+`/leagues/[id]/moves`, which records an add, a drop or a trade **and** applies
+it to the rosters in one action, so the ledger and the board cannot disagree.
+
+Two consequences are worth knowing:
+
+- Sync stages 6 (`yahoo`) and 7 (`resolve`) are skipped for a manual league and
+  say so on the checklist. There is nothing to pull, and nothing to match — a
+  hand-built roster already holds real `players.id` values. Every other stage,
+  including the value engine, the needs vectors and both suggestion searches,
+  runs unchanged and cannot tell the two kinds of league apart.
+- The waiver wire's pool is different by necessity. A Yahoo league gets Yahoo's
+  own available list; a manual league has no such list, so `league_free_agents`
+  falls back to every priced player nobody in the league has rostered. The
+  board still ranks on rest-of-season projection and cuts at 250, so the wider
+  net costs nothing at the top.
+
+Run a sync first on a new manual league: the player picker searches the master
+list, and that arrives with sync stage 2.
 
 ## How player identity works
 

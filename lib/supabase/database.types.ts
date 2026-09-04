@@ -73,6 +73,9 @@ export type Database = {
         Row: {
           id: string;
           user_id: string;
+          /** 'yahoo' when imported over the API, 'manual' when typed in. */
+          source: string;
+          /** Yahoo's key, or `manual:<uuid>` when `source` is 'manual'. */
           yahoo_league_key: string;
           yahoo_game_key: string | null;
           name: string;
@@ -96,6 +99,7 @@ export type Database = {
         Insert: {
           id?: string;
           user_id: string;
+          source?: string;
           yahoo_league_key: string;
           yahoo_game_key?: string | null;
           name: string;
@@ -582,6 +586,56 @@ export type Database = {
         >;
         Relationships: [];
       };
+      transactions: {
+        Row: {
+          id: string;
+          league_id: string;
+          kind: string;
+          occurred_at: string;
+          week: number | null;
+          faab_bid: number | null;
+          note: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          league_id: string;
+          kind: string;
+          occurred_at?: string;
+          week?: number | null;
+          faab_bid?: number | null;
+          note?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["transactions"]["Insert"]>;
+        Relationships: [];
+      };
+      transaction_items: {
+        Row: {
+          id: string;
+          transaction_id: string;
+          player_id: number;
+          /** null means the player came from the free-agent pool. */
+          from_team_id: string | null;
+          /** null means the player was cut back to it. */
+          to_team_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          transaction_id: string;
+          player_id: number;
+          from_team_id?: string | null;
+          to_team_id?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["transaction_items"]["Insert"]
+        >;
+        Relationships: [];
+      };
       matchups: {
         Row: {
           league_id: string;
@@ -645,7 +699,10 @@ export type Database = {
         };
         Relationships: [];
       };
-      /** Phase 7 read model: Yahoo's available list, resolved and priced. */
+      /**
+       * Phase 7 read model: what a league has available, priced. Yahoo's own
+       * list where there is one; everything unrostered on a manual league.
+       */
       league_free_agents: {
         Row: {
           league_id: string;
@@ -660,10 +717,11 @@ export type Database = {
           position: string | null;
           nfl_team: string | null;
           injury_status: string | null;
-          /** Yahoo's free-text reason ("Knee"). Label only -- never valued. */
+          /** Yahoo's free-text reason ("Knee"). Null on a manual league. */
           injury_note: string | null;
           headshot_url: string | null;
           projected_pts_ppr: number | null;
+          /** The pool fetch, or the valuation run on a manual league. */
           fetched_at: string;
         };
         Relationships: [];
