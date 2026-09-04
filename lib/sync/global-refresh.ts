@@ -149,10 +149,27 @@ export type GlobalRefreshReport = {
  * Sleeper player master (including injury status), FantasyCalc market boards,
  * season and weekly projections, and actual stats.
  */
-export async function refreshGlobalData(db: Db): Promise<GlobalRefreshReport> {
+export async function refreshGlobalData(
+  db: Db,
+  /**
+   * Ignore the player master's TTL and pull it again now.
+   *
+   * The TTL is measured against the age of the stored rows, which is the right
+   * question for "is this data stale" and the wrong one for "does this data
+   * still match what the code accepts". When a parser changes — the fix that
+   * started keeping fullbacks, say — every player it newly admits is missing
+   * until the cache happens to expire, and nothing on any screen explains why
+   * a player who plainly exists cannot be found.
+   *
+   * So there is a lever, behind the same secret the schedule uses. Not exposed
+   * to a league sync: this is a 14.6 MB pull, and one button that anybody can
+   * press repeatedly is how you get rate-limited by the source you depend on.
+   */
+  { force = false }: { force?: boolean } = {},
+): Promise<GlobalRefreshReport> {
   const started = Date.now();
 
-  let master = await syncPlayerMaster(db);
+  let master = await syncPlayerMaster(db, { force });
   let ids = await loadSleeperIds(db);
   if (ids.size === 0) {
     master = await syncPlayerMaster(db, { force: true });

@@ -16,9 +16,14 @@ function authorized(request: Request): boolean {
   return auth === `Bearer ${secret}`;
 }
 
-async function runRefresh() {
+async function runRefresh(request: Request) {
   const db = createAdminClient();
-  return refreshGlobalData(db);
+  // `?force=1` re-pulls the player master even inside its 24h TTL. The
+  // schedule never passes it; a human does, after a change to what the parser
+  // accepts, when waiting up to a day for the cache to lapse is the only thing
+  // standing between a real player and the board.
+  const force = new URL(request.url).searchParams.get("force") === "1";
+  return refreshGlobalData(db, { force });
 }
 
 /**
@@ -33,7 +38,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const report = await runRefresh();
+    const report = await runRefresh(request);
     return NextResponse.json({ ok: true, ...report });
   } catch (cause) {
     console.error("Global refresh failed:", cause);
