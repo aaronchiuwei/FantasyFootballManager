@@ -112,6 +112,13 @@ export async function createRun(
   db: Db,
   userId: string,
   leagueId: string,
+  /**
+   * Context to seed the row with. Only "sync every board" uses it, to put the
+   * rest of the queue somewhere that survives to the end of the run — stage 1
+   * writes the season clock *over* this, and `markStageSettled` merges rather
+   * than replaces, so a seeded key is still there when the run finishes.
+   */
+  seed: Partial<SyncContext> = {},
 ): Promise<StartedRun> {
   await reapStale(db, leagueId);
 
@@ -122,7 +129,7 @@ export async function createRun(
       league_id: leagueId,
       status: "running",
       stages: initialStages() as unknown as Json,
-      context: {} as unknown as Json,
+      context: seed as unknown as Json,
     })
     .select("id")
     .single();

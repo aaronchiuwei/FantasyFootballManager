@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { AlertCircle, CheckCircle2, ArrowRightIcon } from "lucide-react";
+import { AlertCircle, CheckCircle2, ArrowRightIcon, PencilLineIcon } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +9,7 @@ import { Panel, Stencil } from "@/components/board/panel";
 import { RailLine } from "@/components/board/rail";
 import { DisconnectYahooButton } from "@/components/leagues/disconnect-yahoo-button";
 import { ImportLeagueButton } from "@/components/leagues/import-league-button";
+import { SyncAllButton } from "@/components/sync/sync-all-button";
 import { createClient } from "@/lib/supabase/server";
 import {
   getYahooConnection,
@@ -67,12 +68,18 @@ export default async function LeaguesPage({
     getYahooConnection(user!.id),
     supabase
       .from("leagues")
-      .select("id, name, season, num_teams, yahoo_league_key, last_synced_at")
+      .select(
+        "id, name, season, num_teams, source, yahoo_league_key, last_synced_at",
+      )
       .order("season", { ascending: false }),
   ]);
 
+  // Only Yahoo keys can collide with what discovery finds, and a manual
+  // league's synthetic key must never make a real one look already-imported.
   const importedKeys = new Set(
-    (imported ?? []).map((league) => league.yahoo_league_key),
+    (imported ?? [])
+      .filter((league) => league.source !== "manual")
+      .map((league) => league.yahoo_league_key),
   );
 
   let discovered: DiscoveredLeague[] = [];
@@ -100,7 +107,8 @@ export default async function LeaguesPage({
           Leagues
         </h1>
         <p className="mt-1.5 max-w-[62ch] text-sm text-muted-foreground">
-          Connect Yahoo, then import the league you want to manage.
+          Connect Yahoo and import a league, or enter one by hand. Both end up
+          as the same board.
         </p>
       </header>
 
@@ -146,6 +154,19 @@ export default async function LeaguesPage({
         ) : null}
       </Panel>
 
+      <Panel
+        label="By hand"
+        note="No Yahoo account needed. You enter the settings, the teams and who has whom; every other screen is computed from that, exactly as it is for an imported league."
+        action={
+          <Button asChild size="sm" variant="outline">
+            <Link href="/leagues/new">
+              <PencilLineIcon aria-hidden />
+              Set up a league
+            </Link>
+          </Button>
+        }
+      />
+
       {discovered.length > 0 ? (
         <Panel label={`On your Yahoo account · ${discovered.length}`}>
           <ul className="flex flex-col">
@@ -180,7 +201,19 @@ export default async function LeaguesPage({
         </Panel>
       ) : null}
 
-      <Panel label="Imported">
+      <Panel
+        label="Your leagues"
+        note={
+          imported && imported.length > 1
+            ? "Syncing every board runs them one after another: the first pays for the shared player list and market pull, the rest find it already on disk."
+            : undefined
+        }
+        action={
+          imported && imported.length > 0 ? (
+            <SyncAllButton leagueCount={imported.length} />
+          ) : null
+        }
+      >
         {imported && imported.length > 0 ? (
           <ul className="flex flex-col">
             {imported.map((league, i) => (
@@ -188,7 +221,9 @@ export default async function LeaguesPage({
                 <LeagueRow
                   name={league.name}
                   season={league.season}
-                  detail={`${league.num_teams ?? "?"} teams${
+                  detail={`${league.num_teams ?? "?"} teams · ${
+                    league.source === "manual" ? "kept by hand" : "from Yahoo"
+                  }${
                     league.last_synced_at
                       ? ` · synced ${new Date(
                           league.last_synced_at,

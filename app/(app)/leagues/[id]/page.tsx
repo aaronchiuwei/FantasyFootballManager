@@ -5,7 +5,9 @@ import {
   AlertTriangle,
   ArrowLeftRight,
   ArrowRightIcon,
+  ArrowRightLeft,
   ListPlus,
+  PencilLineIcon,
   Radar,
   Scale,
   Sparkles,
@@ -19,6 +21,7 @@ import { Panel, Stencil } from "@/components/board/panel";
 import { RailLine } from "@/components/board/rail";
 import { SyncPanel } from "@/components/sync/sync-panel";
 import { TeamCard, type TeamRow } from "@/components/leagues/team-card";
+import { isManualLeague } from "@/lib/leagues/manual";
 import { latestRun } from "@/lib/sync/run";
 import { createClient } from "@/lib/supabase/server";
 import type { RosterSlot } from "@/lib/sources/yahoo";
@@ -75,6 +78,7 @@ export default async function LeaguePage({
     { count: marketValued },
     { count: needsCount },
     { count: suggestionCount },
+    { count: moveCount },
   ] = await Promise.all([
       latestRun(supabase, league.id),
       teamIds.length === 0
@@ -107,6 +111,10 @@ export default async function LeaguePage({
         .from("trade_suggestions")
         .select("id", { count: "exact", head: true })
         .eq("league_id", league.id),
+      supabase
+        .from("transactions")
+        .select("id", { count: "exact", head: true })
+        .eq("league_id", league.id),
     ]);
 
   const starters = (league.roster_slots as unknown as RosterSlot[])
@@ -114,6 +122,7 @@ export default async function LeaguePage({
     .map((slot) => (slot.count > 1 ? `${slot.count}×${slot.position}` : slot.position));
 
   const teamCount = teams?.length ?? 0;
+  const manual = isManualLeague(league.source);
 
   /**
    * The board's index. One shape, repeated, because these are seven doors off
@@ -121,20 +130,53 @@ export default async function LeaguePage({
    * doors are open before walking to one.
    */
   const destinations = [
-    {
-      href: `/leagues/${league.id}/identity`,
-      icon: Users,
-      label: "Identity",
-      title: "Player identity",
-      state:
-        matched === 0
-          ? "No rosters read yet. Run a sync to pull them from Yahoo."
-          : `${matched} rostered players matched${
-              pending ? `, ${pending} waiting on a manual match` : ""
-            }.`,
-      cta: pending ? `Review ${pending}` : "Details",
-      ready: matched !== 0,
-    },
+    // The first door is not the same door for both kinds of league. A Yahoo
+    // league's rosters arrive resolved or not at all, so the question is which
+    // players the crosswalk could not place; a manual league's rosters are the
+    // thing being built, so the question is where to build them.
+    ...(manual
+      ? [
+          {
+            href: `/leagues/${league.id}/manage`,
+            icon: PencilLineIcon,
+            label: "Manage",
+            title: "Settings, teams and rosters",
+            state:
+              matched === 0
+                ? `No players on any roster yet. This is where ${teamCount} rosters get filled in.`
+                : `${matched} players across ${teamCount} rosters, all entered here.`,
+            cta: matched === 0 ? "Start" : "Edit",
+            ready: matched !== 0,
+          },
+          {
+            href: `/leagues/${league.id}/moves`,
+            icon: ArrowRightLeft,
+            label: "Moves",
+            title: "Adds, drops and trades",
+            state:
+              moveCount === 0
+                ? "Nothing logged yet. A move recorded here updates the rosters it touches."
+                : `${moveCount?.toLocaleString()} moves on the ledger, newest first.`,
+            cta: moveCount ? "Open" : "Record one",
+            ready: Boolean(moveCount),
+          },
+        ]
+      : [
+          {
+            href: `/leagues/${league.id}/identity`,
+            icon: Users,
+            label: "Identity",
+            title: "Player identity",
+            state:
+              matched === 0
+                ? "No rosters read yet. Run a sync to pull them from Yahoo."
+                : `${matched} rostered players matched${
+                    pending ? `, ${pending} waiting on a manual match` : ""
+                  }.`,
+            cta: pending ? `Review ${pending}` : "Details",
+            ready: matched !== 0,
+          },
+        ]),
     {
       href: `/leagues/${league.id}/values`,
       icon: Scale,

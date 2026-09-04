@@ -42,3 +42,7 @@ next-env.d.ts
 
 # keep the template committed
 !.env.example
+
+# supabase cli local state (linked project ref, pooler url)
+supabase/.temp/
+supabase/.branches/

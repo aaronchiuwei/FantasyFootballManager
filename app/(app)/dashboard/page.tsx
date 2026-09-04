@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Panel, Stencil } from "@/components/board/panel";
 import { RailLine } from "@/components/board/rail";
+import { SyncAllButton } from "@/components/sync/sync-all-button";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Dashboard" };
@@ -39,9 +40,12 @@ export default async function DashboardPage() {
         <Panel
           label={`Leagues · ${leagues!.length}`}
           action={
-            <Button asChild size="sm" variant="outline">
-              <Link href="/leagues">Import</Link>
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <SyncAllButton leagueCount={leagues!.length} />
+              <Button asChild size="sm" variant="ghost">
+                <Link href="/leagues">Add</Link>
+              </Button>
+            </div>
           }
         >
           {/* A rail per league, not a card per league. The name reads along
@@ -88,11 +92,11 @@ export default async function DashboardPage() {
           <div className="flex flex-col items-start gap-4 py-6">
             <Stencil tone="grease">Board empty</Stencil>
             <p className="max-w-[52ch] text-sm leading-relaxed text-muted-foreground">
-              Connect a Yahoo account and import a league. Everything else on
-              this board builds itself from that one step.
+              Import a league from Yahoo, or enter one by hand. Everything else
+              on this board builds itself from that one step.
             </p>
             <Button asChild>
-              <Link href="/leagues">Connect Yahoo</Link>
+              <Link href="/leagues">Add a league</Link>
             </Button>
           </div>
         </Panel>

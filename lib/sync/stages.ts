@@ -6,6 +6,7 @@ import {
   seedYahooCrosswalk,
 } from "@/lib/crosswalk/store";
 import { importLeague, saveMatchups } from "@/lib/leagues/import";
+import { isManualLeague } from "@/lib/leagues/manual";
 import { computeTeamNeeds } from "@/lib/needs/store";
 import { loadSleeperIds, syncPlayerMaster } from "@/lib/players/master";
 import {
@@ -67,7 +68,7 @@ const state: StageRunner = async ({ db, leagueId }) => {
   const { data: league, error } = await db
     .from("leagues")
     .select(
-      "yahoo_league_key, season, num_teams, num_qbs, ppr, current_week, start_week, end_week",
+      "yahoo_league_key, source, season, num_teams, num_qbs, ppr, current_week, start_week, end_week",
     )
     .eq("id", leagueId)
     .single();
@@ -85,6 +86,7 @@ const state: StageRunner = async ({ db, leagueId }) => {
 
   const context: SyncContext = {
     leagueKey: league.yahoo_league_key,
+    source: league.source,
     season: league.season,
     liveSeason,
     // Sleeper names the previous season in its own state payload; falling back
@@ -255,6 +257,17 @@ const stats: StageRunner = async ({ db, context }) => {
  * that a failure in stage 7 does not cost the free-agent pagination twice.
  */
 const yahoo: StageRunner = async ({ db, userId, leagueId, context }) => {
+  // A hand-entered league has no counterpart at Yahoo to read. Its teams,
+  // rosters and settings are already the rows this stage would have written,
+  // so running it would at best be a no-op and at worst overwrite them with an
+  // error. Skipped, and said out loud on the checklist.
+  if (isManualLeague(context.source)) {
+    return {
+      detail: "Entered by hand · teams and rosters are already on the board",
+      skipped: true,
+    };
+  }
+
   const imported = await importLeague(db, userId, context.leagueKey);
 
   const rosters = await fetchRosters(userId, context.leagueKey);
@@ -282,7 +295,18 @@ const yahoo: StageRunner = async ({ db, userId, leagueId, context }) => {
 };
 
 /** Stage 7. The §4 resolution ladder over the pool stage 6 parked. */
-const resolve: StageRunner = async ({ db, leagueId }) => {
+const resolve: StageRunner = async ({ db, leagueId, context }) => {
+  // §4's ladder exists to turn a Yahoo player id into one of ours. A manual
+  // roster was built by picking players off the master list, so every row it
+  // wrote already holds a real `players.id` — there is nothing left to match,
+  // and no unmatched queue to review.
+  if (isManualLeague(context.source)) {
+    return {
+      detail: "Rosters were built from the master list · nothing to match",
+      skipped: true,
+    };
+  }
+
   const report = await resolvePool(db, leagueId);
 
   const rate =

@@ -5,7 +5,9 @@ import { createClient } from "@/lib/supabase/server";
 
 /**
  * The chrome every one of this league's screens shares: where you are, and the
- * six other places you could be.
+ * other places you could be — which is not the same list for a league synced
+ * from Yahoo as for one kept by hand, so `source` is read here alongside the
+ * name.
  *
  * Reading the league here rather than passing it down is deliberate. The
  * layout renders once per league and stays mounted across navigations between
@@ -29,17 +31,27 @@ export default async function LeagueLayout({
   const { id } = await params;
   const supabase = await createClient();
 
-  const { data: league } = await supabase
-    .from("leagues")
-    .select("id, name")
-    .eq("id", id)
-    .maybeSingle();
+  // Both reads are RLS-scoped, so the switcher can only ever offer boards this
+  // user owns — the list is the authorization, not a filter over a wider one.
+  const [{ data: league }, { data: leagues }] = await Promise.all([
+    supabase.from("leagues").select("id, name, source").eq("id", id).maybeSingle(),
+    supabase
+      .from("leagues")
+      .select("id, name, season, source")
+      .order("season", { ascending: false })
+      .order("name"),
+  ]);
 
   if (!league) notFound();
 
   return (
     <div className="space-y-6">
-      <LeagueNav leagueId={league.id} leagueName={league.name} />
+      <LeagueNav
+        leagueId={league.id}
+        leagueName={league.name}
+        source={league.source}
+        leagues={leagues ?? []}
+      />
       {children}
     </div>
   );

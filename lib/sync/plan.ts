@@ -104,8 +104,43 @@ export type RunStatus = "running" | "succeeded" | "failed";
  * so a stage never has to re-derive the season clock or re-read settings that
  * an earlier stage already resolved.
  */
+/**
+ * A run's place in a queue of leagues being synced one after another.
+ *
+ * Sequential rather than parallel, and that is the whole reason the queue
+ * exists rather than the button simply starting five runs. Stages 2 to 5 pull
+ * *global* reference data — Sleeper's 14.6 MB master, the FantasyCalc boards,
+ * projections and stats — so five simultaneous runs would pull all of it five
+ * times over, racing each other's TTL checks and hammering an undocumented API
+ * (§12) for answers they would each throw away. Run in order, the first league
+ * pays for the shared work and the rest find it already on disk.
+ *
+ * It rides in the run's `context` rather than in a table of its own because
+ * `markStageSettled` merges context forward on every stage, so a queue seeded
+ * when the run is created is still there when it ends — which is the only
+ * moment anything needs to read it.
+ */
+export type SyncBatch = {
+  /** League ids still to run, in order. Empty on the last league. */
+  queue: string[];
+  /** Leagues in this batch already finished, whether they passed or failed. */
+  done: number;
+  total: number;
+};
+
 export type SyncContext = {
+  /** Yahoo's league key, or the `manual:<uuid>` a hand-entered league carries. */
   leagueKey: string;
+  /**
+   * Where the league came from. Stages 6 and 7 exist to ask Yahoo who is on
+   * which roster and then work out who those players are; a manual league
+   * answered both questions at the keyboard, so both are skipped rather than
+   * run against an API it has no account with.
+   *
+   * Optional because runs recorded before manual leagues existed have no such
+   * key, and every one of those was a Yahoo league.
+   */
+  source?: string;
   season: number;
   /** Sleeper's live season, which is not always the league's. */
   liveSeason: number;
@@ -125,7 +160,40 @@ export type SyncContext = {
   ppr: number;
   /** Set when Yahoo turned the refresh token down — the UI prompts a re-link. */
   needsReauth?: boolean;
+  /** Present only on a run started by "sync every board". */
+  batch?: SyncBatch;
 };
+
+/**
+ * The head of a queue, and the batch the run for it should carry forward.
+ *
+ * Here rather than beside the writes because it is the arithmetic a reader
+ * sees: "2 of 5" on the button is `done + 1` against `total`, and an off-by-one
+ * in it is a progress counter that lies for the length of a five-minute sync.
+ */
+export function nextInQueue(
+  batch: SyncBatch,
+): { leagueId: string; carry: SyncBatch } | null {
+  const [leagueId, ...rest] = batch.queue;
+  if (leagueId === undefined) return null;
+
+  return {
+    leagueId,
+    carry: { queue: rest, done: batch.done, total: batch.total },
+  };
+}
+
+/**
+ * The batch left behind once a league is dealt with — finished, failed, or
+ * skipped because it was already syncing. All three are "one fewer to go",
+ * which is what the count in front of a user means.
+ *
+ * Clamped, because `total` is fixed when the batch opens and a `done` past it
+ * would read as "6 of 5".
+ */
+export function afterLeague(batch: SyncBatch): SyncBatch {
+  return { ...batch, done: Math.min(batch.done + 1, batch.total) };
+}
 
 export type SyncRun = {
   id: string;
