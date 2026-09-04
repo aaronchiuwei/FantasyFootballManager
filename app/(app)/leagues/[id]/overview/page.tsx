@@ -5,10 +5,13 @@ import { AlertTriangle } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
+import { Panel } from "@/components/board/panel";
 import { SyncButton } from "@/components/sync/sync-button";
 import { TeamNeedsCard } from "@/components/needs/team-needs-card";
+import { TeamRosterColumn } from "@/components/leagues/team-roster";
 import { startingStrength } from "@/lib/needs/needs";
 import { loadLeagueNeeds } from "@/lib/needs/store";
+import { loadLeagueRosters } from "@/lib/leagues/rosters";
 import { latestRun } from "@/lib/sync/run";
 import { isManualLeague } from "@/lib/leagues/manual";
 import { createClient } from "@/lib/supabase/server";
@@ -48,8 +51,9 @@ export default async function OverviewPage({
 
   const manual = isManualLeague(league.source);
 
-  const [needs, run] = await Promise.all([
+  const [needs, rosters, run] = await Promise.all([
     loadLeagueNeeds(supabase, league.id),
+    loadLeagueRosters(supabase, league.id),
     latestRun(supabase, league.id),
   ]);
 
@@ -63,6 +67,14 @@ export default async function OverviewPage({
   });
 
   const priced = teams.some((team) => team.needs.length > 0);
+
+  // The roster list is read in standings order rather than by projected
+  // strength: it is a reference, and the reader looking someone up is looking
+  // for a team by name in the order the league itself prints them.
+  const rostered = [...rosters.values()].reduce(
+    (total, roster) => total + roster.players.length,
+    0,
+  );
 
   return (
     <div className="space-y-6">
@@ -132,6 +144,37 @@ export default async function OverviewPage({
           ))}
         </div>
       )}
+
+      {/* The rosters themselves, under the shapes they produce. The radar says
+          what a team is short of; this says who they already have, which is
+          the next question every time and until now meant one team at a time
+          through the values board. It does not wait on the needs vector,
+          because a roster is true as soon as it is read. */}
+      {needs.teams.length > 0 ? (
+        <Panel
+          label={`Rosters · ${needs.teams.length} teams · ${rostered} players`}
+          note="Every roster in the league, in standings order. Starters first, then the bench, then reserve. Figures are this league's own player values; open a name for their season and week-by-week stats."
+        >
+          {rostered === 0 ? (
+            <p className="max-w-[68ch] text-sm leading-relaxed text-muted-foreground">
+              No rosters read yet. {manual
+                ? "Fill them in on the manage screen and they appear here."
+                : "One sync pulls every team's players."}
+            </p>
+          ) : (
+            <div className="grid gap-3 lg:grid-cols-2">
+              {needs.teams.map((team) => (
+                <TeamRosterColumn
+                  key={team.id}
+                  team={team}
+                  roster={rosters.get(team.id)}
+                  leagueId={league.id}
+                />
+              ))}
+            </div>
+          )}
+        </Panel>
+      ) : null}
     </div>
   );
 }
