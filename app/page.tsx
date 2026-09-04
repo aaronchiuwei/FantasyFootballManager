@@ -17,6 +17,11 @@ import { createClient } from "@/lib/supabase/server";
 
 const CAPABILITIES = [
   {
+    label: "Leagues",
+    title: "Yahoo, ESPN, or typed in by hand",
+    body: "Connect Yahoo and pick a league, or point at an ESPN league by id — public ones need no login at all. No API access? Enter the settings, teams and rosters yourself; every screen is built the same way from any of the three.",
+  },
+  {
     label: "Values",
     title: "Every roster priced from the market",
     body: "Sleeper, FantasyCalc and DynastyProcess are reconciled through a player-identity crosswalk, so one player is one player across all three.",
@@ -40,7 +45,7 @@ const CAPABILITIES = [
 
 const LIMITS = [
   "No NFL schedule source, so no bye weeks and no playoff schedule.",
-  "No trade deadline is read from Yahoo. Check your league settings.",
+  "No trade deadline is read from any league. Check your own settings.",
   "Three-team cycle search is a bounded beam, not an exhaustive one.",
 ];
 
@@ -82,7 +87,7 @@ export default async function HomePage() {
                 </Button>
               ) : (
                 <Button asChild size="lg" variant="outline">
-                  <Link href="/signup">Connect Yahoo</Link>
+                  <Link href="/signup">Add your league</Link>
                 </Button>
               )}
             </div>
@@ -214,7 +219,7 @@ export default async function HomePage() {
 
         <section className="flex flex-col items-start gap-6 py-16 sm:py-24">
           <h2 className="max-w-[16ch] text-balance font-plate text-3xl leading-[1.05] font-bold tracking-[-0.015em] text-foreground sm:text-4xl">
-            Connect Yahoo. Your board builds itself.
+            Bring a league. Your board builds itself.
           </h2>
           <div className="flex flex-wrap items-center gap-2.5">
             <Button asChild size="lg">
@@ -232,8 +237,8 @@ export default async function HomePage() {
       <footer className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
         <RailLine />
         <p className="mt-4 text-xs text-muted-foreground">
-          A companion for Yahoo redraft leagues. Not affiliated with Yahoo or
-          the NFL.
+          A companion for redraft leagues — Yahoo, ESPN, or kept by hand. Not
+          affiliated with Yahoo, ESPN or the NFL.
         </p>
       </footer>
     </div>
