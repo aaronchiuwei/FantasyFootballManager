@@ -79,7 +79,7 @@ export async function updateSettingsAction(
   revalidatePath("/leagues");
   return {
     message:
-      "Settings saved. Run a sync so values, needs and suggestions are recomputed against them.",
+      "Settings saved. Values, needs and suggestions are recomputed automatically.",
   };
 }
 

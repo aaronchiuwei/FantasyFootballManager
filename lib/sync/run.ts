@@ -112,13 +112,6 @@ export async function createRun(
   db: Db,
   userId: string,
   leagueId: string,
-  /**
-   * Context to seed the row with. Only "sync every board" uses it, to put the
-   * rest of the queue somewhere that survives to the end of the run — stage 1
-   * writes the season clock *over* this, and `markStageSettled` merges rather
-   * than replaces, so a seeded key is still there when the run finishes.
-   */
-  seed: Partial<SyncContext> = {},
 ): Promise<StartedRun> {
   await reapStale(db, leagueId);
 
@@ -129,7 +122,7 @@ export async function createRun(
       league_id: leagueId,
       status: "running",
       stages: initialStages() as unknown as Json,
-      context: seed as unknown as Json,
+      context: {} as unknown as Json,
     })
     .select("id")
     .single();
@@ -169,20 +162,11 @@ export async function retryRun(db: Db, runId: string): Promise<StartedRun> {
   const stages = row.stages as unknown as StageState[];
   const from = resumeFrom(stages) ?? STAGE_IDS[0];
 
-  // A retry is a single-league sync, never a link in a batch — so the queue is
-  // dropped rather than carried. It has already been handed on: whichever way
-  // this run first ended, the league after it was started then. Leaving the
-  // queue here would start that league a second time when the retry lands, and
-  // every league behind it again after that.
-  const { batch: _batch, ...context } = contextOf(row);
-  void _batch;
-
   const { error } = await db
     .from("sync_runs")
     .update({
       status: "running",
       stages: reopenFrom(stages, from) as unknown as Json,
-      context: context as unknown as Json,
       error: null,
       finished_at: null,
     })
@@ -277,17 +261,39 @@ export async function markRunFailed(
     .eq("id", runId);
 }
 
+/**
+ * Closes a run out as successful, and stamps the league it refreshed.
+ *
+ * `last_synced_at` doubles as the "everything computed here is current" mark.
+ * A Yahoo league already gets it from stage 6, so this is belt and braces
+ * there; a manual league has no import step and would otherwise never get one,
+ * and it is the flag its automatic sync reads (`lib/sync/auto.ts`). Written
+ * only on success, because a failed run did not make anything current.
+ */
 export async function markRunSucceeded(
   admin: Db,
   runId: string,
 ): Promise<void> {
-  await admin
+  const finishedAt = new Date().toISOString();
+
+  const { data } = await admin
     .from("sync_runs")
-    .update({
-      status: "succeeded",
-      error: null,
-      finished_at: new Date().toISOString(),
-    })
-    .eq("id", runId);
+    .update({ status: "succeeded", error: null, finished_at: finishedAt })
+    .eq("id", runId)
+    .select("league_id, started_at")
+    .maybeSingle();
+
+  if (data) {
+    // Stamped with when the run *started*, not when it finished. A roster
+    // edited while the run was in flight may or may not have been read by
+    // stage 8, and a finish-time stamp would claim it was — leaving that edit
+    // unpriced with nothing left to say so. Dated from the start, any edit
+    // made during the run still reads as newer than the computation, and the
+    // next page load recomputes.
+    await admin
+      .from("leagues")
+      .update({ last_synced_at: data.started_at })
+      .eq("id", data.league_id);
+  }
 }
 

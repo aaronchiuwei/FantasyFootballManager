@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 
 import type { RosterSlot } from "@/lib/sources/yahoo-parse";
+import { markLeagueDirty } from "@/lib/sync/auto";
 import type { Db } from "@/lib/supabase/db";
 import type { Json } from "@/lib/supabase/database.types";
 import { searchPattern } from "@/lib/values/search";
@@ -167,9 +168,15 @@ export async function updateManualLeague(
     .eq("id", leagueId);
 
   if (error) throw new Error(`Could not save the settings: ${error.message}`);
+  // PPR, the lineup and the QB count are what the value engine is
+  // parameterised by, so every price in the league is now out of date.
+  await markLeagueDirty(db, leagueId);
 }
 
-/** Keeps `num_teams` honest after a team is added or removed. */
+/**
+ * Keeps `num_teams` honest after a team is added or removed, and marks the
+ * league for recomputation — team count sets every replacement rank in §5.
+ */
 async function syncTeamCount(db: Db, leagueId: string): Promise<void> {
   const { count } = await db
     .from("teams")
@@ -178,7 +185,7 @@ async function syncTeamCount(db: Db, leagueId: string): Promise<void> {
 
   await db
     .from("leagues")
-    .update({ num_teams: count ?? 0 })
+    .update({ num_teams: count ?? 0, last_synced_at: null })
     .eq("id", leagueId);
 }
 
@@ -395,6 +402,7 @@ export async function setRosterEntry(
   );
 
   if (error) throw new Error(`Could not save the roster: ${error.message}`);
+  await markLeagueDirty(db, leagueId);
 }
 
 export async function removeRosterEntry(
@@ -419,6 +427,7 @@ export async function removeRosterEntry(
     .eq("player_id", playerId);
 
   if (error) throw new Error(`Could not drop the player: ${error.message}`);
+  await markLeagueDirty(db, leagueId);
 }
 
 export type RosterEntry = {

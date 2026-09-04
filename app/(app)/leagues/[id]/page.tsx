@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Panel, Stencil } from "@/components/board/panel";
 import { RailLine } from "@/components/board/rail";
 import { SyncPanel } from "@/components/sync/sync-panel";
+import { AutoSyncNotice } from "@/components/sync/auto-sync-notice";
 import { TeamCard, type TeamRow } from "@/components/leagues/team-card";
 import { isManualLeague } from "@/lib/leagues/manual";
 import { latestRun } from "@/lib/sync/run";
@@ -297,7 +298,11 @@ export default async function LeaguePage({
         </dl>
       </Panel>
 
-      <SyncPanel leagueId={league.id} initialRun={run} />
+      {manual ? (
+        <AutoSyncNotice leagueId={league.id} initialRun={run} />
+      ) : (
+        <SyncPanel leagueId={league.id} initialRun={run} />
+      )}
 
       {/* The index. Rails on one continuous board, ruled apart, not six
           identical cards floating in a column. */}

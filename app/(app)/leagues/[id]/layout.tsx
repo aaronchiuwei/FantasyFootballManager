@@ -1,6 +1,9 @@
+import { after } from "next/server";
 import { notFound } from "next/navigation";
 
 import { LeagueNav } from "@/components/leagues/league-nav";
+import { ensureManualLeagueSynced } from "@/lib/sync/auto";
+import { kickStage } from "@/lib/sync/pipeline";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -34,7 +37,11 @@ export default async function LeagueLayout({
   // Both reads are RLS-scoped, so the switcher can only ever offer boards this
   // user owns — the list is the authorization, not a filter over a wider one.
   const [{ data: league }, { data: leagues }] = await Promise.all([
-    supabase.from("leagues").select("id, name, source").eq("id", id).maybeSingle(),
+    supabase
+      .from("leagues")
+      .select("id, name, source, last_synced_at")
+      .eq("id", id)
+      .maybeSingle(),
     supabase
       .from("leagues")
       .select("id, name, season, source")
@@ -43,6 +50,19 @@ export default async function LeagueLayout({
   ]);
 
   if (!league) notFound();
+
+  // A manual league has no sync button, so something has to notice its edits.
+  // This is the one place every one of its screens passes through, and the
+  // check is a single indexed read when there is nothing to do. The run row is
+  // opened here where the session is live; only the kick waits for `after`.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (user) {
+    const pending = await ensureManualLeagueSynced(supabase, user.id, league);
+    if (pending) after(() => kickStage(pending.runId, pending.stageId));
+  }
 
   return (
     <div className="space-y-6">

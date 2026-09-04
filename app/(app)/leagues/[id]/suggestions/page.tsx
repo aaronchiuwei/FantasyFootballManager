@@ -12,6 +12,7 @@ import { WinWinBoard } from "@/components/suggestions/win-win-board";
 import { SyncButton } from "@/components/sync/sync-button";
 import { loadSuggestionsBoard } from "@/lib/suggestions/store";
 import { latestRun } from "@/lib/sync/run";
+import { isManualLeague } from "@/lib/leagues/manual";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Trade suggestions" };
@@ -34,11 +35,13 @@ export default async function SuggestionsPage({
 
   const { data: league } = await supabase
     .from("leagues")
-    .select("id, name, season")
+    .select("id, name, season, source")
     .eq("id", id)
     .maybeSingle();
 
   if (!league) notFound();
+
+  const manual = isManualLeague(league.source);
 
   const [suggestions, run] = await Promise.all([
     loadSuggestionsBoard(supabase, league.id),
@@ -65,7 +68,7 @@ export default async function SuggestionsPage({
           </p>
         </div>
 
-        <SyncButton leagueId={league.id} initialRun={run} />
+        {manual ? null : <SyncButton leagueId={league.id} initialRun={run} />}
       </div>
 
       {board.unresolved > 0 ? (
@@ -99,11 +102,11 @@ export default async function SuggestionsPage({
               at once.
             </p>
             <div className="flex justify-center">
-              <SyncButton
+              {manual ? null : <SyncButton
                 leagueId={league.id}
                 initialRun={run}
                 label="Sync this league"
-              />
+              />}
             </div>
           </CardContent>
         </Card>

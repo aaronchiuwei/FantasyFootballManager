@@ -5,7 +5,7 @@ import { AlertTriangle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { MoveForm, type RosterPlayer } from "@/components/transactions/move-form";
 import { MoveHistory } from "@/components/transactions/move-history";
-import { SyncButton } from "@/components/sync/sync-button";
+import { AutoSyncNotice } from "@/components/sync/auto-sync-notice";
 import { searchPlayersAction } from "@/app/(app)/leagues/[id]/manage/actions";
 import { isManualLeague } from "@/lib/leagues/manual";
 import { latestRun } from "@/lib/sync/run";
@@ -97,7 +97,7 @@ export default async function MovesPage({
           </p>
         </div>
 
-        <SyncButton leagueId={league.id} initialRun={run} variant="outline" />
+        <AutoSyncNotice leagueId={league.id} initialRun={run} />
       </header>
 
       {teams.length < 2 ? (

@@ -8,7 +8,7 @@ import { ManualLeagueForm } from "@/components/leagues/manual-league-form";
 import { ManualManageBoard } from "@/components/leagues/manual-manage-board";
 import { RosterEditor } from "@/components/leagues/roster-editor";
 import type { EditableTeam } from "@/components/leagues/teams-editor";
-import { SyncButton } from "@/components/sync/sync-button";
+import { AutoSyncNotice } from "@/components/sync/auto-sync-notice";
 import { latestRun } from "@/lib/sync/run";
 import { formatLineup } from "@/lib/leagues/manual-input";
 import {
@@ -135,7 +135,7 @@ export default async function ManageLeaguePage({
           </div>
         </div>
 
-        <SyncButton leagueId={league.id} initialRun={run} />
+        <AutoSyncNotice leagueId={league.id} initialRun={run} />
       </header>
 
       {masterReady ? null : (
@@ -143,20 +143,21 @@ export default async function ManageLeaguePage({
           <AlertTriangle />
           <AlertTitle>No player list yet</AlertTitle>
           <AlertDescription>
-            Rosters are built by picking real players, and the master list
-            arrives with the first sync. Run one now — it also pulls the trade
-            market and the projections — then come back and fill in the rosters.
+            Rosters are built by picking real players, and the master list is
+            fetched automatically the first time you open this league. Give it a
+            moment and reload; the same refresh pulls the trade market and the
+            projections.
           </AlertDescription>
         </Alert>
       )}
 
       <Alert>
         <Info />
-        <AlertTitle>Changes here are recorded, not repriced</AlertTitle>
+        <AlertTitle>Changes here reprice the league</AlertTitle>
         <AlertDescription>
-          Values, needs and trade suggestions are computed by a sync. After
-          editing settings or rosters, run one so the rest of the league catches
-          up.
+          Editing settings or rosters marks this board for recomputation, and
+          the next page you open starts it. Values, needs and trade suggestions
+          catch up on their own.
         </AlertDescription>
       </Alert>
 
