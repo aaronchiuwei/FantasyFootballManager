@@ -345,8 +345,60 @@ const yahoo: StageRunner = async ({ db, userId, leagueId, context }) => {
   if (matchups > 0) parts.push(`${matchups} matchups`);
   if (pulled.note) parts.push(pulled.note);
 
-  return { detail: parts.join(" · ") };
+  // The settings this stage just refreshed are the ones stage 1 read *before*
+  // it ran, so without this every later stage spends the rest of the run on
+  // the previous sync's answer. That was documented as "a real but tiny lag",
+  // and it is neither: stage 8 prices rest-of-season points off
+  // `weeksRemaining`, so a league whose week window or scoring changed had one
+  // entire sync of quietly wrong values — and the checklist reported the old
+  // number while the database already held the new one, which reads as the
+  // change not having worked.
+  //
+  // Re-read rather than derived from the payload, so this reflects what was
+  // actually written and stays right whichever provider wrote it.
+  const refreshed = await refreshedSettings(db, leagueId, context);
+
+  return { detail: parts.join(" · "), context: refreshed };
 };
+
+/**
+ * The league parameters stage 1 put in the context, read again now that stage
+ * 6 has rewritten them.
+ *
+ * Only the fields stage 1 owns are returned: the season clock's *observations*
+ * — which week it is, whether the season is under way — belong to Sleeper and
+ * are not the league's to revise.
+ */
+async function refreshedSettings(
+  db: Db,
+  leagueId: string,
+  context: SyncContext,
+): Promise<Partial<SyncContext>> {
+  const { data } = await db
+    .from("leagues")
+    .select("num_teams, num_qbs, ppr, start_week, end_week")
+    .eq("id", leagueId)
+    .maybeSingle();
+
+  if (!data) return {};
+
+  return {
+    numTeams: data.num_teams ?? 12,
+    numQbs: data.num_qbs,
+    ppr: Number(data.ppr),
+    startWeek: data.start_week,
+    endWeek: data.end_week,
+    // Recomputed against the league's new window, but on stage 1's clock. What
+    // week it is and whether the season is under way come from Sleeper and are
+    // not a league setting to revise — only the window being measured moved.
+    weeksRemaining: weeksRemainingFor({
+      isRegularSeason: context.isRegularSeason,
+      currentWeek: context.currentWeek,
+      startWeek: data.start_week,
+      endWeek: data.end_week,
+    }),
+  };
+}
 
 /** Stage 7. The §4 resolution ladder over the pool stage 6 parked. */
 const resolve: StageRunner = async ({ db, leagueId, context }) => {
