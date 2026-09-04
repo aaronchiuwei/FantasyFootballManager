@@ -169,7 +169,6 @@ export default async function ManageLeaguePage({
           scoringLabel: league.scoring_type,
           lineup: formatLineup(slots),
           isDynasty: league.is_dynasty,
-          currentWeek: league.current_week,
           startWeek: league.start_week,
           endWeek: league.end_week,
         }}

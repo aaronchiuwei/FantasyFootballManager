@@ -169,11 +169,20 @@ export async function retryRun(db: Db, runId: string): Promise<StartedRun> {
   const stages = row.stages as unknown as StageState[];
   const from = resumeFrom(stages) ?? STAGE_IDS[0];
 
+  // A retry is a single-league sync, never a link in a batch — so the queue is
+  // dropped rather than carried. It has already been handed on: whichever way
+  // this run first ended, the league after it was started then. Leaving the
+  // queue here would start that league a second time when the retry lands, and
+  // every league behind it again after that.
+  const { batch: _batch, ...context } = contextOf(row);
+  void _batch;
+
   const { error } = await db
     .from("sync_runs")
     .update({
       status: "running",
       stages: reopenFrom(stages, from) as unknown as Json,
+      context: context as unknown as Json,
       error: null,
       finished_at: null,
     })

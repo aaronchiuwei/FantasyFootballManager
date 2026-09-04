@@ -108,7 +108,9 @@ export async function createManualLeague(
       num_qbs: plan.numQbs,
       roster_slots: plan.rosterSlots as unknown as Json,
       is_dynasty: plan.isDynasty,
-      current_week: plan.currentWeek,
+      // `current_week` is left for the season clock to fill in on the first
+      // sync. A league created in March has no current week, and inventing one
+      // would stamp a wrong week badge on the board that nothing corrects.
       start_week: plan.startWeek,
       end_week: plan.endWeek,
     })
@@ -157,7 +159,8 @@ export async function updateManualLeague(
       num_qbs: plan.numQbs,
       roster_slots: plan.rosterSlots as unknown as Json,
       is_dynasty: plan.isDynasty,
-      current_week: plan.currentWeek,
+      // Deliberately not written: the settings form no longer carries it, and
+      // saving settings must not wipe what the last sync worked out.
       start_week: plan.startWeek,
       end_week: plan.endWeek,
     })
@@ -281,12 +284,34 @@ export async function setUsersTeam(
   if (error) throw new Error(`Could not set your team: ${error.message}`);
 }
 
+/** Below this a league cannot hold a matchup, a trade, or a needs comparison. */
+const MIN_TEAMS = 2;
+
 export async function deleteManualTeam(
   db: Db,
   leagueId: string,
   teamId: string,
 ): Promise<void> {
   await requireManualLeague(db, leagueId);
+
+  const { data: teams, error: readError } = await db
+    .from("teams")
+    .select("id, is_users_team")
+    .eq("league_id", leagueId);
+
+  if (readError) throw new Error(`Could not read the teams: ${readError.message}`);
+
+  const rows = teams ?? [];
+  const doomed = rows.find((team) => team.id === teamId);
+  if (!doomed) throw new Error("That team is not in this league.");
+
+  // The button is disabled at this point too, but a disabled button is a
+  // courtesy and this is the rule. A one-team league prices nothing: every
+  // needs vector is measured against the rest of the league, and there is no
+  // rest of the league.
+  if (rows.length <= MIN_TEAMS) {
+    throw new Error(`A league needs at least ${MIN_TEAMS} teams.`);
+  }
 
   const { error } = await db
     .from("teams")
@@ -295,6 +320,15 @@ export async function deleteManualTeam(
     .eq("league_id", leagueId);
 
   if (error) throw new Error(`Could not remove the team: ${error.message}`);
+
+  // Deleting your own team would otherwise leave the league with no point of
+  // view: "My team" on the values board matches nothing, and the trade
+  // analyzer opens on an arbitrary side. The flag moves rather than vanishing.
+  if (doomed.is_users_team) {
+    const heir = rows.find((team) => team.id !== teamId);
+    if (heir) await setUsersTeam(db, leagueId, heir.id);
+  }
+
   await syncTeamCount(db, leagueId);
 }
 
@@ -303,7 +337,7 @@ export async function deleteManualTeam(
 // ---------------------------------------------------------------------------
 
 /** Every team id in a league, for the "is he already owned here" checks. */
-async function teamIdsOf(db: Db, leagueId: string): Promise<string[]> {
+export async function teamIdsOf(db: Db, leagueId: string): Promise<string[]> {
   const { data, error } = await db
     .from("teams")
     .select("id")
@@ -370,6 +404,13 @@ export async function removeRosterEntry(
   playerId: number,
 ): Promise<void> {
   await requireManualLeague(db, leagueId);
+
+  // Scoped the same way `setRosterEntry` is. RLS already confines this to
+  // leagues the caller owns, so an unchecked `teamId` was never a way into
+  // someone else's data — but it was a way to delete a roster row from
+  // *another of your own* leagues, which is a bug rather than an attack.
+  const teamIds = await teamIdsOf(db, leagueId);
+  if (!teamIds.includes(teamId)) throw new Error("That team is not in this league.");
 
   const { error } = await db
     .from("rosters")

@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
-import { Loader2, TriangleAlertIcon } from "lucide-react";
+import { CircleCheckIcon, Loader2, TriangleAlertIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,9 +10,10 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Panel } from "@/components/board/panel";
+import { LineupEditor } from "@/components/leagues/lineup-editor";
 import { SCORING_PRESETS, type ScoringPresetKey } from "@/lib/leagues/manual-input";
 
-export type ManualFormState = { error?: string };
+export type ManualFormState = { error?: string; message?: string };
 
 export type ManualFormDefaults = {
   name: string;
@@ -21,24 +22,22 @@ export type ManualFormDefaults = {
   scoringLabel: string | null;
   lineup: string;
   isDynasty: boolean;
-  currentWeek: number | null;
   startWeek: number | null;
   endWeek: number | null;
   /** Only the creation form asks for these. */
   teams?: string;
 };
 
-/** The lineup every default 12-team Yahoo league starts, as a starting point. */
-export const DEFAULT_LINEUP = "QB, 2×RB, 3×WR, TE, W/R/T, K, DEF, 6×BN, IR";
+/** A common starting lineup, and the one this app opens the form on. */
+export const DEFAULT_LINEUP = "QB, 2×RB, 2×WR, TE, W/R/T, K, DEF, 6×BN, IR";
 
 export const BLANK_MANUAL_LEAGUE: ManualFormDefaults = {
   name: "",
   season: new Date().getFullYear(),
-  ppr: 0.5,
-  scoringLabel: "Half PPR",
+  ppr: 1,
+  scoringLabel: "Full PPR",
   lineup: DEFAULT_LINEUP,
   isDynasty: false,
-  currentWeek: null,
   startWeek: 1,
   endWeek: 17,
   teams: "",
@@ -166,22 +165,6 @@ export function ManualLeagueForm({
             />
           </Field>
 
-          <Field
-            label="Current week"
-            htmlFor="currentWeek"
-            hint="Leave blank in the off-season."
-          >
-            <Input
-              id="currentWeek"
-              name="currentWeek"
-              type="number"
-              inputMode="numeric"
-              min={1}
-              max={25}
-              defaultValue={defaults.currentWeek ?? ""}
-            />
-          </Field>
-
           <Field label="First week" htmlFor="startWeek">
             <Input
               id="startWeek"
@@ -260,30 +243,12 @@ export function ManualLeagueForm({
             />
           </Field>
 
-          <Field
-            label="Roster slots"
-            htmlFor="lineup"
-            className="sm:col-span-2"
-            hint={
-              <>
-                One slot per entry, in lineup order. Repeat a slot or write a
-                count: <code>2×RB</code>, <code>WR x3</code>. Use{" "}
-                <code>W/R/T</code> for a flex, <code>Q/W/R/T</code> for a
-                superflex, <code>BN</code> for the bench and <code>IR</code> for
-                injured reserve. Whether the league is superflex is read from
-                this, not asked for.
-              </>
-            }
-          >
-            <Textarea
-              id="lineup"
-              name="lineup"
-              rows={3}
-              defaultValue={defaults.lineup}
-              spellCheck={false}
-              required
-            />
-          </Field>
+          <div className="flex flex-col gap-2 sm:col-span-2">
+            <Label asChild>
+              <span>Roster slots</span>
+            </Label>
+            <LineupEditor name="lineup" defaultValue={defaults.lineup} />
+          </div>
 
           <div className="flex items-start gap-2.5 sm:col-span-2">
             <input
@@ -327,6 +292,18 @@ export function ManualLeagueForm({
         >
           <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
           {state.error}
+        </p>
+      ) : null}
+
+      {/* A save that reports nothing is indistinguishable from a dead button.
+          Creation redirects, so only the settings form ever shows this. */}
+      {state.message ? (
+        <p
+          role="status"
+          className="flex items-start gap-2 text-sm leading-relaxed text-success"
+        >
+          <CircleCheckIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
+          {state.message}
         </p>
       ) : null}
 

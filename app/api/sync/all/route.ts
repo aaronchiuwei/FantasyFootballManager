@@ -2,9 +2,10 @@ import { after, NextResponse } from "next/server";
 
 import { startBatch } from "@/lib/sync/batch";
 import { kickStage } from "@/lib/sync/pipeline";
+import { preflightQueue } from "@/lib/sync/preflight";
 import {
-  progressOf,
   STAGE_LABELS,
+  STALL_AFTER_MS,
   type StageId,
   type StageState,
 } from "@/lib/sync/plan";
@@ -45,9 +46,24 @@ export async function POST() {
     );
   }
 
-  const queue = (leagues ?? []).map((league) => league.id);
-  if (queue.length === 0) {
+  const all = (leagues ?? []).map((league) => league.id);
+  if (all.length === 0) {
     return NextResponse.json({ error: "You have no leagues yet." }, { status: 400 });
+  }
+
+  // A Yahoo league with no usable link is left out rather than queued to fail.
+  // Queuing it would spend the full pipeline on each one before dying at stage
+  // 6, serially, which is the slowest possible way to deliver bad news.
+  const { syncable: queue, blocked } = await preflightQueue(supabase, user.id, all);
+
+  if (queue.length === 0) {
+    return NextResponse.json(
+      {
+        error:
+          "Every league here is synced from Yahoo, and your Yahoo link is missing or expired. Reconnect Yahoo and try again.",
+      },
+      { status: 409 },
+    );
   }
 
   try {
@@ -60,6 +76,7 @@ export async function POST() {
       return NextResponse.json({
         total: queue.length,
         started: 0,
+        blocked: blocked.length,
         note: "Every league already has a sync in flight.",
       });
     }
@@ -69,7 +86,11 @@ export async function POST() {
     // same reason `/api/sync` defers its own.
     after(() => kickStage(started.runId, started.stageId));
 
-    return NextResponse.json({ total: queue.length, started: 1 });
+    return NextResponse.json({
+      total: queue.length,
+      started: 1,
+      blocked: blocked.length,
+    });
   } catch (cause) {
     return NextResponse.json(
       {
@@ -87,9 +108,22 @@ export type BatchStatus = {
     leagueName: string;
     stage: StageId | null;
     stageLabel: string | null;
-    progress: number;
+    /**
+     * True once the run has gone quiet for longer than a stage should take.
+     *
+     * A killed invocation leaves a row saying `running` that nothing will ever
+     * finish, and a button that waits on it waits forever. Reported so the
+     * control can offer to start again — which reaps the dead run on its way
+     * past, because `createRun` already closes out a stale one.
+     */
+    stalled: boolean;
   } | null;
-  /** Position in a "sync every board" queue, when the live run is part of one. */
+  /**
+   * Position in a "sync every board" queue — present only when the live run
+   * actually belongs to one. A single-league sync started from that league's
+   * own page is still reported as `running`, but it is not a batch and must
+   * not be counted as "1 of 5".
+   */
   batch: { done: number; total: number } | null;
 };
 
@@ -113,7 +147,7 @@ export async function GET() {
 
   const { data } = await supabase
     .from("sync_runs")
-    .select("league_id, stages, context, leagues (name)")
+    .select("league_id, stages, context, updated_at, leagues (name)")
     .eq("status", "running")
     .order("started_at", { ascending: false })
     .limit(1)
@@ -134,7 +168,7 @@ export async function GET() {
       leagueName: league?.name ?? "a league",
       stage: active?.id ?? null,
       stageLabel: active ? STAGE_LABELS[active.id] : null,
-      progress: progressOf(stages),
+      stalled: Date.now() - Date.parse(data.updated_at) > STALL_AFTER_MS,
     },
     batch: context.batch
       ? { done: context.batch.done, total: context.batch.total }

@@ -65,11 +65,16 @@ export function SyncAllButton({
 
       setStatus(next);
 
-      if (next.running) {
+      if (next.running && !next.running.stalled) {
         sawRunning.current = true;
         timer.current = setTimeout(poll, POLL_MS);
         return;
       }
+
+      // A stalled run is not progress and polling it is not waiting for
+      // anything — the invocation behind it is gone. Stop, and let the button
+      // offer to start again; doing so reaps the dead row on the way past.
+      if (next.running?.stalled) return;
 
       // The last league landed. The page behind this button was rendered
       // before any of it ran, so it is now describing a stale board.
@@ -96,6 +101,7 @@ export function SyncAllButton({
       const body = (await response.json()) as {
         total?: number;
         started?: number;
+        blocked?: number;
         note?: string;
         error?: string;
       };
@@ -110,8 +116,11 @@ export function SyncAllButton({
         return;
       }
 
+      const skipped = body.blocked
+        ? ` ${body.blocked} skipped — Yahoo link needed.`
+        : "";
       toast.success(
-        `Syncing ${body.total} board${body.total === 1 ? "" : "s"}, one at a time.`,
+        `Syncing ${body.total} board${body.total === 1 ? "" : "s"}, one at a time.${skipped}`,
       );
       // Awaited so the button goes straight from "starting" to naming the
       // league it is on, rather than flicking back to idle in between.
@@ -131,13 +140,19 @@ export function SyncAllButton({
 
   const running = status?.running ?? null;
   const batch = status?.batch ?? null;
-  const busy = starting || running !== null;
+  const stalled = running?.stalled ?? false;
+  const busy = starting || (running !== null && !stalled);
 
-  const label = running
-    ? batch
-      ? `${batch.done + 1} of ${batch.total} · ${running.leagueName}`
-      : running.leagueName
-    : `Sync all ${leagueCount}`;
+  const label = stalled
+    ? "Sync stalled · retry"
+    : running
+      ? // Only a run that actually carries a queue gets counted as one. A
+        // single-league sync started from its own page is still in flight and
+        // still worth naming, but calling it "1 of 5" would be a lie.
+        batch
+        ? `${batch.done + 1} of ${batch.total} · ${running.leagueName}`
+        : running.leagueName
+      : `Sync all ${leagueCount}`;
 
   return (
     <Button

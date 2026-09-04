@@ -2,6 +2,7 @@ import { after, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { kickStage } from "@/lib/sync/pipeline";
+import { preflightLeague } from "@/lib/sync/preflight";
 import { createRun, latestRun, retryRun } from "@/lib/sync/run";
 import { createClient } from "@/lib/supabase/server";
 
@@ -33,6 +34,16 @@ export async function POST(request: Request) {
   const parsed = BodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: "Bad request." }, { status: 400 });
+  }
+
+  // Asked before a run is opened, not discovered at stage 6. A Yahoo league
+  // with no usable link cannot finish, and the honest answer costs one query
+  // instead of a minute of pulls against three other APIs.
+  if ("leagueId" in parsed.data) {
+    const check = await preflightLeague(supabase, user.id, parsed.data.leagueId);
+    if (!check.ok) {
+      return NextResponse.json({ error: check.reason }, { status: 409 });
+    }
   }
 
   try {
