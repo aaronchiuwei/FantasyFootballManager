@@ -134,24 +134,34 @@ export function useSyncRun(
     };
   }, [leagueId, accept]);
 
+  /**
+   * Reads the league's latest run and takes it.
+   *
+   * Shared by the backstop poll and by `start`, and that sharing is the point.
+   * The poll only runs while a run is already live, so on its own it could
+   * never *discover* one — which left the button depending entirely on
+   * Realtime delivering the INSERT. When that did not arrive the screen showed
+   * nothing at all until a reload, even though the sync was running perfectly
+   * well on the server.
+   */
+  const refresh = useCallback(async () => {
+    const response = await fetch(`/api/sync?leagueId=${leagueId}`, {
+      cache: "no-store",
+    });
+    if (!response.ok) return;
+
+    const payload = (await response.json()) as { run: SyncRun | null };
+    if (payload.run) accept(payload.run);
+  }, [leagueId, accept]);
+
   const live = run?.status === "running";
 
   useEffect(() => {
     if (!live) return;
 
-    const poll = async () => {
-      const response = await fetch(`/api/sync?leagueId=${leagueId}`, {
-        cache: "no-store",
-      });
-      if (!response.ok) return;
-
-      const payload = (await response.json()) as { run: SyncRun | null };
-      if (payload.run) accept(payload.run);
-    };
-
-    const timer = setInterval(() => void poll(), POLL_MS);
+    const timer = setInterval(() => void refresh(), POLL_MS);
     return () => clearInterval(timer);
-  }, [live, leagueId, accept]);
+  }, [live, refresh]);
 
   // A stage killed mid-flight cannot mark itself failed, so "running but gone
   // quiet" is its own state — and the one the retry button exists for.
@@ -167,14 +177,22 @@ export function useSyncRun(
     return () => clearInterval(timer);
   }, [run]);
 
-  const call = useCallback(async (body: Record<string, string>) => {
-    setStarting(true);
-    try {
-      await post(body);
-    } finally {
-      setStarting(false);
-    }
-  }, []);
+  const call = useCallback(
+    async (body: Record<string, string>) => {
+      setStarting(true);
+      try {
+        await post(body);
+        // Read the run back before releasing the button. The row exists by the
+        // time the POST answers — `createRun` writes it before responding — so
+        // this is a fact, not an optimistic guess, and it means the checklist
+        // appears on the click rather than whenever Realtime gets round to it.
+        await refresh();
+      } finally {
+        setStarting(false);
+      }
+    },
+    [refresh],
+  );
 
   const start = useCallback(() => call({ leagueId }), [call, leagueId]);
   const retry = useCallback(
