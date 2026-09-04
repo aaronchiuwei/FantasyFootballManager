@@ -145,3 +145,56 @@ describe("SleeperStateSchema", () => {
     ).toBe("2025");
   });
 });
+
+describe("fantasy position resolution", () => {
+  const player = (over: Record<string, unknown>) => ({
+    "1": {
+      player_id: "1",
+      first_name: "Test",
+      last_name: "Player",
+      full_name: "Test Player",
+      ...over,
+    },
+  });
+
+  it("keeps a fullback, as the running back Sleeper says he is", () => {
+    // Kyle Juszczyk's actual shape: position FB, fantasy_positions ["RB"].
+    // Reading `position` alone dropped him from the master, so no league that
+    // rostered him could ever resolve him.
+    const [parsed] = parseSleeperPlayers(
+      player({ position: "FB", fantasy_positions: ["RB"], team: "SF" }),
+    );
+    expect(parsed).toBeDefined();
+    expect(parsed.position).toBe("RB");
+  });
+
+  it("falls through to fantasy_positions when the primary is not scored", () => {
+    const [parsed] = parseSleeperPlayers(
+      player({ position: "OL", fantasy_positions: ["TE"] }),
+    );
+    expect(parsed?.position).toBe("TE");
+  });
+
+  it("resolves the defense and kicker aliases", () => {
+    expect(
+      parseSleeperPlayers(player({ position: "DST" }))[0]?.position,
+    ).toBe("DEF");
+    expect(
+      parseSleeperPlayers(player({ position: "PK" }))[0]?.position,
+    ).toBe("K");
+  });
+
+  it("still drops a player no fantasy lineup has a slot for", () => {
+    expect(
+      parseSleeperPlayers(player({ position: "LB", fantasy_positions: ["LB"] })),
+    ).toHaveLength(0);
+    expect(parseSleeperPlayers(player({ position: null }))).toHaveLength(0);
+  });
+
+  it("prefers the primary position when it is already scored", () => {
+    const [parsed] = parseSleeperPlayers(
+      player({ position: "WR", fantasy_positions: ["RB", "WR"] }),
+    );
+    expect(parsed?.position).toBe("WR");
+  });
+});

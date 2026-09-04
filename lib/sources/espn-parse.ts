@@ -518,9 +518,16 @@ export function parseEspnLeague(
 
   const currentWeek =
     status.currentMatchupPeriod ?? payload.scoringPeriodId ?? null;
+  // `finalScoringPeriod` first, and the order matters. `matchupPeriodCount` is
+  // how many matchup periods the *regular season* has — 14 in a default ESPN
+  // league — so reading it first ended the season three weeks early: the
+  // projection grid stopped at week 14, and every rest-of-season value was
+  // prorated over 14 weeks of a 17-week season. Playoff weeks are weeks a
+  // player still scores in, and a value that ignores them is wrong for exactly
+  // the matches the manager cares most about.
   const endWeek =
-    settings.scheduleSettings?.matchupPeriodCount ??
     status.finalScoringPeriod ??
+    settings.scheduleSettings?.matchupPeriodCount ??
     null;
 
   const league: LeagueImport = {

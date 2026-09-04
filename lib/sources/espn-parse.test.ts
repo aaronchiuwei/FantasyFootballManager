@@ -52,6 +52,15 @@ describe("parseEspnLeague", () => {
     MY_SWID,
   );
 
+  it("ends the season at the last scoring period, not the last regular-season matchup", () => {
+    // The fixture carries both: matchupPeriodCount 14 (the regular season) and
+    // finalScoringPeriod 17 (the season). Reading the first ended the season
+    // three weeks early — the projection grid stopped at week 14 and every
+    // rest-of-season value was prorated over 14 weeks of a 17-week season.
+    expect(league.endWeek).toBe(17);
+    expect(league.startWeek).toBe(1);
+  });
+
   it("reads the settings the value engine is parameterised by", () => {
     expect(league).toMatchObject({
       leagueKey: "espn:2026:123456",
@@ -65,7 +74,7 @@ describe("parseEspnLeague", () => {
       isDynasty: false,
       currentWeek: 3,
       startWeek: 1,
-      endWeek: 14,
+      endWeek: 17,
       isFinished: false,
     });
   });

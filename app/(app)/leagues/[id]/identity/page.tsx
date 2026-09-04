@@ -175,6 +175,7 @@ export default async function IdentityPage({
                 key={entry.id}
                 leagueId={league.id}
                 entry={entry}
+                source={league.source}
               />
             ))}
           </div>

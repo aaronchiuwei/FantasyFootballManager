@@ -35,7 +35,7 @@ export const metadata: Metadata = {
     template: "%s · Fantasy Football Manager",
   },
   description:
-    "Yahoo fantasy football league companion: real player values, trade analysis, and waiver recommendations.",
+    "Fantasy football companion for Yahoo, ESPN and hand-kept leagues: real player values, trade analysis, and waiver recommendations.",
 };
 
 export default function RootLayout({

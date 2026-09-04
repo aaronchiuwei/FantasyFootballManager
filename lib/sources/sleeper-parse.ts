@@ -59,6 +59,49 @@ export type SleeperPlayer = {
  */
 const FANTASY_POSITIONS = new Set(["QB", "RB", "WR", "TE", "K", "DEF"]);
 
+/**
+ * Sleeper's aliases for the six positions this app scores.
+ *
+ * Kept here rather than imported from the crosswalk's `normalizePosition` so
+ * the parsers stay free of the resolver: this is a *source* concern — what
+ * Sleeper calls a position — and the crosswalk's job is comparing two sources
+ * that already agree on vocabulary.
+ *
+ * `FB` is the one that matters. Sleeper lists a fullback's `position` as FB and
+ * his `fantasy_positions` as `["RB"]`, which is Sleeper telling us plainly that
+ * he is a running back for fantasy purposes.
+ */
+const POSITION_ALIASES: Record<string, string> = {
+  FB: "RB",
+  HB: "RB",
+  DST: "DEF",
+  "D/ST": "DEF",
+  PK: "K",
+};
+
+/**
+ * The position this player occupies in a fantasy lineup, or null if none.
+ *
+ * Every label the payload offers is considered, aliases resolved, and the
+ * first fantasy-relevant one wins. Reading `position` alone and giving up was
+ * a real omission rather than a nicety: Kyle Juszczyk is `FB` / `["RB"]`, so
+ * he was dropped from the master entirely — which meant a league that rostered
+ * him could never resolve him, and the identity screen offered five other
+ * people because the right answer was not in the table to offer.
+ */
+function fantasyPosition(
+  position: string | null | undefined,
+  fantasyPositions: string[] | null | undefined,
+): string | null {
+  for (const raw of [position, ...(fantasyPositions ?? [])]) {
+    if (!raw) continue;
+    const upper = raw.trim().toUpperCase();
+    const resolved = POSITION_ALIASES[upper] ?? upper;
+    if (FANTASY_POSITIONS.has(resolved)) return resolved;
+  }
+  return null;
+}
+
 export function parseSleeperPlayers(
   raw: Record<string, unknown>,
 ): SleeperPlayer[] {
@@ -69,8 +112,8 @@ export function parseSleeperPlayers(
     if (!parsed.success) continue;
     const p = parsed.data;
 
-    const position = p.position ?? p.fantasy_positions?.[0] ?? null;
-    if (!position || !FANTASY_POSITIONS.has(position)) continue;
+    const position = fantasyPosition(p.position, p.fantasy_positions);
+    if (!position) continue;
 
     const fullName =
       p.full_name ?? [p.first_name, p.last_name].filter(Boolean).join(" ");
