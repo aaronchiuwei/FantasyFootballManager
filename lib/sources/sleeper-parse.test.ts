@@ -21,6 +21,7 @@ const MASTER = {
     status: "Active",
     injury_status: "Questionable",
     yahoo_id: 30121,
+    espn_id: 3117251,
     birth_date: "1996-06-07",
     active: true,
   },
@@ -64,6 +65,7 @@ describe("parseSleeperPlayers", () => {
       status: "Active",
       injuryStatus: "Questionable",
       yahooId: "30121",
+      espnId: "3117251",
       birthDate: "1996-06-07",
       active: true,
     });

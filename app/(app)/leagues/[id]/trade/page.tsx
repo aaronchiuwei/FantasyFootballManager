@@ -134,7 +134,7 @@ export default async function TradePage({
           <CardContent className="space-y-3 py-8 text-center">
             <p className="text-sm text-muted-foreground">
               Nothing to trade yet for the {league.season} season. A sync pulls
-              the rosters from Yahoo and prices every player on them. The
+              the rosters from your league and prices every player on them. The
               analyzer runs entirely on those cached values.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-2">

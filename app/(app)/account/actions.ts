@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { disconnectEspn } from "@/lib/sources/espn-auth";
 import { disconnectYahoo } from "@/lib/sources/yahoo-auth";
 import { getSiteUrl } from "@/lib/site-url";
 
@@ -82,9 +83,10 @@ export async function changePasswordAction(
  *
  * Every user-scoped table references `auth.users (id) on delete cascade`, so
  * removing the auth user is what actually clears leagues, teams, rosters,
- * values, sync runs and saved trades. `yahoo_tokens` cascades too, but it is
- * revoked first and explicitly: it is the only row here that is a credential,
- * and a failure further down should never leave one behind.
+ * values, sync runs and saved trades. `yahoo_tokens` and `espn_credentials`
+ * cascade too, but they are revoked first and explicitly: they are the only
+ * rows here that are credentials, and a failure further down should never
+ * leave one behind.
  *
  * Confirmation is the account's own email typed back, which is deliberate for
  * an action with no undo and no dialog primitive in this app to hold it.
@@ -102,6 +104,7 @@ export async function deleteAccountAction(
 
   try {
     await disconnectYahoo(user.id);
+    await disconnectEspn(user.id);
 
     const admin = createAdminClient();
     const { error } = await admin.auth.admin.deleteUser(user.id);

@@ -1,15 +1,23 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { AlertCircle, CheckCircle2, ArrowRightIcon, PencilLineIcon } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  ArrowRightIcon,
+  PencilLineIcon,
+  PlugZapIcon,
+} from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Panel, Stencil } from "@/components/board/panel";
 import { RailLine } from "@/components/board/rail";
+import { DisconnectEspnButton } from "@/components/leagues/disconnect-espn-button";
 import { DisconnectYahooButton } from "@/components/leagues/disconnect-yahoo-button";
 import { ImportLeagueButton } from "@/components/leagues/import-league-button";
 import { createClient } from "@/lib/supabase/server";
+import { getEspnConnection } from "@/lib/sources/espn-auth";
 import {
   getYahooConnection,
   YahooReauthRequired,
@@ -63,8 +71,9 @@ export default async function LeaguesPage({
     data: { user },
   } = await supabase.auth.getUser();
 
-  const [connection, { data: imported }] = await Promise.all([
+  const [connection, espn, { data: imported }] = await Promise.all([
     getYahooConnection(user!.id),
+    getEspnConnection(user!.id),
     supabase
       .from("leagues")
       .select(
@@ -73,11 +82,12 @@ export default async function LeaguesPage({
       .order("season", { ascending: false }),
   ]);
 
-  // Only Yahoo keys can collide with what discovery finds, and a manual
-  // league's synthetic key must never make a real one look already-imported.
+  // Only Yahoo keys can collide with what discovery finds. The synthetic keys
+  // the other two sources carry must never make a real one look
+  // already-imported, so they are left out rather than merely prefixed.
   const importedKeys = new Set(
     (imported ?? [])
-      .filter((league) => league.source !== "manual")
+      .filter((league) => league.source === "yahoo")
       .map((league) => league.yahoo_league_key),
   );
 
@@ -106,8 +116,8 @@ export default async function LeaguesPage({
           Leagues
         </h1>
         <p className="mt-1.5 max-w-[62ch] text-sm text-muted-foreground">
-          Connect Yahoo and import a league, or enter one by hand. Both end up
-          as the same board.
+          Import a league from Yahoo or ESPN, or enter one by hand. All three
+          end up as the same board.
         </p>
       </header>
 
@@ -152,6 +162,28 @@ export default async function LeaguesPage({
           <p className="text-sm text-destructive">{discoveryError}</p>
         ) : null}
       </Panel>
+
+      <Panel
+        label="ESPN"
+        note={
+          espn.connected
+            ? espn.needsReauth
+              ? "ESPN has stopped accepting the stored cookies. Connecting a league again with a fresh pair replaces them."
+              : "Cookies saved, encrypted and server-side only — private leagues on this account can be read."
+            : "No account needed for a public league. A private one wants the two cookies your browser already holds."
+        }
+        action={
+          <div className="flex items-center gap-1">
+            {espn.connected ? <DisconnectEspnButton /> : null}
+            <Button asChild size="sm" variant="outline">
+              <Link href="/leagues/espn">
+                <PlugZapIcon aria-hidden />
+                Connect a league
+              </Link>
+            </Button>
+          </div>
+        }
+      />
 
       <Panel
         label="By hand"
@@ -209,7 +241,11 @@ export default async function LeaguesPage({
                   name={league.name}
                   season={league.season}
                   detail={`${league.num_teams ?? "?"} teams · ${
-                    league.source === "manual" ? "kept by hand" : "from Yahoo"
+                    league.source === "manual"
+                      ? "kept by hand"
+                      : league.source === "espn"
+                        ? "from ESPN"
+                        : "from Yahoo"
                   }${
                     league.last_synced_at
                       ? ` · synced ${new Date(

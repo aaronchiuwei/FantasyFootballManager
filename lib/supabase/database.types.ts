@@ -69,13 +69,40 @@ export type Database = {
         };
         Relationships: [];
       };
+      espn_credentials: {
+        Row: {
+          user_id: string;
+          swid_enc: string;
+          espn_s2_enc: string;
+          needs_reauth: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          swid_enc: string;
+          espn_s2_enc: string;
+          needs_reauth?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          swid_enc?: string;
+          espn_s2_enc?: string;
+          needs_reauth?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       leagues: {
         Row: {
           id: string;
           user_id: string;
-          /** 'yahoo' when imported over the API, 'manual' when typed in. */
+          /** 'yahoo' / 'espn' when imported over that API, 'manual' when typed in. */
           source: string;
-          /** Yahoo's key, or `manual:<uuid>` when `source` is 'manual'. */
+          /** Yahoo's key, `espn:<season>:<leagueId>`, or `manual:<uuid>`. */
           yahoo_league_key: string;
           yahoo_game_key: string | null;
           name: string;

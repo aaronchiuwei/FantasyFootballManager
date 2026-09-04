@@ -385,7 +385,7 @@ export default async function ValuesPage({
                   </p>
                   <p className="text-xs">
                     The engine prices the market&rsquo;s board, every rostered
-                    player and Yahoo&rsquo;s available list. A player outside
+                    player and the league&rsquo;s available list. A player outside
                     all three has no row here. If they are on a roster, they may
                     be waiting on the{" "}
                     <Link

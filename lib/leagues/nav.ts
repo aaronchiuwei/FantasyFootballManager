@@ -23,8 +23,17 @@ export type LeagueSectionKey =
   | "waivers"
   | "identity";
 
-/** Where a league's rows came from. `leagues.source`, narrowed. */
-export type LeagueSource = "yahoo" | "manual";
+/**
+ * What kind of board this is, for navigation purposes: one whose rows a
+ * provider writes, or one whose rows a person does.
+ *
+ * Narrower than `leagues.source` on purpose. Yahoo and ESPN differ in how the
+ * rows arrive and in nothing this file cares about — both are overwritten by
+ * sync stage 6, and both resolve player identity through §4's ladder — so the
+ * two tabs that split on it split imported against manual, not provider
+ * against provider.
+ */
+export type LeagueKind = "imported" | "manual";
 
 export type LeagueSection = {
   key: LeagueSectionKey;
@@ -35,12 +44,12 @@ export type LeagueSection = {
    * The one kind of league this section belongs to, when it is only one.
    *
    * Two sections earn this. A hand-entered league is *edited* — its rosters
-   * and its move history have nowhere else to come from — and a Yahoo league
+   * and its move history have nowhere else to come from — and an imported one
    * is not, because stage 6 overwrites both on every sync. Identity is the
-   * mirror image: §4's ladder only ever runs against Yahoo ids, so on a manual
-   * league that screen is a permanently empty queue.
+   * mirror image: §4's ladder only ever runs against a provider's ids, so on a
+   * manual league that screen is a permanently empty queue.
    */
-  only?: LeagueSource;
+  only?: LeagueKind;
 };
 
 /**
@@ -60,12 +69,14 @@ export const LEAGUE_SECTIONS: readonly LeagueSection[] = [
   { key: "suggestions", label: "Suggestions", segment: "suggestions" },
   { key: "overview", label: "Overview", segment: "overview" },
   { key: "waivers", label: "Waivers", segment: "waivers" },
-  { key: "identity", label: "Identity", segment: "identity", only: "yahoo" },
+  { key: "identity", label: "Identity", segment: "identity", only: "imported" },
 ] as const;
 
 /** The tabs a league of this kind actually has. */
 export function sectionsFor(source: string | null | undefined): LeagueSection[] {
-  const kind: LeagueSource = source === "manual" ? "manual" : "yahoo";
+  // Anything that is not explicitly manual is imported — including a row from
+  // before `source` existed, every one of which was a Yahoo league.
+  const kind: LeagueKind = source === "manual" ? "manual" : "imported";
   return LEAGUE_SECTIONS.filter(
     (section) => section.only === undefined || section.only === kind,
   );
@@ -77,10 +88,10 @@ export function sectionsFor(source: string | null | undefined): LeagueSection[] 
  * What makes switching leagues worth a control at all is landing in the same
  * place: comparing two boards' waiver wires means seeing the second one's
  * waiver wire, not its overview. So the current section is carried across —
- * except where the target does not have it, which is exactly the manual /
- * Yahoo split. Jumping from a Yahoo league's identity queue to a hand-kept
- * league has nowhere to land, and the league page is the honest answer rather
- * than a 404 or a silently different tab.
+ * except where the target does not have it, which is exactly the imported /
+ * manual split. Jumping from an imported league's identity queue to a
+ * hand-kept league has nowhere to land, and the league page is the honest
+ * answer rather than a 404 or a silently different tab.
  */
 export function switchHref(
   targetLeagueId: string,

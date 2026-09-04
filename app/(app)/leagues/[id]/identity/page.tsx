@@ -64,10 +64,10 @@ export default async function IdentityPage({
     .maybeSingle();
 
   if (!league) notFound();
-  // §4's ladder only ever runs against Yahoo ids, so on a hand-kept league
+  // §4's ladder only ever runs against a provider's ids, so on a hand-kept league
   // this is a queue that can never have anything in it. The tab is already
   // hidden; this closes the door someone reaches by typing the URL, the same
-  // way `/manage` and `/moves` turn a Yahoo league away.
+  // way `/manage` and `/moves` turn an imported league away.
   if (isManualLeague(league.source)) redirect(`/leagues/${league.id}`);
 
   const [status, run] = await Promise.all([
@@ -91,10 +91,11 @@ export default async function IdentityPage({
             Player identity
           </h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
-            Yahoo and the value sources have no shared player id, so every
-            player is matched through a ladder: DynastyProcess&apos;s crosswalk,
-            Sleeper&apos;s own ids, then name + position + team. Anything the
-            ladder cannot settle lands here rather than being guessed at.
+            Yahoo, ESPN and the value sources have no shared player id, so
+            every player is matched through a ladder: DynastyProcess&apos;s
+            crosswalk, Sleeper&apos;s own ids, then name + position + team.
+            Anything the ladder cannot settle lands here rather than being
+            guessed at.
           </p>
         </div>
 

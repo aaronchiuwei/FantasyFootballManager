@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 
 import type { RosterSlot } from "@/lib/sources/yahoo-parse";
+import { setUsersTeam as writeUsersTeam } from "@/lib/leagues/my-team";
 import { markLeagueDirty } from "@/lib/sync/auto";
 import type { Db } from "@/lib/supabase/db";
 import type { Json } from "@/lib/supabase/database.types";
@@ -64,13 +65,13 @@ export async function requireManualLeague(
   if (error) throw new Error(`Could not read the league: ${error.message}`);
   if (!data) throw new Error("That league does not exist.");
 
-  // Not a permissions check — RLS already made one — but a correctness one. A
-  // Yahoo league's rosters are overwritten wholesale by sync stage 6, so a
+  // Not a permissions check — RLS already made one — but a correctness one. An
+  // imported league's rosters are overwritten wholesale by sync stage 6, so a
   // hand edit to one is work that disappears at the next sync without saying
   // anything. Refusing is kinder than silently discarding it later.
   if (!isManualLeague(data.source)) {
     throw new Error(
-      "This league is synced from Yahoo, so its rosters are managed there.",
+      `This league is synced from ${data.source === "espn" ? "ESPN" : "Yahoo"}, so its rosters are managed there.`,
     );
   }
 
@@ -261,9 +262,8 @@ export async function updateManualTeam(
 }
 
 /**
- * Moves the "my team" flag. Exclusive by construction: the whole league is
- * cleared first, because two teams claiming to be yours makes every "my team"
- * filter in the app pick one arbitrarily.
+ * Moves the "my team" flag on a hand-kept league. The write itself is shared
+ * with the ESPN path — what is manual about this is who is allowed to ask.
  */
 export async function setUsersTeam(
   db: Db,
@@ -271,24 +271,7 @@ export async function setUsersTeam(
   teamId: string,
 ): Promise<void> {
   await requireManualLeague(db, leagueId);
-
-  const { error: clearError } = await db
-    .from("teams")
-    .update({ is_users_team: false })
-    .eq("league_id", leagueId)
-    .neq("id", teamId);
-
-  if (clearError) {
-    throw new Error(`Could not move the flag: ${clearError.message}`);
-  }
-
-  const { error } = await db
-    .from("teams")
-    .update({ is_users_team: true })
-    .eq("id", teamId)
-    .eq("league_id", leagueId);
-
-  if (error) throw new Error(`Could not set your team: ${error.message}`);
+  await writeUsersTeam(db, leagueId, teamId);
 }
 
 /** Below this a league cannot hold a matchup, a trade, or a needs comparison. */

@@ -1,10 +1,12 @@
 # Fantasy Football Manager
 
-Yahoo fantasy football league companion — market-grounded player values, trade
-analysis, waiver recommendations. See [PLAN.md](PLAN.md) for the full design.
+Fantasy football league companion — market-grounded player values, trade
+analysis, waiver recommendations. Reads Yahoo and ESPN leagues, and takes one
+typed in by hand. See [PLAN.md](PLAN.md) for the full design.
 
 **Status: all ten phases complete (Phase 10, polish).** Supabase auth + RLS,
-Yahoo OAuth2 with encrypted tokens, league + team import, the
+Yahoo OAuth2 with encrypted tokens, ESPN leagues by id, league + team import,
+the
 Sleeper/FantasyCalc/DynastyProcess adapters, the player-identity crosswalk, the
 value engine, the one-button sync, the stats surface, the trade analyzer, the
 needs vector, both suggestion engines and the three-team cycle search — and
@@ -48,7 +50,8 @@ read out of Yahoo; a cycle beam that is bounded rather than exhaustive.
    Configuration: site URL `http://localhost:3000`, redirect
    `http://localhost:3000/auth/callback` (plus the deployed equivalents).
 
-5. **Register a Yahoo app** at <https://developer.yahoo.com/apps/create/>:
+5. **Register a Yahoo app** — only if you want the Yahoo path; ESPN and manual
+   leagues need none of this — at <https://developer.yahoo.com/apps/create/>:
 
    - API Permissions: **Fantasy Sports → Read**
    - Redirect URI: `https://<your-domain>/api/yahoo/callback`
@@ -106,12 +109,15 @@ lib/supabase/
   middleware.ts      session refresh + route gate
 lib/sources/
   yahoo-auth.ts      OAuth exchange, refresh, encrypted token store
+  espn-auth.ts       encrypted SWID + espn_s2 store — no OAuth to do
+  espn.ts            transport — one request per view set, cookies attached
+  espn-parse.ts      pure parsers, into the same types the Yahoo ones produce
   yahoo.ts           transport — one adapter per external source
   yahoo-parse.ts     pure parsers (tested against fixtures)
   yahoo-json.ts      normalizer for Yahoo's XML-shaped JSON
   sleeper.ts         player master, stats, projections, season clock
   fantasycalc.ts     redraft trade values (Tier A of the value engine)
-  dynastyprocess.ts  db_playerids.csv — the yahoo_id ↔ sleeper_id bridge
+  dynastyprocess.ts  db_playerids.csv — the yahoo_id / espn_id ↔ sleeper_id bridge
   csv.ts             minimal RFC-4180 parser, for that one file
   name-normalize.ts  the name key both sides of the crosswalk join on
 lib/crosswalk/
@@ -154,9 +160,12 @@ lib/players/
   stat-lines.ts      actuals against projections, pure and unit-tested
   detail.ts          the player page's four reads
 lib/leagues/
-  import.ts          Yahoo league, teams and matchups → Postgres
+  import.ts          a provider's league, teams and matchups → Postgres
+  espn.ts            the ESPN half of that, and the ref a stored key names
+  espn-input.ts      league id / season / cookie parsing for the connect form — pure
   manual.ts          the same rows, written by hand instead of fetched
   manual-input.ts    lineup / team / settings parsing for the manual forms — pure
+  my-team.ts         the exclusive "my team" flag, shared by manual and ESPN
   nav.ts             a league's sections, and which one a path is in — pure
 lib/transactions/
   moves.ts           what an add, a drop and a trade are — pure
@@ -199,6 +208,54 @@ Scoring is read from the league, never hardcoded: PPR comes from the receptions
 stat modifier, `num_qbs` from the starting roster slots (superflex counts as
 two), and both are what the value engine sends to FantasyCalc.
 
+## How ESPN leagues work
+
+ESPN has no OAuth app to register and no key to wait for, which makes it the
+fastest way into this board and gives it a different shape from the Yahoo path:
+a league is *named* rather than picked. `/leagues/espn` takes a league id (or
+the whole URL — the id and the season are read out of it) and a season, and
+writes them as a derived key, `espn:<season>:<leagueId>`, on the same
+`yahoo_league_key` column a manual league puts a random one in. Derived, not
+random, so connecting the same league twice refreshes one board instead of
+opening a second.
+
+A **public** league needs nothing else; ESPN answers it to anyone. A **private**
+one needs the two cookies your own browser holds, `SWID` and `espn_s2`. Those
+are session cookies for a whole ESPN account rather than a scoped token, so
+they are encrypted with the same AES-256-GCM key as the Yahoo tokens and stored
+in `espn_credentials` — RLS on, **no policy**, grants revoked, service role
+only. There is nothing to refresh: when ESPN stops accepting a pair the only
+repair is a fresh paste, so a 401 sets `needs_reauth` and the UI asks for one.
+
+Everything downstream is the Yahoo path unchanged. `espn-parse.ts` shapes
+ESPN's payloads into the *same* `LeagueImport`, `TeamImport`, `TeamRoster` and
+`MatchupImport` types the Yahoo parsers produce, `saveLeague` writes them, and
+sync stages 6 and 7 run for an ESPN league exactly as they do for a Yahoo one.
+ESPN numbers what Yahoo names — lineup slots, positions and pro teams are all
+integers — so those three vocabularies are the interesting part of the parser,
+and they are fixture-tested like everything else here.
+
+Two things genuinely differ:
+
+- **Player ids are a different keyspace.** `player_crosswalk.source` is
+  `'espn'` for these leagues, seeded from FantasyCalc's own `espnId`,
+  DynastyProcess's `espn_id` and Sleeper's `espn_id` — three bridges rather
+  than Yahoo's two, and Sleeper's ESPN column is the better populated of the
+  pair. `leagues.source` and the crosswalk source use the same words on
+  purpose, so `league_free_agents` joins them without a case expression.
+  Getting this wrong would not fail: it would price a different player.
+- **A public league does not say whose team is whose.** ESPN names an owner
+  only for a request carrying that owner's cookies, so a public league arrives
+  with no point of view and the league page asks once, with a row of buttons.
+  The import leaves `is_users_team` out of its write entirely when it cannot
+  answer, rather than setting it false on every team and undoing that choice at
+  the next sync.
+
+Sync's preflight is also a live request rather than a token lookup, because
+whether a league needs credentials is a fact about the league and not about the
+account. One small ESPN call now, or a minute of Sleeper, FantasyCalc and stat
+pulls before the same answer arrives anyway.
+
 ## Leagues without Yahoo
 
 Yahoo's API is the fastest way in, not the only one. `/leagues/new` takes the
@@ -216,8 +273,8 @@ Two consequences are worth knowing:
   hand-built roster already holds real `players.id` values. Every other stage,
   including the value engine, the needs vectors and both suggestion searches,
   runs unchanged and cannot tell the two kinds of league apart.
-- The waiver wire's pool is different by necessity. A Yahoo league gets Yahoo's
-  own available list; a manual league has no such list, so `league_free_agents`
+- The waiver wire's pool is different by necessity. An imported league gets its
+  provider's own available list; a manual league has no such list, so `league_free_agents`
   falls back to every priced player nobody in the league has rostered. The
   board still ranks on rest-of-season projection and cuts at 250, so the wider
   net costs nothing at the top.
@@ -227,17 +284,18 @@ list, and that arrives with sync stage 2.
 
 ## How player identity works
 
-Yahoo and the value sources share no player id, and no public source has Yahoo
-ids for current rookies — so identity is resolved through a ladder, first hit
-wins, and every result is persisted in `player_crosswalk` so the work happens
-once per player rather than once per sync:
+A league provider and the value sources share no player id, and no public
+source has Yahoo ids for current rookies — so identity is resolved through a
+ladder, first hit wins, and every result is persisted in `player_crosswalk`
+(under that provider's `source`) so the work happens once per player rather
+than once per sync:
 
 | # | Rung | Where |
 |---|---|---|
 | 1 | Manual override | `player_id_overrides`, written by the identity screen |
 | 2 | DynastyProcess `db_playerids.csv` | seeded into the crosswalk on each master refresh |
-| 3 | Sleeper's own `yahoo_id` | same seeding pass, lower precedence |
-| 4 | Team defense by NFL team abbreviation | Yahoo models a defense as a team, not a player |
+| 3 | Sleeper's own `yahoo_id` / `espn_id` | same seeding pass, lower precedence |
+| 4 | Team defense by NFL team abbreviation | both providers model a defense as a team, not a player |
 | 5 | Normalized name + position + team | `lib/crosswalk/resolve.ts` |
 | 6 | Normalized name + position | catches in-season trades |
 | 7 | Position-gated trigram fuzzy ≥ 0.88 | last resort, birth-date tiebreak |
@@ -1281,11 +1339,11 @@ that hand work to each other **through Postgres**, never through memory:
 | # | Stage | Work | Skips when |
 |---|---|---|---|
 | 1 | `state` | Sleeper's season clock; the league parameters the rest are keyed on | — |
-| 2 | `players` | Sleeper's player master, and the Yahoo half of the crosswalk | cached <24h |
+| 2 | `players` | Sleeper's player master, and both providers' halves of the crosswalk | cached <24h |
 | 3 | `values` | The FantasyCalc board for this league's scoring | — |
 | 4 | `projections` | Season totals, plus a projection for every week the league plays | — |
 | 5 | `stats` | Season-to-date actuals, plus last season's game log as context | already stored |
-| 6 | `yahoo` | Settings, standings, teams, rosters, matchups, free agents | — |
+| 6 | `yahoo` | Settings, standings, teams, rosters, matchups, free agents — from Yahoo or ESPN. The id is historical; every recorded run carries it | — |
 | 7 | `resolve` | The §4 identity ladder over what stage 6 pulled | — |
 | 8 | `compute` | The §5 value engine over everything above, the §7 needs vector over that, §9's win-win search over both, then Req. 11's cycle search once per team | — |
 
@@ -1299,7 +1357,7 @@ immediately rather than being held open for what it triggered.
 **The handoff tables are the point.** `market_values` holds the board stage 3
 fetched and `yahoo_player_pool` holds the players stage 6 pulled, so stages 7
 and 8 are pure reads. That is what makes "retry from the failed stage" cheap
-and honest: a resolve that broke re-runs without paying Yahoo's free-agent
+and honest: a resolve that broke re-runs without paying the provider's free-agent
 pagination again, and a valuation that broke re-runs without touching any
 external API at all.
 

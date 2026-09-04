@@ -54,7 +54,7 @@ export default async function WaiversPage({
             agents sit below the coverage of the market, so sorting them by an
             estimated price would be sorting on noise. Values still ride along
             with their source. {board.players.length.toLocaleString()} available
-            in Yahoo, {freshness(board.fetchedAt)}.
+            in this league, {freshness(board.fetchedAt)}.
           </p>
         </div>
 
@@ -78,8 +78,8 @@ export default async function WaiversPage({
           <CardContent className="space-y-3 py-8 text-center">
             <p className="text-sm text-muted-foreground">
               No free agents for the {league.season} season yet. A sync pulls
-              the top of the available list from Yahoo, matches every one of
-              them to a player, and projects the rest of their season.
+              the top of your league&rsquo;s available list, matches every one
+              of them to a player, and projects the rest of their season.
             </p>
             <div className="flex justify-center">
               {manual ? null : <SyncButton

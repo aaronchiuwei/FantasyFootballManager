@@ -27,8 +27,26 @@ type CrosswalkInsert = Database["public"]["Tables"]["player_crosswalk"]["Insert"
 const DYNASTYPROCESS_CONFIDENCE = 0.98;
 const SLEEPER_ID_CONFIDENCE = 0.97;
 
+/**
+ * `player_crosswalk.source`. The two league providers are named here because
+ * their ids share a keyspace shape and nothing else: player 4046 is one person
+ * at Yahoo and a different one at ESPN, and a join that mixed them would not
+ * fail — it would quietly price the wrong player. The values match
+ * `leagues.source` exactly, which is what lets `league_free_agents` join the
+ * two without a case expression.
+ */
+export type ProviderSource = "yahoo" | "espn";
+
 const YAHOO = "yahoo";
+const ESPN = "espn";
 const FANTASYCALC = "fantasycalc";
+
+/** The crosswalk source a league's player ids belong to. */
+export function providerSourceOf(
+  leagueSource: string | null | undefined,
+): ProviderSource {
+  return leagueSource === "espn" ? ESPN : YAHOO;
+}
 
 /** PostgREST builds one URL per request, so `.in()` lists stay modest. */
 const FILTER_CHUNK = 100;
@@ -62,33 +80,59 @@ async function insertCrosswalk(db: Db, rows: CrosswalkInsert[]) {
 }
 
 /**
- * Seeds `yahoo_id → player_id` from the two sources that ship the pair
+ * Seeds `provider id → player_id` from the two sources that ship the pair
  * outright: DynastyProcess's `db_playerids.csv` (§4 step 2, ~77% of the top
- * 192) and Sleeper's own sparse `yahoo_id` (§4 step 3). DynastyProcess goes in
- * first so it wins the key where both have an opinion.
+ * 192) and Sleeper's own sparse provider ids (§4 step 3). DynastyProcess goes
+ * in first so it wins the key where both have an opinion.
+ *
+ * Both providers are seeded in one pass because both bridges live in the same
+ * two files. ESPN's is if anything the better one — Sleeper's `espn_id` is
+ * more densely populated than its `yahoo_id` — but neither is complete, which
+ * is why the name ladder in `resolvePool` still exists.
  */
-export async function seedYahooCrosswalk(
+export async function seedProviderCrosswalks(
   db: Db,
   ids: Map<string, number>,
   sleeperPlayers: SleeperPlayer[],
-): Promise<{ seeded: number; warning: string | null }> {
+): Promise<{
+  seeded: number;
+  bySource: Record<ProviderSource, number>;
+  warning: string | null;
+}> {
+  // Keyed by source *and* id: the same integer is a legitimate key on both
+  // sides and deduplicating across them would drop real rows.
   const seen = new Set<string>();
   const rows: CrosswalkInsert[] = [];
+  const bySource: Record<ProviderSource, number> = { yahoo: 0, espn: 0 };
   let warning: string | null = null;
+
+  const add = (
+    source: ProviderSource,
+    sourceId: string | null,
+    playerId: number,
+    method: string,
+    confidence: number,
+  ) => {
+    if (!sourceId || seen.has(`${source}:${sourceId}`)) return;
+
+    seen.add(`${source}:${sourceId}`);
+    bySource[source] += 1;
+    rows.push({
+      source,
+      source_id: sourceId,
+      player_id: playerId,
+      match_method: method,
+      confidence,
+    });
+  };
 
   try {
     for (const row of await fetchDynastyProcessIds()) {
       const playerId = row.sleeperId ? ids.get(row.sleeperId) : undefined;
-      if (!playerId || !row.yahooId || seen.has(row.yahooId)) continue;
+      if (!playerId) continue;
 
-      seen.add(row.yahooId);
-      rows.push({
-        source: YAHOO,
-        source_id: row.yahooId,
-        player_id: playerId,
-        match_method: "dynastyprocess",
-        confidence: DYNASTYPROCESS_CONFIDENCE,
-      });
+      add(YAHOO, row.yahooId, playerId, "dynastyprocess", DYNASTYPROCESS_CONFIDENCE);
+      add(ESPN, row.espnId, playerId, "dynastyprocess", DYNASTYPROCESS_CONFIDENCE);
     }
   } catch (cause) {
     // GitHub being down costs coverage, not correctness — the name ladder
@@ -100,22 +144,15 @@ export async function seedYahooCrosswalk(
   }
 
   for (const player of sleeperPlayers) {
-    if (!player.yahooId || seen.has(player.yahooId)) continue;
     const playerId = ids.get(player.sleeperId);
     if (!playerId) continue;
 
-    seen.add(player.yahooId);
-    rows.push({
-      source: YAHOO,
-      source_id: player.yahooId,
-      player_id: playerId,
-      match_method: "sleeper_yahoo_id",
-      confidence: SLEEPER_ID_CONFIDENCE,
-    });
+    add(YAHOO, player.yahooId, playerId, "sleeper_yahoo_id", SLEEPER_ID_CONFIDENCE);
+    add(ESPN, player.espnId, playerId, "sleeper_espn_id", SLEEPER_ID_CONFIDENCE);
   }
 
   await insertCrosswalk(db, rows);
-  return { seeded: rows.length, warning };
+  return { seeded: rows.length, bySource, warning };
 }
 
 /**
@@ -141,6 +178,19 @@ export async function seedFantasyCalcCrosswalkFrom(
       match_method: "sleeper_id",
       confidence: 1,
     });
+
+    // FantasyCalc carries ESPN's id on the same row as Sleeper's, so the ESPN
+    // half of §4 step 1 is free here too — and it is the strongest evidence
+    // there is, since both ids come from one publisher's own join.
+    if (value.espnId) {
+      rows.push({
+        source: ESPN,
+        source_id: value.espnId,
+        player_id: playerId,
+        match_method: "fantasycalc_espn_id",
+        confidence: 1,
+      });
+    }
   }
 
   await insertCrosswalk(db, rows);
@@ -152,6 +202,12 @@ export async function seedFantasyCalcCrosswalkFrom(
 // ---------------------------------------------------------------------------
 
 export type PoolEntry = {
+  /**
+   * The provider's own id for the player. Named for Yahoo because the column
+   * it lands in is, and both providers park their pool in the same table — a
+   * league is one provider or the other, so the ids inside one league's pool
+   * never mix.
+   */
   yahooPlayerId: string;
   /** Null means free agent. */
   teamKey: string | null;
@@ -159,13 +215,13 @@ export type PoolEntry = {
 };
 
 /**
- * Persists the league's player pool exactly as Yahoo reported it, before
- * identity resolution has an opinion about any of it.
+ * Persists the league's player pool exactly as the provider reported it,
+ * before identity resolution has an opinion about any of it.
  *
  * This is the seam between stages 6 and 7. It exists so that a resolve that
- * fails can be retried without paying Yahoo's free-agent pagination again —
- * which is §9's "independently retryable" applied to the one stage where a
- * retry would otherwise be expensive.
+ * fails can be retried without paying for the free-agent read again — which is
+ * §9's "independently retryable" applied to the one stage where a retry would
+ * otherwise be expensive.
  */
 export async function savePlayerPool(
   db: Db,
@@ -275,6 +331,7 @@ async function fetchKeyed<T extends { source_id: string }>(
   table: "player_crosswalk" | "player_id_overrides",
   columns: string,
   sourceIds: string[],
+  source: ProviderSource,
 ): Promise<Map<string, T>> {
   const map = new Map<string, T>();
 
@@ -282,7 +339,7 @@ async function fetchKeyed<T extends { source_id: string }>(
     const { data, error } = await db
       .from(table)
       .select(columns)
-      .eq("source", YAHOO)
+      .eq("source", source)
       .in("source_id", batch);
 
     if (error) throw new Error(`Failed to read ${table}: ${error.message}`);
@@ -302,6 +359,7 @@ async function fetchKeyed<T extends { source_id: string }>(
 export async function resolvePool(
   db: Db,
   leagueId: string,
+  source: ProviderSource = YAHOO,
 ): Promise<ResolutionReport> {
   const [pool, players] = await Promise.all([
     loadPlayerPool(db, leagueId),
@@ -315,6 +373,7 @@ export async function resolvePool(
       "player_id_overrides",
       "source_id, player_id",
       sourceIds,
+      source,
     ),
     fetchKeyed<{
       source_id: string;
@@ -326,6 +385,7 @@ export async function resolvePool(
       "player_crosswalk",
       "source_id, player_id, match_method, confidence",
       sourceIds,
+      source,
     ),
   ]);
 
@@ -361,7 +421,7 @@ export async function resolvePool(
 
       if (resolution) {
         fresh.push({
-          source: YAHOO,
+          source,
           source_id: sourceId,
           player_id: resolution.playerId,
           match_method: resolution.method,
@@ -622,19 +682,31 @@ export async function applyOverride(
 
   const payload = row.payload as unknown as UnmatchedPayload;
 
+  // Which keyspace the id belongs to is a fact about the league, not about the
+  // screen the decision was made on. Read rather than assumed: writing an ESPN
+  // id under 'yahoo' would resolve some entirely different player the next
+  // time a Yahoo league met that number.
+  const { data: league } = await supabase
+    .from("leagues")
+    .select("source")
+    .eq("id", leagueId)
+    .maybeSingle();
+
+  const source = providerSourceOf(league?.source);
+
   // Written with the user's own client so `created_by` is real and the
   // override policies do the authorizing. There is no update policy on this
   // table by design, so a re-decision replaces rather than edits.
   await supabase
     .from("player_id_overrides")
     .delete()
-    .eq("source", YAHOO)
+    .eq("source", source)
     .eq("source_id", row.yahoo_player_id);
 
   const { error: overrideError } = await supabase
     .from("player_id_overrides")
     .insert({
-      source: YAHOO,
+      source,
       source_id: row.yahoo_player_id,
       player_id: playerId,
       created_by: userId,
@@ -647,7 +719,7 @@ export async function applyOverride(
 
   const { error: crosswalkError } = await admin.from("player_crosswalk").upsert(
     {
-      source: YAHOO,
+      source,
       source_id: row.yahoo_player_id,
       player_id: playerId,
       match_method: "override",

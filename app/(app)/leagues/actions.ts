@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { importLeague } from "@/lib/leagues/import";
+import { disconnectEspn } from "@/lib/sources/espn-auth";
 import { disconnectYahoo, YahooReauthRequired } from "@/lib/sources/yahoo-auth";
 import { createClient } from "@/lib/supabase/server";
 
@@ -54,6 +55,22 @@ export async function importLeagueAction(
 export async function disconnectYahooAction() {
   const user = await requireUser();
   await disconnectYahoo(user.id);
+
+  revalidatePath("/leagues");
+  revalidatePath("/dashboard");
+  revalidatePath("/account");
+}
+
+/**
+ * Forgets the stored ESPN cookies.
+ *
+ * Public ESPN leagues keep syncing afterwards — they never needed a login —
+ * so this is narrower than disconnecting Yahoo: it removes a credential, not
+ * an account link.
+ */
+export async function disconnectEspnAction() {
+  const user = await requireUser();
+  await disconnectEspn(user.id);
 
   revalidatePath("/leagues");
   revalidatePath("/dashboard");

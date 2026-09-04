@@ -58,14 +58,17 @@ export const STAGES: StageMeta[] = [
     description: "Pulling actuals, and last season for context",
   },
   {
+    // The id is `yahoo` because it is written into every `sync_runs` row ever
+    // recorded, and a resumed run reads its own stage list back. The label is
+    // what the reader sees, and by now this stage reads two providers.
     id: "yahoo",
-    label: "Yahoo league",
+    label: "League",
     description: "Standings, rosters, matchups and free agents",
   },
   {
     id: "resolve",
     label: "Player identity",
-    description: "Matching Yahoo players to the master list",
+    description: "Matching the league's players to the master list",
   },
   {
     id: "compute",
@@ -105,13 +108,19 @@ export type RunStatus = "running" | "succeeded" | "failed";
  * an earlier stage already resolved.
  */
 export type SyncContext = {
-  /** Yahoo's league key, or the `manual:<uuid>` a hand-entered league carries. */
+  /**
+   * The league's stored key: Yahoo's own, the `espn:<season>:<id>` an ESPN
+   * league carries, or the `manual:<uuid>` of a hand-entered one.
+   */
   leagueKey: string;
   /**
-   * Where the league came from. Stages 6 and 7 exist to ask Yahoo who is on
-   * which roster and then work out who those players are; a manual league
-   * answered both questions at the keyboard, so both are skipped rather than
-   * run against an API it has no account with.
+   * Where the league came from — 'yahoo', 'espn' or 'manual'.
+   *
+   * Stages 6 and 7 exist to ask a provider who is on which roster and then
+   * work out who those players are. A manual league answered both questions at
+   * the keyboard, so both are skipped rather than run against an API it has no
+   * account with; the two provider leagues take the same path through both
+   * stages with a different source module behind it.
    *
    * Optional because runs recorded before manual leagues existed have no such
    * key, and every one of those was a Yahoo league.

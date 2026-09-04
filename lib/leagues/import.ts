@@ -1,6 +1,11 @@
 import "server-only";
 
-import { fetchLeague, type MatchupImport } from "@/lib/sources/yahoo";
+import {
+  fetchLeague,
+  type LeagueImport,
+  type MatchupImport,
+  type TeamImport,
+} from "@/lib/sources/yahoo";
 import type { Db } from "@/lib/supabase/db";
 import type { Json } from "@/lib/supabase/database.types";
 
@@ -10,8 +15,23 @@ export type ImportResult = {
   teamCount: number;
 };
 
+export type SaveLeagueOptions = {
+  /** `leagues.source`: which provider these rows were read from. */
+  source: "yahoo" | "espn";
+  /**
+   * Whether the payload could say which team is the user's.
+   *
+   * Yahoo always can — the request was made as them. ESPN can only when the
+   * league was read with the user's cookies, and a public league read without
+   * them cannot. False leaves `is_users_team` out of the write entirely, so an
+   * upsert refreshes everything else about a team without stepping on a choice
+   * the user made on the board.
+   */
+  writeUsersTeam: boolean;
+};
+
 /**
- * Pulls a league from Yahoo and writes it to Postgres.
+ * Writes a league and its teams to Postgres, whoever fetched them.
  *
  * The client is passed in rather than created here. Interactively — importing
  * a league you just picked — that is the user's RLS-bound client, so the
@@ -22,18 +42,18 @@ export type ImportResult = {
  * Idempotent — re-importing refreshes the same rows, which is what sync stage
  * 6 relies on.
  */
-export async function importLeague(
+export async function saveLeague(
   db: Db,
   userId: string,
-  leagueKey: string,
+  { league, teams }: { league: LeagueImport; teams: TeamImport[] },
+  { source, writeUsersTeam }: SaveLeagueOptions,
 ): Promise<ImportResult> {
-  const { league, teams } = await fetchLeague(userId, leagueKey);
-
   const { data: leagueRow, error: leagueError } = await db
     .from("leagues")
     .upsert(
       {
         user_id: userId,
+        source,
         yahoo_league_key: league.leagueKey,
         yahoo_game_key: league.gameKey,
         name: league.name,
@@ -70,7 +90,7 @@ export async function importLeague(
         name: team.name,
         manager_name: team.managerName,
         logo_url: team.logoUrl,
-        is_users_team: team.isUsersTeam,
+        ...(writeUsersTeam ? { is_users_team: team.isUsersTeam } : {}),
         wins: team.wins,
         losses: team.losses,
         ties: team.ties,
@@ -90,8 +110,8 @@ export async function importLeague(
       throw new Error(`Failed to save teams: ${teamsError.message}`);
     }
 
-    // A team that vanished from Yahoo (folded, or the league was rebuilt)
-    // should not linger as a ghost row.
+    // A team that vanished from the provider (folded, or the league was
+    // rebuilt) should not linger as a ghost row.
     const { error: pruneError } = await db
       .from("teams")
       .delete()
@@ -114,7 +134,22 @@ export async function importLeague(
   };
 }
 
-/** Maps Yahoo's team keys onto our uuids for a league. */
+/**
+ * Pulls a league from Yahoo and writes it. The Yahoo half of §1.2, unchanged
+ * apart from now naming the source it is.
+ */
+export async function importLeague(
+  db: Db,
+  userId: string,
+  leagueKey: string,
+): Promise<ImportResult> {
+  return saveLeague(db, userId, await fetchLeague(userId, leagueKey), {
+    source: "yahoo",
+    writeUsersTeam: true,
+  });
+}
+
+/** Maps a provider's team keys onto our uuids for a league. */
 export async function teamIdsByKey(
   db: Db,
   leagueId: string,

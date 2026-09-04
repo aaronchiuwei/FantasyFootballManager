@@ -7,9 +7,11 @@ import { RailLine } from "@/components/board/rail";
 import { ChangeEmailForm } from "@/components/account/change-email-form";
 import { ChangePasswordForm } from "@/components/account/change-password-form";
 import { DeleteAccountForm } from "@/components/account/delete-account-form";
+import { DisconnectEspnButton } from "@/components/leagues/disconnect-espn-button";
 import { DisconnectYahooButton } from "@/components/leagues/disconnect-yahoo-button";
 import { signOut } from "@/app/(auth)/actions";
 import { createClient } from "@/lib/supabase/server";
+import { getEspnConnection } from "@/lib/sources/espn-auth";
 import { getYahooConnection } from "@/lib/sources/yahoo-auth";
 
 export const metadata: Metadata = { title: "Account" };
@@ -55,8 +57,9 @@ export default async function AccountPage() {
 
   const account = user!;
 
-  const [connection, leagues, trades, syncs] = await Promise.all([
+  const [connection, espn, leagues, trades, syncs] = await Promise.all([
     getYahooConnection(account.id),
+    getEspnConnection(account.id),
     supabase.from("leagues").select("id", { count: "exact", head: true }),
     supabase.from("saved_trades").select("id", { count: "exact", head: true }),
     supabase.from("sync_runs").select("id", { count: "exact", head: true }),
@@ -142,6 +145,33 @@ export default async function AccountPage() {
       </Panel>
 
       <Panel
+        label="ESPN cookies"
+        note={
+          espn.connected
+            ? espn.needsReauth
+              ? "ESPN has stopped accepting them. Connect a league again with a fresh pair to replace them."
+              : `Saved ${formatDate(espn.linkedAt)}, encrypted and server-side only.`
+            : "None saved. Public ESPN leagues never needed any; a private one does."
+        }
+        action={
+          espn.connected ? (
+            <DisconnectEspnButton />
+          ) : (
+            <Button asChild size="sm" variant="outline">
+              <Link href="/leagues/espn">Connect</Link>
+            </Button>
+          )
+        }
+      >
+        <p className="max-w-[62ch] text-sm leading-relaxed text-muted-foreground">
+          These are session cookies for your ESPN account rather than a scoped
+          token, which is why they are stored encrypted and never shown again.
+          Forgetting them leaves public ESPN leagues syncing and stops private
+          ones.
+        </p>
+      </Panel>
+
+      <Panel
         label="What this account holds"
         note="Everything below is deleted with the account, immediately and for good."
       >
@@ -155,6 +185,11 @@ export default async function AccountPage() {
           <Fact
             label="Yahoo link"
             value={connection.connected ? "Connected" : "None"}
+          />
+          <RailLine />
+          <Fact
+            label="ESPN cookies"
+            value={espn.connected ? "Saved" : "None"}
           />
         </div>
       </Panel>

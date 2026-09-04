@@ -22,6 +22,8 @@ import { RailLine } from "@/components/board/rail";
 import { SyncPanel } from "@/components/sync/sync-panel";
 import { AutoSyncNotice } from "@/components/sync/auto-sync-notice";
 import { TeamCard, type TeamRow } from "@/components/leagues/team-card";
+import { ClaimTeamPicker } from "@/components/leagues/claim-team-picker";
+import { isEspnLeague } from "@/lib/leagues/espn";
 import { isManualLeague } from "@/lib/leagues/manual";
 import { latestRun } from "@/lib/sync/run";
 import { createClient } from "@/lib/supabase/server";
@@ -124,6 +126,15 @@ export default async function LeaguePage({
 
   const teamCount = teams?.length ?? 0;
   const manual = isManualLeague(league.source);
+  const espn = isEspnLeague(league.source);
+  /** The provider this board reads from, wherever a sentence has to name it. */
+  const provider = espn ? "ESPN" : "Yahoo";
+
+  // ESPN names an owner only for a league read with that owner's cookies, so a
+  // public one lands with no point of view: "My team" matches nothing and the
+  // trade analyzer opens on an arbitrary side. Asked once, here, rather than
+  // demanding a cookie paste a public league does not otherwise need.
+  const unclaimed = espn && !(teams ?? []).some((team) => team.is_users_team);
 
   /**
    * The board's index. One shape, repeated, because these are seven doors off
@@ -170,7 +181,7 @@ export default async function LeaguePage({
             title: "Player identity",
             state:
               matched === 0
-                ? "No rosters read yet. Run a sync to pull them from Yahoo."
+                ? `No rosters read yet. Run a sync to pull them from ${provider}.`
                 : `${matched} rostered players matched${
                     pending ? `, ${pending} waiting on a manual match` : ""
                   }.`,
@@ -262,7 +273,7 @@ export default async function LeaguePage({
         {league.url ? (
           <Button asChild size="sm" variant="ghost">
             <a href={league.url} target="_blank" rel="noreferrer noopener">
-              View on Yahoo
+              View on {provider}
             </a>
           </Button>
         ) : null}
@@ -349,6 +360,22 @@ export default async function LeaguePage({
           ))}
         </ul>
       </Panel>
+
+      {unclaimed && teamCount > 0 ? (
+        <Panel
+          label="Your team"
+          note="ESPN only says which team is yours when the league is read with your own cookies, and this one was not. Pick it once and every screen on this board takes your side of it."
+        >
+          <ClaimTeamPicker
+            leagueId={league.id}
+            teams={(teams ?? []).map((team) => ({
+              id: team.id,
+              name: team.name,
+              managerName: team.manager_name,
+            }))}
+          />
+        </Panel>
+      ) : null}
 
       <Panel label={`Teams · ${teamCount}`}>
         <div className="grid gap-2 sm:grid-cols-2">

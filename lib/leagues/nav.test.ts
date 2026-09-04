@@ -91,6 +91,8 @@ describe("sectionsFor", () => {
     expect(sectionsFor(null).map((section) => section.key)).toEqual(yahoo);
     expect(sectionsFor(undefined).map((section) => section.key)).toEqual(yahoo);
     expect(sectionsFor("sleeper").map((section) => section.key)).toEqual(yahoo);
+    // ESPN is imported, so it gets the identity queue and not the editors.
+    expect(sectionsFor("espn").map((section) => section.key)).toEqual(yahoo);
   });
 
   it("keeps every league's shared sections in the same order", () => {

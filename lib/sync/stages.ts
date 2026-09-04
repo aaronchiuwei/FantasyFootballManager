@@ -1,10 +1,12 @@
 import "server-only";
 
 import {
+  providerSourceOf,
   resolvePool,
   savePlayerPool,
-  seedYahooCrosswalk,
+  seedProviderCrosswalks,
 } from "@/lib/crosswalk/store";
+import { importEspnLeague, isEspnLeague, refOf } from "@/lib/leagues/espn";
 import { importLeague, saveMatchups } from "@/lib/leagues/import";
 import { isManualLeague } from "@/lib/leagues/manual";
 import { computeTeamNeeds } from "@/lib/needs/store";
@@ -14,6 +16,11 @@ import {
   SEASON_TOTAL_WEEK,
   syncStatLines,
 } from "@/lib/players/stats";
+import {
+  fetchEspnFreeAgents,
+  fetchEspnMatchups,
+  fetchEspnRosters,
+} from "@/lib/sources/espn";
 import { fetchNflState } from "@/lib/sources/sleeper";
 import { fetchFreeAgents, fetchMatchups, fetchRosters } from "@/lib/sources/yahoo";
 import {
@@ -143,13 +150,13 @@ const players: StageRunner = async ({ db }) => {
     };
   }
 
-  // Only a refresh brings the Sleeper rows that carry `yahoo_id`, so this is
-  // the one moment the Yahoo half of the crosswalk can be re-seeded (§4).
+  // Only a refresh brings the Sleeper rows that carry the provider ids, so
+  // this is the one moment either half of the crosswalk can be re-seeded (§4).
   const ids = await loadSleeperIds(db);
-  const seed = await seedYahooCrosswalk(db, ids, master.players ?? []);
+  const seed = await seedProviderCrosswalks(db, ids, master.players ?? []);
 
   return {
-    detail: `${n(master.count)} players refreshed · ${n(seed.seeded)} Yahoo ids seeded`,
+    detail: `${n(master.count)} players refreshed · ${n(seed.bySource.yahoo)} Yahoo and ${n(seed.bySource.espn)} ESPN ids seeded`,
     warnings: seed.warning ? [seed.warning] : [],
   };
 };
@@ -262,14 +269,20 @@ const stats: StageRunner = async ({ db, context }) => {
 };
 
 /**
- * Stage 6. Everything Yahoo knows: settings, standings, teams, rosters,
- * matchups and the top of the free-agent pool.
+ * Stage 6. Everything the league's provider knows: settings, standings, teams,
+ * rosters, matchups and the top of the free-agent pool.
+ *
+ * Two providers, one stage, because what they return is the same four things
+ * and the rows they land in are identical. What differs is entirely inside the
+ * source modules — Yahoo pages its free agents 25 at a time behind an OAuth
+ * token, ESPN answers the lot in one request behind a pair of cookies — and
+ * neither difference survives as far as `savePlayerPool`.
  *
  * The players are parked in `yahoo_player_pool` rather than resolved here, so
- * that a failure in stage 7 does not cost the free-agent pagination twice.
+ * that a failure in stage 7 does not cost the free-agent read twice.
  */
 const yahoo: StageRunner = async ({ db, userId, leagueId, context }) => {
-  // A hand-entered league has no counterpart at Yahoo to read. Its teams,
+  // A hand-entered league has no counterpart anywhere to read. Its teams,
   // rosters and settings are already the rows this stage would have written,
   // so running it would at best be a no-op and at worst overwrite them with an
   // error. Skipped, and said out loud on the checklist.
@@ -280,38 +293,67 @@ const yahoo: StageRunner = async ({ db, userId, leagueId, context }) => {
     };
   }
 
-  const imported = await importLeague(db, userId, context.leagueKey);
-
-  const rosters = await fetchRosters(userId, context.leagueKey);
-  const freeAgents = await fetchFreeAgents(userId, context.leagueKey);
-  const pool = await savePlayerPool(db, leagueId, { rosters, freeAgents });
-
   const weeks = playedWeeks(context);
-  const matchups =
-    weeks.length === 0
-      ? 0
-      : await saveMatchups(
-          db,
-          leagueId,
-          await fetchMatchups(userId, context.leagueKey, weeks),
-        );
+
+  const pulled = isEspnLeague(context.source)
+    ? await (async () => {
+        const ref = refOf({
+          yahoo_league_key: context.leagueKey,
+          season: context.season,
+        });
+
+        const imported = await importEspnLeague(db, userId, ref);
+
+        return {
+          teamCount: imported.teamCount,
+          rosters: await fetchEspnRosters(userId, ref),
+          freeAgents: await fetchEspnFreeAgents(userId, ref),
+          matchups: await fetchEspnMatchups(userId, ref, weeks),
+          // A public league read without cookies never tells us whose team is
+          // whose. Worth saying on the checklist, because the fix is a click
+          // on the board rather than anything this stage can do.
+          note: imported.knowsUsersTeam ? null : "no owner named",
+        };
+      })()
+    : await (async () => {
+        const imported = await importLeague(db, userId, context.leagueKey);
+
+        return {
+          teamCount: imported.teamCount,
+          rosters: await fetchRosters(userId, context.leagueKey),
+          freeAgents: await fetchFreeAgents(userId, context.leagueKey),
+          matchups:
+            weeks.length === 0
+              ? []
+              : await fetchMatchups(userId, context.leagueKey, weeks),
+          note: null,
+        };
+      })();
+
+  const pool = await savePlayerPool(db, leagueId, {
+    rosters: pulled.rosters,
+    freeAgents: pulled.freeAgents,
+  });
+
+  const matchups = await saveMatchups(db, leagueId, pulled.matchups);
 
   const parts = [
-    `${imported.teamCount} teams`,
+    `${pulled.teamCount} teams`,
     `${n(pool.rostered)} rostered`,
     `${n(pool.freeAgents)} free agents`,
   ];
   if (matchups > 0) parts.push(`${matchups} matchups`);
+  if (pulled.note) parts.push(pulled.note);
 
   return { detail: parts.join(" · ") };
 };
 
 /** Stage 7. The §4 resolution ladder over the pool stage 6 parked. */
 const resolve: StageRunner = async ({ db, leagueId, context }) => {
-  // §4's ladder exists to turn a Yahoo player id into one of ours. A manual
-  // roster was built by picking players off the master list, so every row it
-  // wrote already holds a real `players.id` — there is nothing left to match,
-  // and no unmatched queue to review.
+  // §4's ladder exists to turn a provider's player id into one of ours. A
+  // manual roster was built by picking players off the master list, so every
+  // row it wrote already holds a real `players.id` — there is nothing left to
+  // match, and no unmatched queue to review.
   if (isManualLeague(context.source)) {
     return {
       detail: "Rosters were built from the master list · nothing to match",
@@ -319,7 +361,10 @@ const resolve: StageRunner = async ({ db, leagueId, context }) => {
     };
   }
 
-  const report = await resolvePool(db, leagueId);
+  // Which keyspace the pool's ids live in. Getting this wrong would not fail —
+  // it would resolve the wrong people — so it is derived from the league row
+  // rather than defaulted.
+  const report = await resolvePool(db, leagueId, providerSourceOf(context.source));
 
   const rate =
     report.rostered === 0

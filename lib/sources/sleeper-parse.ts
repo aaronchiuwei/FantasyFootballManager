@@ -30,6 +30,7 @@ const SleeperPlayerSchema = z.object({
   status: z.string().nullish(),
   injury_status: z.string().nullish(),
   yahoo_id: z.union([z.string(), z.number()]).nullish(),
+  espn_id: z.union([z.string(), z.number()]).nullish(),
   birth_date: z.string().nullish(),
   active: z.boolean().nullish(),
 });
@@ -45,6 +46,7 @@ export type SleeperPlayer = {
   status: string | null;
   injuryStatus: string | null;
   yahooId: string | null;
+  espnId: string | null;
   birthDate: string | null;
   active: boolean;
 };
@@ -87,6 +89,7 @@ export function parseSleeperPlayers(
       status: p.status ?? null,
       injuryStatus: p.injury_status ?? null,
       yahooId: p.yahoo_id ? String(p.yahoo_id) : null,
+      espnId: p.espn_id ? String(p.espn_id) : null,
       birthDate: p.birth_date ?? null,
       active: p.active ?? true,
     });

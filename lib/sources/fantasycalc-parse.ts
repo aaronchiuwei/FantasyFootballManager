@@ -31,6 +31,8 @@ export type FantasyCalcPlayer = {
   name: string;
   position: string;
   sleeperId: string | null;
+  /** ESPN's own id, when FantasyCalc has one. The ESPN crosswalk's step 1. */
+  espnId: string | null;
   nflTeam: string | null;
   birthday: string | null;
   draftYear: number | null;
@@ -57,6 +59,7 @@ export function parseFantasyCalcValues(raw: unknown[]): FantasyCalcPlayer[] {
       name: p.player.name,
       position: p.player.position,
       sleeperId: p.player.sleeperId ? String(p.player.sleeperId) : null,
+      espnId: p.player.espnId ? String(p.player.espnId) : null,
       nflTeam: p.player.maybeTeam ?? null,
       birthday: p.player.maybeBirthday ?? null,
       draftYear: p.player.maybeDraftInfo?.year ?? null,
