@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { redirect } from "next/navigation";
 
 import type { EspnFormState } from "@/components/leagues/espn-league-form";
@@ -8,6 +9,8 @@ import { importEspnLeague } from "@/lib/leagues/espn";
 import { planEspnConnect } from "@/lib/leagues/espn-input";
 import { EspnAuthRequired } from "@/lib/sources/espn";
 import { saveEspnCookies } from "@/lib/sources/espn-auth";
+import { startInitialSync } from "@/lib/sync/auto";
+import { kickStage } from "@/lib/sync/pipeline";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -49,6 +52,11 @@ export async function connectEspnLeagueAction(
       error: cause instanceof Error ? cause.message : "Something went wrong.",
     };
   }
+
+  // Connecting a league leaves it with teams and nothing else. The sync that
+  // fills it in starts here rather than waiting to be asked for.
+  const pending = await startInitialSync(supabase, user.id, leagueId);
+  if (pending) after(() => kickStage(pending.runId, pending.stageId));
 
   revalidatePath("/leagues");
   revalidatePath("/dashboard");

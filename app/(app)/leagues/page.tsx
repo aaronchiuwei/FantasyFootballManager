@@ -3,7 +3,6 @@ import type { Metadata } from "next";
 import {
   AlertCircle,
   CheckCircle2,
-  ArrowRightIcon,
   PencilLineIcon,
   PlugZapIcon,
 } from "lucide-react";
@@ -16,6 +15,7 @@ import { RailLine } from "@/components/board/rail";
 import { DisconnectEspnButton } from "@/components/leagues/disconnect-espn-button";
 import { DisconnectYahooButton } from "@/components/leagues/disconnect-yahoo-button";
 import { ImportLeagueButton } from "@/components/leagues/import-league-button";
+import { LeagueRow as ManagedLeagueRow } from "@/components/leagues/league-row";
 import { createClient } from "@/lib/supabase/server";
 import { getEspnConnection } from "@/lib/sources/espn-auth";
 import {
@@ -77,7 +77,7 @@ export default async function LeaguesPage({
     supabase
       .from("leagues")
       .select(
-        "id, name, season, num_teams, source, yahoo_league_key, last_synced_at",
+        "id, name, season, num_teams, source, yahoo_league_key, last_synced_at, name_overridden, provider_name",
       )
       .order("season", { ascending: false }),
   ]);
@@ -232,35 +232,35 @@ export default async function LeaguesPage({
         </Panel>
       ) : null}
 
-      <Panel label="Your leagues">
+      <Panel
+        label="Your leagues"
+        note="Rename a board or delete it here. Deleting is permanent — everything computed from a league goes with it."
+      >
         {imported && imported.length > 0 ? (
           <ul className="flex flex-col">
             {imported.map((league, i) => (
               <li key={league.id}>
-                <LeagueRow
-                  name={league.name}
-                  season={league.season}
-                  detail={`${league.num_teams ?? "?"} teams · ${
-                    league.source === "manual"
-                      ? "kept by hand"
-                      : league.source === "espn"
-                        ? "from ESPN"
-                        : "from Yahoo"
-                  }${
-                    league.last_synced_at
-                      ? ` · synced ${new Date(
-                          league.last_synced_at,
-                        ).toLocaleDateString()}`
-                      : ""
-                  }`}
-                  action={
-                    <Button asChild size="sm" variant="outline">
-                      <Link href={`/leagues/${league.id}`}>
-                        Open
-                        <ArrowRightIcon aria-hidden />
-                      </Link>
-                    </Button>
-                  }
+                <ManagedLeagueRow
+                  league={{
+                    id: league.id,
+                    name: league.name,
+                    season: league.season,
+                    nameOverridden: league.name_overridden,
+                    providerName: league.provider_name,
+                    detail: `${league.num_teams ?? "?"} teams · ${
+                      league.source === "manual"
+                        ? "kept by hand"
+                        : league.source === "espn"
+                          ? "from ESPN"
+                          : "from Yahoo"
+                    }${
+                      league.last_synced_at
+                        ? ` · synced ${new Date(
+                            league.last_synced_at,
+                          ).toLocaleDateString()}`
+                        : ""
+                    }`,
+                  }}
                 />
                 {i < imported.length - 1 ? <RailLine /> : null}
               </li>

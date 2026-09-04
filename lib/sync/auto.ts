@@ -4,6 +4,7 @@ import { isManualLeague } from "@/lib/leagues/manual";
 import type { Db } from "@/lib/supabase/db";
 
 import type { StageId } from "./plan";
+import { preflightLeague } from "./preflight";
 import { createRun } from "./run";
 
 /**
@@ -58,6 +59,44 @@ async function rostersMovedSince(
     .limit(1);
 
   return (data ?? []).length > 0;
+}
+
+/**
+ * Opens the first run for a league that has just been created.
+ *
+ * Every league arrives empty: an import writes the league and its teams and
+ * nothing else, and a manual league does not even have a player list to pick
+ * from until Sleeper's master has been pulled. Waiting for the user to ask for
+ * that is asking them to press a button whose only correct answer is yes, and
+ * a board that opens on "no values yet" reads as broken rather than new.
+ *
+ * Preflighted like any other start, so a provider league whose credentials
+ * went stale between the import and this call is refused here rather than
+ * failing five stages later.
+ *
+ * Returns what to kick rather than kicking, because its callers are server
+ * actions that redirect: the run row is written while the session is live, and
+ * the request that starts it belongs after the response.
+ */
+export async function startInitialSync(
+  db: Db,
+  userId: string,
+  leagueId: string,
+): Promise<{ runId: string; stageId: StageId } | null> {
+  const check = await preflightLeague(db, userId, leagueId);
+  if (!check.ok) return null;
+
+  try {
+    const started = await createRun(db, userId, leagueId);
+    return started.alreadyRunning
+      ? null
+      : { runId: started.runId, stageId: started.stageId };
+  } catch {
+    // A league that could not be queued is still a league. Manual boards are
+    // marked dirty and picked up on the next page load; a provider board keeps
+    // its sync button.
+    return null;
+  }
 }
 
 /** Clears the mark. Called by every write that changes what a league is. */
