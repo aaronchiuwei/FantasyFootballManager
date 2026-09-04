@@ -1,12 +1,20 @@
 import { after, NextResponse } from "next/server";
 
 import { isStageId } from "@/lib/sync/plan";
-import { executeStage, verifyRunToken } from "@/lib/sync/pipeline";
+import { runPipeline, verifyRunToken } from "@/lib/sync/pipeline";
 
 export const runtime = "nodejs";
 
-/** §9: keep any single stage under ~60s, which is also Vercel's Node ceiling. */
-export const maxDuration = 60;
+/**
+ * The whole run happens here now, not one stage of it.
+ *
+ * §9 gave each stage its own invocation and its own ~60s; Vercel's loop
+ * detection made that impossible (see `runPipeline`), so the eight stages
+ * share one ceiling instead. 300s is the Node maximum on Vercel Pro; on a plan
+ * capped lower this is clamped, and a run that overruns is reaped as stalled
+ * and resumes from its first unfinished stage rather than starting over.
+ */
+export const maxDuration = 300;
 
 function bearer(request: Request): string | null {
   const header = request.headers.get("authorization");
@@ -14,12 +22,15 @@ function bearer(request: Request): string | null {
 }
 
 /**
- * Runs one stage of a sync.
+ * Runs a sync from `stage` to the end.
  *
- * Machine-to-machine: the previous stage calls this, authenticated by an HMAC
- * over the run id rather than by a session. The work happens in `after()` so
- * the caller's request completes immediately instead of being held open for
- * the length of the stage it just triggered.
+ * Machine-to-machine: whatever started the run calls this once, authenticated
+ * by an HMAC over the run id rather than by a session. The path still names a
+ * stage because that is what makes "retry from here" a plain request for the
+ * stage that failed.
+ *
+ * The work happens in `after()` so the caller's request completes immediately
+ * instead of being held open for the length of the run it just triggered.
  */
 export async function POST(
   request: Request,
@@ -40,6 +51,6 @@ export async function POST(
     return NextResponse.json({ error: "Not authorized." }, { status: 401 });
   }
 
-  after(() => executeStage(runId, stage));
+  after(() => runPipeline(runId, stage));
   return NextResponse.json({ accepted: true, stage });
 }

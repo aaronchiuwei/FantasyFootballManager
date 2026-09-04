@@ -18,10 +18,14 @@ import { STAGE_RUNNERS } from "./stages";
 /**
  * Proof that a stage request came from us.
  *
- * The pipeline chains itself over HTTP because each stage needs its own
- * serverless invocation and its own timeout budget (§9). Those hops carry no
- * cookie session, so they are authorized by an HMAC over the run id — scoped
- * to one run, and derived from a secret the app already has.
+ * The pipeline is started over HTTP so the work happens in an invocation of
+ * its own rather than inside the page render or server action that asked for
+ * it. That single hop carries no cookie session, so it is authorized by an
+ * HMAC over the run id — scoped to one run, and derived from a secret the app
+ * already has.
+ *
+ * Exactly one hop, and that is now load-bearing rather than incidental: see
+ * `runPipeline` for why the stages no longer call each other.
  */
 export function runToken(runId: string): string {
   return signPayload(`sync:${runId}`);
@@ -38,7 +42,7 @@ export function verifyRunToken(runId: string, token: string | null): boolean {
  */
 const KICK_TIMEOUT_MS = 2_000;
 
-/** Hands the next stage to a fresh invocation and stops caring what it says. */
+/** Hands a run to a fresh invocation and stops caring what it says. */
 /**
  * Records a handoff that never landed, on the run it was meant to advance.
  *
@@ -179,10 +183,10 @@ function describe(cause: unknown): string {
  * can offer "retry from here", and the chain simply stops. §9's guarantee is
  * that the stages before it stay committed.
  */
-export async function executeStage(
+async function executeStage(
   runId: string,
   stageId: StageId,
-): Promise<void> {
+): Promise<"continue" | "stop"> {
   const admin = createAdminClient();
   const row = await markStageRunning(admin, runId, stageId);
   const context = contextOf(row);
@@ -197,7 +201,7 @@ export async function executeStage(
       stageId,
       "The sync lost its season context. Start a fresh sync.",
     );
-    return;
+    return "stop";
   }
 
   try {
@@ -209,18 +213,50 @@ export async function executeStage(
     });
 
     await markStageSettled(admin, runId, stageId, outcome);
-
-    const next = nextStage(stageId);
-    if (next) {
-      await kickStage(runId, next);
-      return;
-    }
-
-    await markRunSucceeded(admin, runId);
+    return "continue";
   } catch (cause) {
     const patch: Partial<SyncContext> =
       cause instanceof YahooReauthRequired ? { needsReauth: true } : {};
 
     await markRunFailed(admin, runId, stageId, describe(cause), patch);
+    return "stop";
   }
+}
+
+/**
+ * Runs a sync from `from` to the end, in this one invocation.
+ *
+ * The stages used to hand themselves to each other over HTTP, one invocation
+ * apiece, so that each got its own timeout budget. Vercel will not allow it: a
+ * function that calls its own deployment to continue work is what
+ * `INFINITE_LOOP_DETECTED` exists to stop, and it fires at a call depth of
+ * about four regardless of what the requests are for. This pipeline has eight
+ * stages, so it died at Stats every time, with a 508 that came from the
+ * platform rather than from any route here.
+ *
+ * There is no documented way to opt out, so the chain is gone. What replaces
+ * it keeps the two properties that mattered:
+ *
+ * - **Progress is still per stage.** Each one is marked running, then settled,
+ *   as it happens, so the checklist advances live over Realtime exactly as
+ *   before. Nothing about the UI changed.
+ * - **A timeout is still resumable.** If this invocation is killed part-way,
+ *   the stages that finished stay finished and the run is reaped as stalled;
+ *   "retry from here" then resumes at the first unfinished stage, which is
+ *   what §9 promised and what still happens.
+ *
+ * What it costs is the per-stage timeout budget: all eight now share one
+ * ceiling instead of having one each. That is why the route raised its
+ * `maxDuration`, and why the ordering still puts the cheap reference pulls
+ * before the expensive league work.
+ */
+export async function runPipeline(runId: string, from: StageId): Promise<void> {
+  let stageId: StageId | null = from;
+
+  while (stageId) {
+    if ((await executeStage(runId, stageId)) === "stop") return;
+    stageId = nextStage(stageId);
+  }
+
+  await markRunSucceeded(createAdminClient(), runId);
 }
