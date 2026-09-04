@@ -112,6 +112,13 @@ export async function kickStage(runId: string, stageId: StageId): Promise<void> 
       body: JSON.stringify({ runId }),
       signal: AbortSignal.timeout(KICK_TIMEOUT_MS),
       cache: "no-store",
+      // Never follow a redirect. Nothing this endpoint can legitimately answer
+      // with is a 3xx, and following one is how the missing middleware
+      // exemption stayed hidden: the auth redirect to `/login` was followed to
+      // a perfectly good 200, which read as the stage having started. A
+      // redirect here means something in front of the route answered instead
+      // of the route, and that is a failure whatever it redirects to.
+      redirect: "manual",
     });
 
     // A 2xx means the stage is running and will report on itself. Anything
@@ -126,12 +133,20 @@ export async function kickStage(runId: string, stageId: StageId): Promise<void> 
       const protectedDeployment =
         response.status === 401 && (await isDeploymentProtection(response));
 
+      // `redirect: "manual"` above is what makes this reachable. Followed, a
+      // 307 to /login ends at a cheerful 200 and the kick reads as success —
+      // which is exactly how the missing middleware exemption stayed hidden
+      // for as long as it did.
+      const redirected = response.status >= 300 && response.status < 400;
+
       await recordDeadKick(
         runId,
         stageId,
         protectedDeployment
           ? `Vercel Deployment Protection refused the ${stageId} stage: the app cannot call itself at a protected deployment URL.`
-          : `The sync pipeline answered ${response.status} instead of starting the ${stageId} stage.`,
+          : redirected
+            ? `Something in front of the route redirected the ${stageId} stage (${response.status}) instead of running it — usually auth middleware that has not exempted /api/sync.`
+            : `The sync pipeline answered ${response.status} instead of starting the ${stageId} stage.`,
         protectedDeployment,
       );
     }
