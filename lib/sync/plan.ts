@@ -6,13 +6,14 @@
  * have to agree on them. Everything here is data and arithmetic over data.
  */
 
-/** The eight stages of §9, in the order they run. */
+/** The nine stages of §9, in the order they run. */
 export const STAGE_IDS = [
   "state",
   "players",
   "values",
   "projections",
   "stats",
+  "schedule",
   "yahoo",
   "resolve",
   "compute",
@@ -56,6 +57,11 @@ export const STAGES: StageMeta[] = [
     id: "stats",
     label: "Stats",
     description: "Pulling actuals, and last season for context",
+  },
+  {
+    id: "schedule",
+    label: "Schedule",
+    description: "Pulling the NFL slate and what each defense gives up",
   },
   {
     // The id is `yahoo` because it is written into every `sync_runs` row ever

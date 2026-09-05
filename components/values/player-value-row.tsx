@@ -3,8 +3,10 @@ import { ArrowDownIcon, ArrowUpIcon } from "lucide-react";
 
 import { PlayerHeadshot } from "@/components/players/headshot";
 import { InjuryBadge } from "@/components/players/injury-badge";
+import { SosChip } from "@/components/schedule/sos-chip";
 import { PositionBadge } from "@/components/values/position-badge";
 import { ValueBadge } from "@/components/values/value-badge";
+import type { ScheduleStrength } from "@/lib/schedule/sos";
 import type { Database } from "@/lib/supabase/database.types";
 import { cn } from "@/lib/utils";
 
@@ -44,9 +46,14 @@ function Trend({ value }: { value: number | null }) {
 export function PlayerValueRow({
   row,
   leagueId,
+  sos,
+  sosLabel,
 }: {
   row: ValueRowData;
   leagueId: string;
+  /** This player's schedule over the window the board is set to. */
+  sos: ScheduleStrength | null;
+  sosLabel: string;
 }) {
   return (
     <tr className="group/row transition-colors duration-(--motion-fast) ease-(--ease-out) hover:bg-[color-mix(in_oklch,var(--channel)_38%,transparent)]">
@@ -106,6 +113,10 @@ export function PlayerValueRow({
         {row.projected_pts_ppr === null
           ? "--"
           : Number(row.projected_pts_ppr).toFixed(1)}
+      </td>
+
+      <td className="hidden py-2.5 pr-3 text-right lg:table-cell">
+        <SosChip reading={sos} windowLabel={sosLabel} showRank={false} />
       </td>
 
       <td className="py-2.5 pr-3 text-right">

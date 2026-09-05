@@ -118,7 +118,9 @@ lib/sources/
   sleeper.ts         player master, stats, projections, season clock
   fantasycalc.ts     redraft trade values (Tier A of the value engine)
   dynastyprocess.ts  db_playerids.csv — the yahoo_id / espn_id ↔ sleeper_id bridge
-  csv.ts             minimal RFC-4180 parser, for that one file
+  nfl-schedule.ts    Sleeper's season slate, one row per team per week
+  nflverse.ts        weekly player stats, for exact team/opponent attribution
+  csv.ts             minimal RFC-4180 parser, and a row visitor for the big file
   name-normalize.ts  the name key both sides of the crosswalk join on
 lib/crosswalk/
   similarity.ts      pg_trgm-compatible trigram scoring
@@ -129,12 +131,12 @@ lib/values/
   vor.ts             replacement level, VOR, rest-of-season points
   isotonic.ts        PAVA regression + Spearman, both pure
   engine.ts          Tier A/B, guardrails, provenance — the value engine
-  store.ts           sync stage 8 — the valuation, persisted to player_values
+  store.ts           sync stage 9 — the valuation, persisted to player_values
 lib/sync/
-  plan.ts            the eight stages and the run's shape — pure, shared with the browser
+  plan.ts            the nine stages and the run's shape — pure, shared with the browser
   clock.ts           season-clock arithmetic, pure
   run.ts             sync_runs lifecycle: open, advance, fail, resume
-  stages.ts          what each of the eight stages actually does
+  stages.ts          what each of the nine stages actually does
   market.ts          sync stage 3 — the FantasyCalc board, persisted
   pipeline.ts        stage execution, HMAC-signed chaining
   use-sync-run.ts    the browser's Realtime subscription, dynamically imported
@@ -142,15 +144,18 @@ lib/trades/
   analyze.ts         §6's bonus math and fairness bands — pure, runs in the browser
   saved.ts           the frozen payload a saved trade stores, parsed with Zod
   store.ts           league_settings and saved_trades, plus the analyzer's one read
+lib/schedule/
+  sos.ts             defense grades, slate walking, the rank — pure and tested
+  store.ts           sync stage 6 — the slate and the aggregates; the two boards' read
 lib/needs/
   needs.ts           §7's needs vector — pure, and what Phases 8–9 stand on
   lineup.ts          the best startable lineup, and what a trade does to it — pure
-  store.ts           sync stage 8 — team_needs, persisted; the overview's read
+  store.ts           sync stage 9 — team_needs, persisted; the overview's read
 lib/suggestions/
   search.ts          §9's win-win search and §10's builder — pure, bounded, tested
   cycles.ts          Req. 11's three-team cycle beam search — pure, bounded, tested
   payload.ts         the frozen package a cached suggestion stores, parsed with Zod
-  store.ts           sync stage 8 — trade_suggestions and cycle_suggestions; the builder
+  store.ts           sync stage 9 — trade_suggestions and cycle_suggestions; the builder
 lib/waivers/
   score.ts           §7's `ros × (1 + λ × need)` — pure, runs in the browser
   store.ts           Yahoo's available pool, the needs it is weighted by, and λ
@@ -174,6 +179,7 @@ app/api/sync/          POST to start or resume; POST /[stage] to run one stage
 components/
   players/           identity resolution UI, the stat surface
   values/            value badges, the values board
+  schedule/          the strength-of-schedule stamp the board and the rosters carry
   trade/             the balance beam, the drop zones, the verdict, the lineup delta
   needs/             the positional radar, need and depth chips, the team card
   waivers/           the ranked wire, and the λ slider that tilts it
@@ -464,9 +470,11 @@ joins four tables and pages two hundred rows; this is one player, and the join
 depends on a league's PPR modifier that a view keyed only on the player cannot
 see.
 
-**Where it falls short.** There is no opponent column — nothing in the app maps
-a player to an NFL schedule yet, and §6's bye-week and playoff-schedule work is
-Phase 6's. The prior season is pulled over the NFL's weeks 1–18 rather than the
+**Where it falls short.** The week grid still has no opponent column. The app
+now knows the NFL schedule (see the next section), but a stat line is stored by
+`(player_id, season, week)` with no team on it, so pairing week 6 of 2025 with
+the team that player was on in week 6 of 2025 is exactly the attribution
+problem that section had to go outside for. The prior season is pulled over the NFL's weeks 1–18 rather than the
 league's own window, because the league's *previous* season's start and end
 weeks are not something Yahoo tells us about the current one. And the box score
 is the handful of columns a box score actually uses; the other forty keys
@@ -668,7 +676,7 @@ need(p)       = −z(p)              positive ⇒ weakness
 surplus(p)    = Σ projections of players above the starter requirement
 ```
 
-It is computed once per sync, in stage 8, immediately after the valuation — and
+It is computed once per sync, in stage 9, immediately after the valuation — and
 `lib/needs/needs.ts` is a pure module with no transport and no `server-only`,
 the way `vor.ts` and `analyze.ts` are, because Phases 8 and 9 will optimize
 against these numbers and a bug in here is a bug in every suggestion they make.
@@ -713,7 +721,7 @@ A player with no projection is precisely §5's `floor` tier — no market price 
 nothing to model from. They contribute nothing to a strength that is a sum, and
 without the column that absence is *invisible*, which is the exact failure mode
 §4 spends the entire crosswalk avoiding. So the overview card says so
-underneath the shape, stage 8 raises a warning when more than a tenth of the
+underneath the shape, stage 9 raises a warning when more than a tenth of the
 league's rostered players are unprojected, and the trade page's lineup delta
 names the ones it could not see. The waiver board is the other half of the same
 rule: every row carries its value badge, so a model-priced flyer is legible as
@@ -785,7 +793,7 @@ Three things about the need term, none of them in the plan's one line:
 **"Available" means Yahoo says so.** `player_values` prices roughly six hundred
 players, most of whom Yahoo has never offered in any league, so "not on a
 roster" would be the wrong pool — a recommendation you cannot act on is not a
-recommendation. Stage 6 already parks the top ~150 free agents Yahoo ranks in
+recommendation. Stage 7 already parks the top ~150 free agents Yahoo ranks in
 `yahoo_player_pool`; the `league_free_agents` view joins that to identity by
 running §4's ladder in SQL — the manual override wins, the persisted crosswalk
 answers the rest — and drops anyone who has since been rostered. A Yahoo player
@@ -891,7 +899,7 @@ five runs, this machine:
 
 Roster size does not move that number — 15, 16 and 18 players a team all come
 out identical — because the top-8 cut happens first and everything after it is
-a function of eight. §9's budget for a whole stage is ~60s and stage 8 already
+a function of eight. §9's budget for a whole stage is ~60s and stage 9 already
 spends most of it on the valuation; the search is a rounding error next to that,
 and the stage records its own wall clock into `sync_runs` so a regression says
 so where someone will read it rather than only in a test.
@@ -1031,7 +1039,7 @@ Three decisions inside that:
 ### One is cached, one is not
 
 The win-win search is a fold over every pair of rosters in the league, which is
-the exact shape of work §9 hands to a sync stage — so it runs in stage 8, third,
+the exact shape of work §9 hands to a sync stage — so it runs in stage 9, third,
 after the valuation writes `player_values.ros_points` and the needs vector
 writes `team_needs.surplus_z`, both of which it reads. A page that ran it per
 request would run it identically per request.
@@ -1213,7 +1221,7 @@ the eleven has to say yes. Measured, it costs nothing — see below.
 value windows are *prunes* and provably discard nothing, but the beam is a
 heuristic truncation and an opening just under the cut may close into the best
 cycle in the league and never be looked at. The stats count what was dropped,
-sync stage 8 raises it as a warning, and the numbers are here rather than
+sync stage 9 raises it as a warning, and the numbers are here rather than
 implied.
 
 ### Measured
@@ -1241,7 +1249,7 @@ Roster size barely moves it — 15, 17 and 21 players a team come out within
 of six. §9's win-win search over the same league costs ~35 ms, so the two
 together are under 0.25% of one stage's ~60s budget.
 
-**Which is why it is cached in stage 8 rather than run on demand.** That was the
+**Which is why it is cached in stage 9 rather than run on demand.** That was the
 decision the measurement settled: all twelve anchors is 93 ms, so the sync can
 afford the whole league, and running it for everybody buys the same thing §9's
 board buys by covering every pair — knowing that two *other* managers have an
@@ -1330,10 +1338,143 @@ decision rather than anything the math knows.
 not enforced, nothing knows what has already been offered, and the whole board
 is as stale as the last sync.
 
+## How strength of schedule works
+
+Every player on the overview's rosters and on the values board now carries the
+schedule ahead of him: a stamp saying whether his opponents are soft, level or
+tough, and by how many points a game.
+
+### The reading, in three steps
+
+**Grade every defense.** For one position, take the fantasy points per game
+each of the 32 defenses allowed it. A raw "22.4 allowed" is not comparable
+between a running back and a tight end, so it is standardized across the league
+— `z = (ppg - mean) / sd`, positive meaning softer.
+
+**Walk the team's slate.** For each week in the window, look up the opponent's
+grade at that position. A week with no game is a bye; it is counted and named
+rather than averaged away.
+
+**Rank the 32 slates.** The mean opponent grade is a small number by
+construction — seventeen games regress almost anything toward zero — so the
+figure printed is that mean converted back into points per game
+(`meanZ × sd`), and the rank against the other 31 teams is what makes it
+legible. Measured on the real 2026 slate against 2025 results: the softest
+full-season receiver schedule is +2.3 points a game (Philadelphia) and the
+hardest is −1.9 (Las Vegas), which is a real edge and a small one. Over the
+three playoff weeks alone the same reading runs from +4.5 to −3.6, and 76 of
+the 128 team-position slates land in a different tier than they do over the
+full season — which is why the window is a control rather than a constant.
+
+A player inherits his team's reading at his position, because that is precisely
+what strength of schedule is: a fact about the opponents his team is scheduled
+against, not about him. Kickers and team defenses are not graded — "points
+allowed to opposing kickers" is not a matchup anybody streams on — and a free
+agent has no slate. All three print `--`, never a zero.
+
+### Why a fifth source
+
+The app already stores every player's week-by-week points. It does **not** store
+the team he played for that week: `players.nfl_team` is the team he is on today.
+
+That gap is not academic. Measured against nflverse's own 2025 file, **25.1% of
+last season's skill-position player-weeks were played for a different team than
+the player is on now**, and another 8.9% belong to players who are now free
+agents or retired. Building points-allowed on today's rosters moves a defense
+four to five places out of 32 and drops the rank correlation against the truth
+to 0.83 at quarterback and **0.67 at wide receiver**. That is a
+plausible-looking number that is wrong, which is the one thing §13 asks this app
+not to ship.
+
+So the aggregate comes from
+[nflverse](https://github.com/nflverse/nflverse-data)'s weekly player stats,
+which carry `team` and `opponent_team` on every row. One gzipped file per
+season, 1.2 MB against the plain CSV's 8.6 MB, fetched exactly the way the
+DynastyProcess crosswalk already is: a public file over https, no key, folded by
+a pure function. Measured: 204 ms to decompress and fold 19,422 rows into the
+256 that are kept.
+
+The slate itself is Sleeper's, from `/schedule/nfl/regular/{season}` — the one
+path in this app outside `/v1`. 273 games, 27 KB, stored as **two rows, one per
+team**, because every question asked of it is "who does this team play in week
+N". A bye is then the absence of a row, the same way a missing week is already
+how the stat grid says "no game".
+
+### What is stored, and what is applied on read
+
+```
+nfl_schedule           (season, week, team) → opponent, is_home, kickoff
+nfl_position_scoring   (season, team, position, side) → games, points_std, receptions
+```
+
+`side` is `for` (what this team's players produced) or `against` (what its
+defense allowed). 32 × 4 × 2 = 256 rows a season.
+
+Points are stored in **two pieces, never one**. §1.2's rule is that the league's
+own PPR modifier decides what a line is worth, and one aggregate row is read by
+every league in the app — so what is kept is the reception-free score and the
+reception count, and a league's own figure is `points_std + ppr × receptions`.
+It matters: **21 of the 32 receiver defenses change rank between 0.5 and 1.0
+PPR**, by as much as six places. Dallas is the softest either way, at 33.3
+points a game or 39.3; most of the board behind it is not.
+
+Neither table is keyed to a league, so both are global reference data with the
+same policy `players` and `player_stats` carry: any signed-in user reads, only
+the service role writes.
+
+### The blend, and why it is a pool rather than a switch
+
+Before Week 1 there is no current season to grade, so the prior one is the whole
+answer. After it there are two, and the app pools **points and games** rather
+than averaging two rates:
+
+```
+ppg = (live_points + w × prior_points) / (live_games + w × prior_games)      w = 0.35
+```
+
+Seventeen prior games at 0.35 are worth about six current ones, so the live
+season holds the majority by roughly Week 6 and the whole of it by the end. A
+hard switch at some chosen week would make the board jump on a Tuesday for no
+reason a reader could see; averaging the two rates would let one live game
+against a bad offense count for half a defense's grade.
+
+### The two windows
+
+**Rest of season** runs from the live week to the league's last, which is what a
+roster is a claim on. **Playoff weeks** is the last three weeks of the league's
+own window — the league tells us when it ends but not when its playoffs start,
+so that is an assumption, and it is stated on the surface rather than hidden in
+the code. §6 calls the playoff schedule "a legitimate tiebreaker between
+otherwise-even packages", and the two windows disagree often enough to be worth
+a click: on the 2026 slate, Philadelphia has the softest full-season receiver
+schedule in the league and the third *toughest* over weeks 15–17.
+
+The values board switches windows through the URL, like every other filter on
+it. The overview reads rest of season for all twelve rosters at once, so two
+teams' figures are always against the same board of defenses.
+
+### Where it falls short
+
+- **The grade is season-long, not recent form.** A defense that lost two corners
+  in November reads as the defense it was in September. A trailing-five-weeks
+  variant is the obvious next move and would fit the same table.
+- **Nothing is adjusted for the offenses a defense faced.** A soft-looking unit
+  that drew four elite offenses is over-penalized, and the correction is a
+  ridge regression this app does not have a reason to carry yet.
+- **The playoff window is inferred** from `end_week`, because no provider in the
+  app reports a playoff start week.
+- **`for` rows are written and not yet read.** They are what a team-defense
+  streaming reading would stand on — a DST's schedule is about the offenses it
+  faces, not the defenses — and that is the one rostered position with no stamp.
+- **Two upstreams, both unversioned.** Sleeper's schedule path is undocumented
+  and nflverse's release asset is a file name. Either going away costs the two
+  columns and nothing else: the stage writes global reference rows and no price,
+  needs vector or trade verdict reads them.
+
 ## How the sync works
 
 One button, but not one request. Yahoo's pagination plus a 14.6 MB Sleeper
-payload will not fit in a serverless invocation, so the sync is eight stages
+payload will not fit in a serverless invocation, so the sync is nine stages
 that hand work to each other **through Postgres**, never through memory:
 
 | # | Stage | Work | Skips when |
@@ -1343,9 +1484,10 @@ that hand work to each other **through Postgres**, never through memory:
 | 3 | `values` | The FantasyCalc board for this league's scoring | — |
 | 4 | `projections` | Season totals, plus a projection for every week the league plays | — |
 | 5 | `stats` | Season-to-date actuals, plus last season's game log as context | already stored |
-| 6 | `yahoo` | Settings, standings, teams, rosters, matchups, free agents — from Yahoo or ESPN. The id is historical; every recorded run carries it | — |
-| 7 | `resolve` | The §4 identity ladder over what stage 6 pulled | — |
-| 8 | `compute` | The §5 value engine over everything above, the §7 needs vector over that, §9's win-win search over both, then Req. 11's cycle search once per team | — |
+| 6 | `schedule` | The NFL slate, and what every defense gives up by position | prior season already folded |
+| 7 | `yahoo` | Settings, standings, teams, rosters, matchups, free agents — from Yahoo or ESPN. The id is historical; every recorded run carries it | — |
+| 8 | `resolve` | The §4 identity ladder over what stage 7 pulled | — |
+| 9 | `compute` | The §5 value engine over everything above, the §7 needs vector over that, §9's win-win search over both, then Req. 11's cycle search once per team | — |
 
 `POST /api/sync` opens a `sync_runs` row and kicks stage 1;
 `POST /api/sync/[stage]` runs one stage, records it, and hands the next one to
@@ -1355,8 +1497,8 @@ The work happens in `after()`, so the calling stage's request returns
 immediately rather than being held open for what it triggered.
 
 **The handoff tables are the point.** `market_values` holds the board stage 3
-fetched and `yahoo_player_pool` holds the players stage 6 pulled, so stages 7
-and 8 are pure reads. That is what makes "retry from the failed stage" cheap
+fetched and `yahoo_player_pool` holds the players stage 7 pulled, so stages 8
+and 9 are pure reads. That is what makes "retry from the failed stage" cheap
 and honest: a resolve that broke re-runs without paying the provider's free-agent
 pagination again, and a valuation that broke re-runs without touching any
 external API at all.
@@ -1663,11 +1805,11 @@ them.
 
 | Check | Status |
 |---|---|
-| **Crosswalk ≥95% auto-resolution**, every miss in `unmatched_players` | **Met, and measured.** The name rungs match 191/191 of FantasyCalc's board against its authoritative `sleeperId`. Stage 7 computes the rate per run and raises a warning below 95%; the identity screen shows it against the target. The "never silently dropped" half is structural: an ambiguous match is not a match, and 25 colliding name+position keys in the master make that not hypothetical. |
+| **Crosswalk ≥95% auto-resolution**, every miss in `unmatched_players` | **Met, and measured.** The name rungs match 191/191 of FantasyCalc's board against its authoritative `sleeperId`. Stage 8 computes the rate per run and raises a warning below 95%; the identity screen shows it against the target. The "never silently dropped" half is structural: an ambiguous match is not a match, and 25 colliding name+position keys in the master make that not hypothetical. |
 | **Value engine: rank correlation ≥0.98** on the overlap | **Not met — 0.928, and documented rather than hidden.** Within a position it is far closer (QB 0.971, RB 0.974, WR 0.950, TE 0.865); the gap is cross-position, because one curve has to span a market that prices QBs far below their VOR in a 1QB league. It matters less than the number suggests: the seam clamps pin the whole model tier to the market's floor regardless, and §5's own arithmetic says every trade worth proposing is 100% market-valued. Per-position fits are the known fix. |
 | **Trade analyzer: golden-file tests** on hand-checked adversarial trades | **Met.** `lib/trades/analyze.test.ts` carries the table, including the 4-for-1 packages, the two-superstar swaps and the K/DEF-inflated junk §13 names. The two rows that are Requirement 6 in miniature: 9,000 for four players summing to 9,000 is a *clear winner*; summing to 9,800 is *even*. |
 | **Sync: kill a stage mid-run, confirm resume** | **Met in the code and in one test, not as a drill.** A killed stage cannot record anything, so a silent `running` row is treated as stalled by the UI after 90s and by the next sync after 5min, and resuming reopens the same row from the first unfinished stage. A partial unique index makes two concurrent syncs of one league unrepresentable. What has not happened is somebody actually killing a stage against a live league. |
-| **Seam check: no Tier B player outranks a Tier A player at the same position** | **Met, and enforced rather than asserted.** The clamp is in the engine, and stage 8 re-checks it on every run and writes the result to the stage. |
+| **Seam check: no Tier B player outranks a Tier A player at the same position** | **Met, and enforced rather than asserted.** The clamp is in the engine, and stage 9 re-checks it on every run and writes the result to the stage. |
 
 Two of the five, then, are unqualified passes; two are met with the caveat that
 they have been verified against synthetic or recorded data rather than a live

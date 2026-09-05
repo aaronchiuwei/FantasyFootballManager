@@ -8,11 +8,18 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { Stencil } from "@/components/board/panel";
 import { SyncButton } from "@/components/sync/sync-button";
 import {
   PlayerValueRow,
   type ValueRowData,
 } from "@/components/values/player-value-row";
+import {
+  findReading,
+  loadLeagueSos,
+  type LeagueSos,
+  type SosWindowKey,
+} from "@/lib/schedule/store";
 import { latestRun } from "@/lib/sync/run";
 import { isManualLeague } from "@/lib/leagues/manual";
 import { createClient } from "@/lib/supabase/server";
@@ -36,7 +43,19 @@ const AVAILABILITY = [
   { key: "free", label: "Free agents" },
 ] as const;
 
-type Search = { pos?: string; avail?: string; team?: string; q?: string };
+/** The two schedule windows the board can be read over (§6). */
+const SOS_WINDOWS = [
+  { key: "ros", label: "Rest of season" },
+  { key: "playoffs", label: "Playoff weeks" },
+] as const;
+
+type Search = {
+  pos?: string;
+  avail?: string;
+  team?: string;
+  q?: string;
+  sos?: string;
+};
 
 function href(leagueId: string, search: Search, patch: Search) {
   const params = new URLSearchParams();
@@ -45,6 +64,7 @@ function href(leagueId: string, search: Search, patch: Search) {
   if (merged.avail && merged.avail !== "all") params.set("avail", merged.avail);
   if (merged.team) params.set("team", merged.team);
   if (merged.q) params.set("q", merged.q);
+  if (merged.sos && merged.sos !== "ros") params.set("sos", merged.sos);
   const query = params.toString();
   return `/leagues/${leagueId}/values${query ? `?${query}` : ""}`;
 }
@@ -91,6 +111,31 @@ function Stat({
   );
 }
 
+/**
+ * Where the SOS column's numbers come from, said out loud on the surface that
+ * prints them. A schedule reading is an average of opponent defenses, and
+ * "which defenses, measured over what" is the whole of its credibility.
+ */
+function sosNote(sos: LeagueSos, key: SosWindowKey): string {
+  const weeks = sos.windows[key].weeks;
+  const span =
+    weeks.length === 0
+      ? "no weeks"
+      : weeks.length === 1
+        ? `week ${weeks[0]}`
+        : `weeks ${weeks[0]} to ${weeks[weeks.length - 1]}`;
+
+  const older = sos.seasons.filter((year) => year !== sos.season);
+  const graded =
+    sos.liveGames === 0
+      ? `${sos.seasons.join(" and ")} results`
+      : older.length === 0
+        ? `${sos.season} results so far`
+        : `${sos.season} results so far, pooled with ${older.join(" and ")}`;
+
+  return `Points per game the opponents in ${span} give up to that position, against what the average defense gives up. Graded on ${graded}.`;
+}
+
 function freshness(timestamp: string | null) {
   if (!timestamp) return "never computed";
   const hours = (Date.now() - Date.parse(timestamp)) / 3_600_000;
@@ -112,7 +157,9 @@ export default async function ValuesPage({
 
   const { data: league } = await supabase
     .from("leagues")
-    .select("id, name, season, source")
+    .select(
+      "id, name, season, source, ppr, current_week, start_week, end_week",
+    )
     .eq("id", id)
     .maybeSingle();
 
@@ -128,6 +175,8 @@ export default async function ValuesPage({
   const teamId = search.team && UUID.test(search.team) ? search.team : null;
   const typed = searchLabel(search.q);
   const pattern = searchPattern(search.q);
+  const sosKey: SosWindowKey =
+    SOS_WINDOWS.find((entry) => entry.key === search.sos)?.key ?? "ros";
 
   const { data: filteredTeam } = teamId
     ? await supabase
@@ -168,6 +217,7 @@ export default async function ValuesPage({
   };
 
   const [
+    sos,
     { data: rows, error },
     { count: valued },
     { count: marketCount },
@@ -176,6 +226,14 @@ export default async function ValuesPage({
     { count: rosterCount },
     { count: valuedRostered },
   ] = await Promise.all([
+    loadLeagueSos(supabase, {
+      season: league.season,
+      priorSeason: league.season - 1,
+      ppr: Number(league.ppr),
+      currentWeek: league.current_week,
+      startWeek: league.start_week,
+      endWeek: league.end_week,
+    }),
     query,
     counts(),
     counts("market"),
@@ -306,6 +364,9 @@ export default async function ValuesPage({
             {filteredTeam ? (
               <input type="hidden" name="team" value={filteredTeam.id} />
             ) : null}
+            {sosKey !== "ros" ? (
+              <input type="hidden" name="sos" value={sosKey} />
+            ) : null}
 
             <div className="relative min-w-0 flex-1 sm:max-w-sm">
               <SearchIcon
@@ -379,6 +440,30 @@ export default async function ValuesPage({
             ) : null}
           </div>
 
+          {/* The schedule column reads over a window, and which window is the
+              whole question: a slate that is level across seventeen weeks is
+              routinely brutal or free across the three that decide the title.
+              A link rather than a control, like every other filter here. */}
+          {sos.ready ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <Stencil>Schedule</Stencil>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {SOS_WINDOWS.map((entry) => (
+                  <FilterLink
+                    key={entry.key}
+                    href={href(league.id, search, { sos: entry.key })}
+                    active={sosKey === entry.key}
+                  >
+                    {entry.label}
+                  </FilterLink>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {sosNote(sos, sosKey)}
+              </p>
+            </div>
+          ) : null}
+
           {error ? (
             <Alert variant="destructive">
               <AlertTriangle />
@@ -439,6 +524,9 @@ export default async function ValuesPage({
                     <th className="hidden py-2 pr-3 text-right font-semibold md:table-cell">
                       Proj
                     </th>
+                    <th className="hidden py-2 pr-3 text-right font-semibold lg:table-cell">
+                      SOS
+                    </th>
                     <th className="py-2 pr-3 text-right font-semibold">Value</th>
                     <th className="py-2 text-right font-semibold">Source</th>
                   </tr>
@@ -449,6 +537,12 @@ export default async function ValuesPage({
                       key={row.player_id}
                       row={row as ValueRowData}
                       leagueId={league.id}
+                      sos={findReading(
+                        sos.windows[sosKey].readings,
+                        row.nfl_team,
+                        row.position,
+                      )}
+                      sosLabel={sos.windows[sosKey].label}
                     />
                   ))}
                 </tbody>

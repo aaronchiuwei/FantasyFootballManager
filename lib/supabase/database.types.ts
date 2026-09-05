@@ -420,6 +420,53 @@ export type Database = {
         >;
         Relationships: [];
       };
+      nfl_schedule: {
+        Row: {
+          season: number;
+          week: number;
+          team: string;
+          opponent: string;
+          is_home: boolean;
+          kickoff: string | null;
+        };
+        Insert: {
+          season: number;
+          week: number;
+          team: string;
+          opponent: string;
+          is_home: boolean;
+          kickoff?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["nfl_schedule"]["Insert"]>;
+        Relationships: [];
+      };
+      nfl_position_scoring: {
+        Row: {
+          season: number;
+          team: string;
+          position: string;
+          /** 'for' = produced by this team, 'against' = allowed by its defense. */
+          side: string;
+          games: number;
+          points_std: number;
+          receptions: number;
+          computed_at: string;
+        };
+        Insert: {
+          season: number;
+          team: string;
+          position: string;
+          side: string;
+          games?: number;
+          points_std?: number;
+          receptions?: number;
+          computed_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["nfl_position_scoring"]["Insert"]
+        >;
+        Relationships: [];
+      };
       league_settings: {
         Row: {
           league_id: string;
