@@ -179,7 +179,8 @@ app/api/sync/          POST to start or resume; POST /[stage] to run one stage
 components/
   players/           identity resolution UI, the stat surface
   values/            value badges, the values board
-  schedule/          the strength-of-schedule stamp the board and the rosters carry
+  schedule/          the strength-of-schedule stamp the board and the rosters
+                     carry, and the player page's week-by-week slate
   trade/             the balance beam, the drop zones, the verdict, the lineup delta
   needs/             the positional radar, need and depth chips, the team card
   waivers/           the ranked wire, and the λ slider that tilts it
@@ -470,11 +471,12 @@ joins four tables and pages two hundred rows; this is one player, and the join
 depends on a league's PPR modifier that a view keyed only on the player cannot
 see.
 
-**Where it falls short.** The week grid still has no opponent column. The app
-now knows the NFL schedule (see the next section), but a stat line is stored by
-`(player_id, season, week)` with no team on it, so pairing week 6 of 2025 with
-the team that player was on in week 6 of 2025 is exactly the attribution
-problem that section had to go outside for. The prior season is pulled over the NFL's weeks 1–18 rather than the
+**Where it falls short.** The week grid carries an opponent column for the
+current season only. A stat line is stored by `(player_id, season, week)` with
+no team on it, so pairing week 6 of 2025 with the team that player was on in
+week 6 of 2025 is exactly the attribution problem the schedule section had to
+go outside for; the past season's log prints no opponent and says why rather
+than guessing one off today's roster. The prior season is pulled over the NFL's weeks 1–18 rather than the
 league's own window, because the league's *previous* season's start and end
 weeks are not something Yahoo tells us about the current one. And the box score
 is the handful of columns a box score actually uses; the other forty keys
@@ -1453,6 +1455,26 @@ The values board switches windows through the URL, like every other filter on
 it. The overview reads rest of season for all twelve rosters at once, so two
 teams' figures are always against the same board of defenses.
 
+### The player page reads it week by week
+
+A stamp is the right size for two hundred names and the wrong size for the
+screen about one man, so the player page gets the thing the stamp is an average
+of. A `Schedule` panel carries both windows spelled out in a sentence, then the
+league's whole slate as a strip: one cell a week, the opponent, and what that
+defense gives up, tinted by tier, with byes named and played weeks dimmed.
+
+**A week and a season are different claims and are tiered differently.** The
+season reading ranks a team's whole slate against the other 31 slates; a week
+ranks that Sunday's opponent against the other 31 defenses. They disagree
+constantly, which is the point — a level slate is routinely three soft weeks
+and three brutal ones, and a manager setting a lineup is asking the second
+question, not the first.
+
+The game log grew an `Opp` column beside the points, so a line reads against
+the defense it was scored on. Current season only: for a past one the slate is
+knowable but which team the player lined up for in a given week of it is not,
+and the column says so rather than printing a guess.
+
 ### Where it falls short
 
 - **The grade is season-long, not recent form.** A defense that lost two corners
@@ -1463,6 +1485,8 @@ teams' figures are always against the same board of defenses.
   ridge regression this app does not have a reason to carry yet.
 - **The playoff window is inferred** from `end_week`, because no provider in the
   app reports a playoff start week.
+- **The prior season's game log has no opponent**, for the same attribution
+  reason the grades are folded from nflverse rather than from our own stats.
 - **`for` rows are written and not yet read.** They are what a team-defense
   streaming reading would stand on — a DST's schedule is about the offenses it
   faces, not the defenses — and that is the one rostered position with no stamp.

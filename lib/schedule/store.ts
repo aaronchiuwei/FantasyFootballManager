@@ -177,6 +177,7 @@ export type LeagueSos = {
 };
 
 const WINDOW_LABELS: Record<SosWindowKey, string> = {
+  season: "Full season",
   ros: "Rest of season",
   playoffs: "Playoff weeks",
 };
@@ -241,7 +242,11 @@ export async function loadLeagueSos(
     season: clock.season,
     seasons: board.seasons,
     liveGames: board.liveGames,
-    windows: { ros: build("ros"), playoffs: build("playoffs") },
+    windows: {
+      season: build("season"),
+      ros: build("ros"),
+      playoffs: build("playoffs"),
+    },
     ready,
   };
 }
