@@ -364,12 +364,12 @@ export async function computeCycleSuggestions(
 
   // The beam is a truncation, not a prune, so what it threw away is a claim the
   // user is owed rather than an implementation detail (§5's rule, applied to a
-  // search instead of a value).
-  if (stats.dropped > 0) {
-    warnings.push(
-      `The three-team beam looked at ${stats.beam.toLocaleString()} openings and set aside ${stats.dropped.toLocaleString()}. A beam search is not exhaustive and can miss a cycle that exists.`,
-    );
-  }
+  // search instead of a value) — but it is a *standing* claim, not a per-run
+  // one. The beam binds on nearly every sync of a real league, so raising it as
+  // a warning made it wallpaper: a triangle on every add and drop, next to
+  // warnings that mean something went wrong. `stats` carries the cut, and the
+  // compute stage quotes it in its detail line where the rest of the search's
+  // cost is already reported.
 
   return {
     cycles: rows.length,

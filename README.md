@@ -1222,9 +1222,10 @@ the eleven has to say yes. Measured, it costs nothing — see below.
 **A beam is not exhaustive.** This is the part that has to be said plainly: the
 value windows are *prunes* and provably discard nothing, but the beam is a
 heuristic truncation and an opening just under the cut may close into the best
-cycle in the league and never be looked at. The stats count what was dropped,
-sync stage 9 raises it as a warning, and the numbers are here rather than
-implied.
+cycle in the league and never be looked at. The stats count what was dropped and
+sync stage 9 quotes the cut in its detail line — not as a warning, because the
+beam binds on nearly every run and a triangle raised on every sync is one nobody
+reads — and the numbers are here rather than implied.
 
 ### Measured
 
