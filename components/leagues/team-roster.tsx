@@ -5,9 +5,26 @@ import { Badge } from "@/components/ui/badge";
 import { Stencil } from "@/components/board/panel";
 import { EmptySeat, RailLine } from "@/components/board/rail";
 import { InjuryBadge } from "@/components/players/injury-badge";
+import { SosChip } from "@/components/schedule/sos-chip";
 import { PositionBadge } from "@/components/values/position-badge";
 import type { RosterBand, RosterPlayer, TeamRoster } from "@/lib/leagues/rosters";
+import {
+  averageReading,
+  findReading,
+  type ScheduleStrength,
+} from "@/lib/schedule/sos";
 import { cn } from "@/lib/utils";
+
+/**
+ * One window of schedule readings, handed down from the page so that every
+ * roster on the board is read over the same weeks and against the same board
+ * of defenses. Deliberately the plain map rather than the store's own type:
+ * this component does no I/O and should not be able to.
+ */
+export type SosLens = {
+  label: string;
+  readings: Map<string, ScheduleStrength>;
+};
 
 /** Everything a roster column needs to name the team holding it. */
 export type RosterTeam = {
@@ -42,10 +59,16 @@ const BANDS: { key: RosterBand; label: string }[] = [
 function RosterRow({
   player,
   leagueId,
+  sos,
 }: {
   player: RosterPlayer;
   leagueId: string;
+  sos: SosLens | null;
 }) {
+  const reading = sos
+    ? findReading(sos.readings, player.nflTeam, player.position)
+    : null;
+
   return (
     <div className="flex items-center gap-2.5 py-1.5">
       <PositionBadge position={player.position} />
@@ -62,10 +85,23 @@ function RosterRow({
           </Link>
           <InjuryBadge status={player.injuryStatus} />
         </div>
-        <p className="stencil truncate text-chalk-dim">
-          {player.nflTeam ?? "FA"}
-          {player.slot ? ` · ${player.slot}` : ""}
-        </p>
+        <div className="flex min-w-0 items-center gap-2">
+          <p className="stencil min-w-0 truncate text-chalk-dim">
+            {player.nflTeam ?? "FA"}
+            {player.slot ? ` · ${player.slot}` : ""}
+          </p>
+          {/* Only where there is something to say. A values-board cell prints
+              "--" because a column has to stay aligned to be scanned; an
+              inline meta line has no column, so a kicker, a defense and a free
+              agent simply carry no stamp. */}
+          {sos && reading ? (
+            <SosChip
+              reading={reading}
+              windowLabel={sos.label}
+              showRank={false}
+            />
+          ) : null}
+        </div>
       </div>
 
       <span
@@ -99,13 +135,26 @@ export function TeamRosterColumn({
   team,
   roster,
   leagueId,
+  sos = null,
 }: {
   team: RosterTeam;
   /** Absent when the roster has not been read yet, which the column says. */
   roster: TeamRoster | undefined;
   leagueId: string;
+  /** Null before the schedule has ever been synced, which the board says. */
+  sos?: SosLens | null;
 }) {
   const players = roster?.players ?? [];
+
+  // The lineup's schedule, not the whole roster's: a bench receiver's slate is
+  // a reason to hold him, but it is not what this team scores on Sunday.
+  const lineup = sos
+    ? averageReading(
+        players
+          .filter((player) => player.band === "starting")
+          .map((player) => findReading(sos.readings, player.nflTeam, player.position)),
+      )
+    : null;
 
   return (
     <section
@@ -179,6 +228,16 @@ export function TeamRosterColumn({
               <div key={band.key} className="flex flex-col">
                 <div className="flex items-baseline justify-between gap-2 pt-2 pb-1">
                   <Stencil>{band.label}</Stencil>
+                  {band.key === "starting" && lineup && sos ? (
+                    <Stencil
+                      data-numeric
+                      title={`The ${lineup.graded} graded starters face defenses giving up ${lineup.pointsPerGame >= 0 ? "" : "-"}${Math.abs(lineup.pointsPerGame).toFixed(1)} points a game ${lineup.pointsPerGame >= 0 ? "more" : "less"} than average over the ${sos.label.toLowerCase()}.`}
+                      className="ml-auto tabular-nums"
+                    >
+                      Schedule {lineup.pointsPerGame >= 0 ? "+" : "-"}
+                      {Math.abs(lineup.pointsPerGame).toFixed(1)}
+                    </Stencil>
+                  ) : null}
                   <Stencil data-numeric className="tabular-nums">
                     {held.length}
                   </Stencil>
@@ -189,6 +248,7 @@ export function TeamRosterColumn({
                     key={player.playerId}
                     player={player}
                     leagueId={leagueId}
+                    sos={sos}
                   />
                 ))}
               </div>

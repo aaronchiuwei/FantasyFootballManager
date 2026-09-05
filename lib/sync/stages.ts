@@ -16,6 +16,7 @@ import {
   SEASON_TOTAL_WEEK,
   syncStatLines,
 } from "@/lib/players/stats";
+import { syncNflSchedule, syncPositionScoring } from "@/lib/schedule/store";
 import {
   fetchEspnFreeAgents,
   fetchEspnMatchups,
@@ -59,7 +60,7 @@ function hoursAgo(ms: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// the eight stages of §9
+// the nine stages of §9
 // ---------------------------------------------------------------------------
 
 /**
@@ -67,7 +68,7 @@ function hoursAgo(ms: number): string {
  * keyed on, resolved once and written to the run's context.
  *
  * Settings are read from the stored league row rather than from Yahoo, because
- * stage 6 is what refreshes them. A league whose scoring changed mid-season
+ * stage 7 is what refreshes them. A league whose scoring changed mid-season
  * therefore prices on the previous settings for exactly one sync — a real but
  * tiny lag, and the alternative is asking Yahoo for settings twice per run.
  */
@@ -119,7 +120,7 @@ const state: StageRunner = async ({ db, leagueId }) => {
     ppr: Number(league.ppr),
   };
 
-  // A Yahoo league is told what week it is by Yahoo, in stage 6. A manual
+  // A Yahoo league is told what week it is by Yahoo, in stage 7. A manual
   // league has nobody to tell it, so the season clock this stage just read is
   // the answer — written back to the row here rather than typed into a form,
   // because "what week is it" is a fact about today and a form answer goes
@@ -269,7 +270,70 @@ const stats: StageRunner = async ({ db, context }) => {
 };
 
 /**
- * Stage 6. Everything the league's provider knows: settings, standings, teams,
+ * Stage 6. The NFL slate, and how much each defense gives up by position.
+ *
+ * Both halves of a strength-of-schedule reading, and neither is a fact about
+ * any one league -- what a league contributes is its own PPR modifier, applied
+ * when a surface reads the aggregate back. So this stage writes global
+ * reference rows exactly as stages 2, 4 and 5 do, and every league that syncs
+ * after it gets the benefit.
+ *
+ * It sits behind the stats stage and ahead of the league one because it needs
+ * nothing from either: the schedule is Sleeper's and the aggregate is
+ * nflverse's. That independence is the point -- a failure here costs a column
+ * on two screens and nothing else, so it never blocks a price.
+ *
+ * Why nflverse rather than the game log this app already stores: a
+ * points-allowed table needs the team a player lined up for in *that* week,
+ * and `players.nfl_team` is the team he is on today. Measured against
+ * nflverse's own 2025 file, a quarter of last season's skill-position
+ * player-weeks were played elsewhere, which moves a defense four or five
+ * places and drops the rank correlation to 0.67 at wide receiver.
+ */
+const schedule: StageRunner = async ({ db, context }) => {
+  const slate = await syncNflSchedule(db, [context.season]);
+  const scoring = await syncPositionScoring(db, {
+    season: context.season,
+    priorSeason: context.priorSeason,
+    liveSeason: context.liveSeason,
+  });
+
+  const warnings: string[] = [];
+  if (slate.rows === 0) {
+    warnings.push(
+      `Sleeper has not published the ${context.season} slate yet, so no schedule reading can be shown.`,
+    );
+  }
+  if (scoring.seasons.length === 0 && scoring.skipped.length === 0) {
+    warnings.push(
+      "No season of nflverse weekly stats landed, so every defense is ungraded and the schedule columns stay blank.",
+    );
+  }
+
+  const parts = [
+    slate.rows === 0
+      ? `no ${context.season} slate published`
+      : `${n(slate.rows)} team-weeks of the ${context.season} slate`,
+  ];
+
+  if (scoring.seasons.length > 0) {
+    parts.push(
+      `${n(scoring.rows)} scoring rows for ${scoring.seasons.join(" and ")}`,
+    );
+  }
+  if (scoring.skipped.length > 0) {
+    parts.push(`${scoring.skipped.join(", ")} already folded`);
+  }
+
+  return {
+    detail: parts.join(" · "),
+    skipped: slate.rows === 0 && scoring.rows === 0,
+    warnings,
+  };
+};
+
+/**
+ * Stage 7. Everything the league's provider knows: settings, standings, teams,
  * rosters, matchups and the top of the free-agent pool.
  *
  * Two providers, one stage, because what they return is the same four things
@@ -348,7 +412,7 @@ const yahoo: StageRunner = async ({ db, userId, leagueId, context }) => {
   // The settings this stage just refreshed are the ones stage 1 read *before*
   // it ran, so without this every later stage spends the rest of the run on
   // the previous sync's answer. That was documented as "a real but tiny lag",
-  // and it is neither: stage 8 prices rest-of-season points off
+  // and it is neither: stage 9 prices rest-of-season points off
   // `weeksRemaining`, so a league whose week window or scoring changed had one
   // entire sync of quietly wrong values — and the checklist reported the old
   // number while the database already held the new one, which reads as the
@@ -400,7 +464,7 @@ async function refreshedSettings(
   };
 }
 
-/** Stage 7. The §4 resolution ladder over the pool stage 6 parked. */
+/** Stage 8. The §4 resolution ladder over the pool stage 7 parked. */
 const resolve: StageRunner = async ({ db, leagueId, context }) => {
   // §4's ladder exists to turn a provider's player id into one of ours. A
   // manual roster was built by picking players off the master list, so every
@@ -444,7 +508,7 @@ const resolve: StageRunner = async ({ db, leagueId, context }) => {
 };
 
 /**
- * Stage 8. The §5 value engine over everything the earlier stages landed, then
+ * Stage 9. The §5 value engine over everything the earlier stages landed, then
  * the §7 needs vector over that, then §9's win-win search over both — and since
  * Phase 9, §7's three-team cycle search after that.
  *
@@ -499,13 +563,13 @@ const compute: StageRunner = async ({ db, leagueId, context }) => {
   // that is never measured is a bound nobody knows they have crossed.
   if (suggestions.elapsedMs > 15_000) {
     warnings.push(
-      `The win-win search took ${(suggestions.elapsedMs / 1000).toFixed(1)}s over ${suggestions.pairs} team pairs. Stage 8's budget is ~60s in total.`,
+      `The win-win search took ${(suggestions.elapsedMs / 1000).toFixed(1)}s over ${suggestions.pairs} team pairs. Stage 9's budget is ~60s in total.`,
     );
   }
 
   if (cycles.elapsedMs > 15_000) {
     warnings.push(
-      `The three-team search took ${(cycles.elapsedMs / 1000).toFixed(1)}s over ${cycles.anchors} anchors. Stage 8's budget is ~60s in total.`,
+      `The three-team search took ${(cycles.elapsedMs / 1000).toFixed(1)}s over ${cycles.anchors} anchors. Stage 9's budget is ~60s in total.`,
     );
   }
 
@@ -525,6 +589,7 @@ export const STAGE_RUNNERS: Record<StageId, StageRunner> = {
   values,
   projections,
   stats,
+  schedule,
   yahoo,
   resolve,
   compute,

@@ -32,7 +32,7 @@ function run(stages: StageState[], overrides: Partial<SyncRun> = {}): SyncRun {
 
 describe("the stage plan", () => {
   it("describes every stage of §9 exactly once, in order", () => {
-    expect(STAGE_IDS).toHaveLength(8);
+    expect(STAGE_IDS).toHaveLength(9);
     expect(STAGES.map((stage) => stage.id)).toEqual([...STAGE_IDS]);
     expect(new Set(STAGE_IDS).size).toBe(STAGE_IDS.length);
   });
@@ -54,7 +54,7 @@ describe("progress", () => {
     stages = patchStage(stages, "state", { status: "done" });
     stages = patchStage(stages, "players", { status: "skipped" });
 
-    expect(progressOf(stages)).toBeCloseTo(0.25);
+    expect(progressOf(stages)).toBeCloseTo(2 / STAGE_IDS.length);
   });
 
   it("is zero on a fresh run and one on a finished one", () => {
@@ -168,6 +168,6 @@ describe("toSyncRun", () => {
 
     expect(mapped.leagueId).toBe("league-1");
     expect(mapped.status).toBe("succeeded");
-    expect(mapped.stages).toHaveLength(8);
+    expect(mapped.stages).toHaveLength(STAGE_IDS.length);
   });
 });

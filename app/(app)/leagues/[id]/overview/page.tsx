@@ -12,6 +12,7 @@ import { TeamRosterColumn } from "@/components/leagues/team-roster";
 import { startingStrength } from "@/lib/needs/needs";
 import { loadLeagueNeeds } from "@/lib/needs/store";
 import { loadLeagueRosters } from "@/lib/leagues/rosters";
+import { loadLeagueSos } from "@/lib/schedule/store";
 import { latestRun } from "@/lib/sync/run";
 import { isManualLeague } from "@/lib/leagues/manual";
 import { createClient } from "@/lib/supabase/server";
@@ -24,6 +25,13 @@ export const metadata: Metadata = { title: "League overview" };
  * has to wait out is decoration, not comprehension.
  */
 const STAGGER_MS = 60;
+
+/** "weeks 1 to 17", or the single week a league has left. */
+function scheduleSpan(weeks: number[]): string {
+  if (weeks.length === 0) return "no remaining weeks";
+  if (weeks.length === 1) return `week ${weeks[0]}`;
+  return `weeks ${weeks[0]} to ${weeks[weeks.length - 1]}`;
+}
 
 function freshness(timestamp: string | null) {
   if (!timestamp) return "never computed";
@@ -43,7 +51,9 @@ export default async function OverviewPage({
 
   const { data: league } = await supabase
     .from("leagues")
-    .select("id, name, season, source")
+    .select(
+      "id, name, season, source, ppr, current_week, start_week, end_week",
+    )
     .eq("id", id)
     .maybeSingle();
 
@@ -51,11 +61,31 @@ export default async function OverviewPage({
 
   const manual = isManualLeague(league.source);
 
-  const [needs, rosters, run] = await Promise.all([
+  const [needs, rosters, run, sos] = await Promise.all([
     loadLeagueNeeds(supabase, league.id),
     loadLeagueRosters(supabase, league.id),
     latestRun(supabase, league.id),
+    loadLeagueSos(supabase, {
+      season: league.season,
+      priorSeason: league.season - 1,
+      ppr: Number(league.ppr),
+      currentWeek: league.current_week,
+      startWeek: league.start_week,
+      endWeek: league.end_week,
+    }),
   ]);
+
+  // Every roster on this board is read over the same window and against the
+  // same board of defenses, so two teams' figures are comparable. Rest of
+  // season is the default because that is what a roster is a claim on; the
+  // playoff window is one click away on the values board.
+  const lens = sos.ready
+    ? { label: sos.windows.ros.label, readings: sos.windows.ros.readings }
+    : null;
+
+  const sosNote = lens
+    ? ` Each plate also carries the schedule ahead of it: points per game its opponents give up to that position, against what the average defense gives up over ${scheduleSpan(sos.windows.ros.weeks)}.`
+    : "";
 
   // Ranked by what the rosters project rather than by the standings, because
   // that is the question this screen answers and the standings are one column
@@ -153,7 +183,7 @@ export default async function OverviewPage({
       {needs.teams.length > 0 ? (
         <Panel
           label={`Rosters · ${needs.teams.length} teams · ${rostered} players`}
-          note="Every roster in the league, in standings order. Starters first, then the bench, then reserve. Figures are this league's own player values; open a name for their season and week-by-week stats."
+          note={`Every roster in the league, in standings order. Starters first, then the bench, then reserve. Figures are this league's own player values; open a name for their season and week-by-week stats.${sosNote}`}
         >
           {rostered === 0 ? (
             <p className="max-w-[68ch] text-sm leading-relaxed text-muted-foreground">
@@ -169,6 +199,7 @@ export default async function OverviewPage({
                   team={team}
                   roster={rosters.get(team.id)}
                   leagueId={league.id}
+                  sos={lens}
                 />
               ))}
             </div>
