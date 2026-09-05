@@ -107,7 +107,8 @@
  * exact — it is a heuristic truncation. An opening just under the cut may close
  * into the best cycle in the league and never be looked at. The stats count
  * what was dropped so the UI can say so rather than implying the list is
- * complete.
+ * complete — stage 9's detail line quotes the cut, which is where a fact that
+ * holds on every run belongs, rather than a warning raised on every sync.
  *
  * One more cut on top of it, for a reason that is about people rather than
  * search: a plain top-50 collapses onto a single partner, because if manager B

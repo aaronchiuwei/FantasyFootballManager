@@ -3,7 +3,9 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 
 import type { RosterSlot } from "@/lib/sources/yahoo-parse";
+import { normalizePosition } from "@/lib/crosswalk/resolve";
 import { setUsersTeam as writeUsersTeam } from "@/lib/leagues/my-team";
+import { slotFits } from "@/lib/needs/lineup";
 import { markLeagueDirty } from "@/lib/sync/auto";
 import type { Db } from "@/lib/supabase/db";
 import type { Json } from "@/lib/supabase/database.types";
@@ -346,6 +348,14 @@ export async function teamIdsOf(db: Db, leagueId: string): Promise<string[]> {
  * league where that happened would double-count him in every needs vector and
  * offer him in trades from both sides. One owner per player, per league, is an
  * invariant this function is the only writer of.
+ *
+ * It is the only writer of a second one: a player is in a slot his position can
+ * fill, or he is on the bench. The roster editor's menu already offers nothing
+ * else, but a menu is a courtesy and this is the rule — the same `slotFits` the
+ * menu filters with, so the two cannot drift apart. What it buys is `is_starter`
+ * meaning what it says. `bestLineup` never trusted the stored slot, so a running
+ * back parked at QB was not scored as a quarterback; he was counted a starter on
+ * every screen that totals them while holding a seat he could never take.
  */
 export async function setRosterEntry(
   db: Db,
@@ -358,6 +368,8 @@ export async function setRosterEntry(
 
   const teamIds = await teamIdsOf(db, leagueId);
   if (!teamIds.includes(teamId)) throw new Error("That team is not in this league.");
+
+  if (slot !== null) await requireSlotFits(db, playerId, slot);
 
   const others = teamIds.filter((id) => id !== teamId);
   if (others.length > 0) {
@@ -386,6 +398,34 @@ export async function setRosterEntry(
 
   if (error) throw new Error(`Could not save the roster: ${error.message}`);
   await markLeagueDirty(db, leagueId);
+}
+
+/**
+ * Refuses a slot the player's position cannot fill.
+ *
+ * Permissive in the two places the UI is, and for the same reasons: the bench,
+ * IR and any slot spelling this app does not read as starting hold anyone, and
+ * a player whose position is missing is refused nowhere, because refusing him
+ * would be a claim with nothing behind it. A player id with no row is left to
+ * the foreign key, which has a better error for it than a guess here would.
+ */
+async function requireSlotFits(
+  db: Db,
+  playerId: number,
+  slot: string,
+): Promise<void> {
+  const { data, error } = await db
+    .from("players")
+    .select("full_name, position")
+    .eq("id", playerId)
+    .maybeSingle();
+
+  if (error) throw new Error(`Could not read the player: ${error.message}`);
+  if (!data || slotFits(slot, data.position)) return;
+
+  throw new Error(
+    `${data.full_name} is a ${normalizePosition(data.position)} and cannot start at ${slot}.`,
+  );
 }
 
 export async function removeRosterEntry(

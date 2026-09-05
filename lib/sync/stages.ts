@@ -575,10 +575,20 @@ const compute: StageRunner = async ({ db, leagueId, context }) => {
 
   const modelled = report.bySource.model + report.bySource.model_capped;
 
+  // The beam's cut is reported here rather than as a warning: it binds on
+  // nearly every run, so it is a standing property of the search and not
+  // something that went wrong on this one. §7's honesty is still paid — the
+  // number is on the record, next to the cost it bought.
+  const cut = cycles.stats.dropped;
+  const beamDetail =
+    cut > 0
+      ? `, beam kept ${n(cycles.stats.beam)} of ${n(cycles.stats.beam + cut)} openings`
+      : "";
+
   return {
     detail: `${n(report.valued)} valued · ${n(report.bySource.market)} market, ${n(modelled)} modelled${
       report.bySource.floor ? `, ${n(report.bySource.floor)} unvalued` : ""
-    } · needs read for ${needs.teams} team${needs.teams === 1 ? "" : "s"} · ${n(suggestions.suggestions)} win-win trades across ${n(suggestions.pairs)} pairs in ${suggestions.elapsedMs}ms · ${n(cycles.cycles)} three-team trades for ${cycles.anchorsWithCycles}/${cycles.anchors} teams in ${cycles.elapsedMs}ms`,
+    } · needs read for ${needs.teams} team${needs.teams === 1 ? "" : "s"} · ${n(suggestions.suggestions)} win-win trades across ${n(suggestions.pairs)} pairs in ${suggestions.elapsedMs}ms · ${n(cycles.cycles)} three-team trades for ${cycles.anchorsWithCycles}/${cycles.anchors} teams in ${cycles.elapsedMs}ms${beamDetail}`,
     warnings,
   };
 };

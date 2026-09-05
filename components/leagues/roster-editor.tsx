@@ -11,6 +11,7 @@ import { RailLine } from "@/components/board/rail";
 import { InjuryBadge } from "@/components/players/injury-badge";
 import { PositionBadge } from "@/components/values/position-badge";
 import { PlayerPicker } from "@/components/leagues/player-picker";
+import { slotFits } from "@/lib/needs/lineup";
 import type { PlayerHit, RosterEntry } from "@/lib/leagues/manual";
 
 export type RosterActions = {
@@ -33,6 +34,13 @@ export type RosterActions = {
  * revalidates the page, and a roster that briefly shows a player on two teams
  * because the client guessed ahead is exactly the state this feature exists to
  * make impossible. The rows that are in flight spin; nothing lies.
+ *
+ * The slot menu offers a player only the slots he is eligible for, which is a
+ * narrower list than the league's. A running back cannot start at QB, so
+ * putting him there was never a thing the user meant to do — it was a way to
+ * mark him a starter who then loses every seat he is offered, since the lineup
+ * math checks eligibility whatever the stored slot says. The bench and IR hold
+ * anyone, and a player with no position we can read is offered everything.
  */
 export function RosterEditor({
   teamName,
@@ -137,15 +145,21 @@ export function RosterEditor({
                     }
                     className="h-8 w-28 shrink-0"
                   >
-                    {slots.map((slot) => (
-                      <option key={slot} value={slot}>
-                        {slot}
-                      </option>
-                    ))}
-                    {/* A slot the league no longer has, on a player who is
-                        still in it. Kept so the control never silently
-                        reassigns him just by rendering. */}
-                    {entry.slot && !slots.includes(entry.slot) ? (
+                    {slots
+                      .filter((slot) => slotFits(slot, entry.position))
+                      .map((slot) => (
+                        <option key={slot} value={slot}>
+                          {slot}
+                        </option>
+                      ))}
+                    {/* A slot the league no longer has, or one he is no longer
+                        eligible for, on a player who is still in it. Kept so
+                        the control never silently reassigns him just by
+                        rendering — he leaves it when the user says so. */}
+                    {entry.slot &&
+                    !(
+                      slots.includes(entry.slot) && slotFits(entry.slot, entry.position)
+                    ) ? (
                       <option value={entry.slot}>{entry.slot}</option>
                     ) : null}
                   </Select>

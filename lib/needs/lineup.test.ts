@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import type { StartingSlot } from "@/lib/values/vor";
 
-import { bestLineup, lineupChange, slotAccepts, type LineupPlayer } from "./lineup";
+import {
+  bestLineup,
+  lineupChange,
+  slotAccepts,
+  slotFits,
+  type LineupPlayer,
+} from "./lineup";
 
 function slot(position: string, count = 1, isStarting = true): StartingSlot {
   return { position, count, isStarting };
@@ -41,6 +47,32 @@ describe("slotAccepts", () => {
   it("fills nothing from a bench slot", () => {
     expect(slotAccepts("BN")).toEqual([]);
     expect(slotAccepts("IR")).toEqual([]);
+  });
+});
+
+describe("slotFits", () => {
+  it("keeps a player out of a starting slot his position cannot fill", () => {
+    expect(slotFits("QB", "RB")).toBe(false);
+    expect(slotFits("RB", "RB")).toBe(true);
+    expect(slotFits("W/R/T", "RB")).toBe(true);
+    expect(slotFits("W/R/T", "QB")).toBe(false);
+    expect(slotFits("Q/W/R/T", "QB")).toBe(true);
+    expect(slotFits("K", "DEF")).toBe(false);
+  });
+
+  it("lets the holding slots hold anyone", () => {
+    expect(slotFits("BN", "RB")).toBe(true);
+    expect(slotFits("IR", "DEF")).toBe(true);
+  });
+
+  it("refuses nobody on a position it cannot read", () => {
+    expect(slotFits("QB", null)).toBe(true);
+    expect(slotFits("QB", "")).toBe(true);
+  });
+
+  it("reads the position the same way the rest of the app does", () => {
+    expect(slotFits("DEF", "D/ST")).toBe(true);
+    expect(slotFits("W/R/T", "rb")).toBe(true);
   });
 });
 
