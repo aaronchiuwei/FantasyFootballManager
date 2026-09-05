@@ -54,6 +54,26 @@ export function slotAccepts(slot: string): string[] {
 }
 
 /**
+ * Whether a player at this position may be put in this slot.
+ *
+ * Two things say yes without checking the position, and both are the absence
+ * of a rule rather than a rule. A slot `slotAccepts` answers empty for is not a
+ * starting slot at all — the bench, IR, and any spelling this app does not read
+ * as starting — and a holding slot holds anyone. And a player whose position we
+ * cannot read is eligible everywhere, for §5's reason: refusing him is a claim,
+ * and there is no evidence for it.
+ */
+export function slotFits(slot: string, position: string | null): boolean {
+  const accepts = slotAccepts(slot);
+  if (accepts.length === 0) return true;
+
+  const normalized = normalizePosition(position);
+  if (!normalized) return true;
+
+  return accepts.includes(normalized);
+}
+
+/**
  * The best starting lineup a roster can put out, by projection.
  *
  * Greedy, filling the most restrictive slot first — and that is optimal here
