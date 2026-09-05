@@ -15,10 +15,12 @@ import {
 } from "@/components/players/injury-badge";
 import { SeasonSummary } from "@/components/players/season-summary";
 import { WeekLineTable } from "@/components/players/week-line-table";
+import { PlayerSchedule } from "@/components/schedule/player-schedule";
 import { PositionBadge } from "@/components/values/position-badge";
 import { ValueBadge } from "@/components/values/value-badge";
 import { loadPlayerDetail, type SeasonCoverage } from "@/lib/players/detail";
 import type { SeasonLines } from "@/lib/players/stat-lines";
+import { findReading, loadLeagueSos, type LeagueSos } from "@/lib/schedule/store";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
@@ -54,6 +56,15 @@ function Stat({
       ) : null}
     </div>
   );
+}
+
+/** Which seasons the defense grades behind the schedule panel stand on. */
+function gradedOn(sos: LeagueSos): string {
+  const older = sos.seasons.filter((year) => year !== sos.season);
+  if (sos.liveGames === 0) return `${sos.seasons.join(" and ")} results`;
+  return older.length === 0
+    ? `${sos.season} results so far`
+    : `${sos.season} results so far, pooled with ${older.join(" and ")}`;
 }
 
 function freshness(timestamp: string | null) {
@@ -97,7 +108,7 @@ export default async function PlayerPage({
 
   const { data: league } = await supabase
     .from("leagues")
-    .select("id, name, season, ppr")
+    .select("id, name, season, ppr, current_week, start_week, end_week")
     .eq("id", id)
     .maybeSingle();
 
@@ -107,16 +118,38 @@ export default async function PlayerPage({
   // year than the league's, and the same thing it means either way.
   const priorSeason = league.season - 1;
 
-  const detail = await loadPlayerDetail(supabase, {
-    league: { id: league.id, season: league.season, ppr: Number(league.ppr) },
-    playerId: numericPlayerId,
-    priorSeason,
-  });
+  const [detail, sos] = await Promise.all([
+    loadPlayerDetail(supabase, {
+      league: { id: league.id, season: league.season, ppr: Number(league.ppr) },
+      playerId: numericPlayerId,
+      priorSeason,
+    }),
+    loadLeagueSos(supabase, {
+      season: league.season,
+      priorSeason,
+      ppr: Number(league.ppr),
+      currentWeek: league.current_week,
+      startWeek: league.start_week,
+      endWeek: league.end_week,
+    }),
+  ]);
 
   if (!detail) notFound();
 
   const { player, value, seasons, coverage } = detail;
   const [current, prior] = seasons;
+
+  const reading = (key: "season" | "ros" | "playoffs") =>
+    findReading(sos.windows[key].readings, player.nfl_team, player.position);
+
+  // Keyed by week for the game log, which asks about one row at a time. Only
+  // the current season gets one: the slate for a finished season is knowable,
+  // but the team this player lined up for in week 6 of it is not -- the master
+  // carries the team he is on today, and that is the whole reason the defense
+  // grades are folded from a source that names both sides of every game.
+  const matchups = new Map(
+    (reading("season")?.weeks ?? []).map((week) => [week.week, week]),
+  );
 
   // An explicit click on the season toggle always wins, even onto an empty
   // grid — a switch that silently refuses is worse than an honest blank.
@@ -258,6 +291,17 @@ export default async function PlayerPage({
         />
       </section>
 
+      <PlayerSchedule
+        position={player.position}
+        nflTeam={player.nfl_team}
+        season={league.season}
+        currentWeek={league.current_week}
+        restOfSeason={reading("ros")}
+        playoffs={reading("playoffs")}
+        weeks={reading("season")?.weeks ?? []}
+        gradedOn={gradedOn(sos)}
+      />
+
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="stencil text-chalk-dim">
@@ -293,11 +337,22 @@ export default async function PlayerPage({
           </Card>
         ) : (
           <>
-            <WeekLineTable lines={shown} position={player.position} />
-            <p className="text-xs text-muted-foreground">
+            <WeekLineTable
+              lines={shown}
+              position={player.position}
+              matchups={
+                shown.season === league.season && matchups.size > 0
+                  ? matchups
+                  : undefined
+              }
+            />
+            <p className="max-w-[68ch] text-xs leading-relaxed text-muted-foreground">
               {shown.hasActuals
                 ? "Weeks that have been played show what happened; the box score follows the actual line."
                 : `Every week here is a projection. The ${shown.season} season has not started. The box score follows the projected line.`}
+              {shown.season === league.season
+                ? null
+                : " There is no opponent column on a past season: the slate is known, but which team he lined up for in a given week of it is not."}
             </p>
           </>
         )}

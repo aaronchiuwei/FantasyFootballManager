@@ -67,6 +67,8 @@ export type DefenseGrade = {
   z: number;
   /** 1 is the softest defense in the league at this position. */
   rank: number;
+  /** How many defenses are graded at it, so a rank can be read as a fraction. */
+  outOf: number;
 };
 
 export type PositionScale = { mean: number; sd: number };
@@ -185,6 +187,7 @@ export function defenseBoard(
         // everyone sits at the mean rather than dividing by zero.
         z: sd === 0 ? 0 : (entry.ppg - average) / sd,
         rank: index + 1,
+        outOf: ordered.length,
       });
     });
   }
@@ -197,6 +200,14 @@ export function defenseBoard(
   };
 }
 
+/**
+ * One week of a slate, graded on its own.
+ *
+ * The same reading the whole window carries, narrowed to a single game: this
+ * is what makes a start/sit argument, where the season average is what makes a
+ * trade one. Every field is null on a bye, which is a week with no opponent
+ * rather than a week against a neutral one.
+ */
 export type WeekMatchup = {
   week: number;
   /** Null on a bye. */
@@ -204,8 +215,15 @@ export type WeekMatchup = {
   isHome: boolean;
   /** The opponent's grade, in standard deviations. Null on a bye. */
   z: number | null;
+  /**
+   * The same grade in points per game against what the average defense allows
+   * this position. The figure worth printing.
+   */
+  pointsPerGame: number | null;
   /** 1 is the softest defense at this position. Null on a bye. */
   opponentRank: number | null;
+  outOf: number;
+  tier: SosTier | null;
 };
 
 export type SosTier = "easy" | "even" | "hard";
@@ -287,7 +305,10 @@ export function scheduleStrength(
             opponent: null,
             isHome: false,
             z: null,
+            pointsPerGame: null,
             opponentRank: null,
+            outOf: 0,
+            tier: null,
           });
           continue;
         }
@@ -299,7 +320,14 @@ export function scheduleStrength(
           opponent: game.opponent,
           isHome: game.isHome,
           z: grade?.z ?? null,
+          pointsPerGame: grade === undefined ? null : grade.z * scale.sd,
           opponentRank: grade?.rank ?? null,
+          outOf: grade?.outOf ?? 0,
+          // A single week is tiered against the board of defenses, not against
+          // the other slates: "he draws the fourth softest defense in the
+          // league" is the claim, and it does not depend on what anyone else
+          // is doing that Sunday.
+          tier: grade === undefined ? null : tierOf(grade.rank, grade.outOf),
         });
       }
 
@@ -385,8 +413,15 @@ export function weekWindow(from: number, to: number): number[] {
   return weeks;
 }
 
-/** The two schedule windows a redraft manager actually asks about (§6). */
-export type SosWindowKey = "ros" | "playoffs";
+/**
+ * The schedule windows a redraft manager asks about.
+ *
+ * `ros` and `playoffs` are the two §6 names as decisions -- what a roster is a
+ * claim on, and the three weeks that settle it. `season` is the league's whole
+ * window, which is not a decision but a reference: it is what a player page
+ * walks week by week, byes included.
+ */
+export type SosWindowKey = "season" | "ros" | "playoffs";
 
 export type LeagueClock = {
   season: number;
@@ -416,6 +451,7 @@ export function windowsFor(clock: LeagueClock): Record<SosWindowKey, number[]> {
   const from = Math.min(end, Math.max(start, clock.currentWeek ?? start));
 
   return {
+    season: weekWindow(start, end),
     ros: weekWindow(from, end),
     // The league tells us when it ends but not when its playoffs start, so the
     // last three weeks of its own window are the assumption, stated in the UI

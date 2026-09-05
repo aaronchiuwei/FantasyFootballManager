@@ -75,6 +75,7 @@ describe("defenseBoard", () => {
     expect(board.grades.get(gradeKey("AAA", "WR"))?.rank).toBe(1);
     expect(board.grades.get(gradeKey("CCC", "WR"))?.rank).toBe(2);
     expect(board.grades.get(gradeKey("BBB", "WR"))?.rank).toBe(3);
+    expect(board.grades.get(gradeKey("AAA", "WR"))?.outOf).toBe(3);
     // Positive z is a soft defense, on both readings.
     expect(board.grades.get(gradeKey("AAA", "WR"))!.z).toBeGreaterThan(0);
     expect(board.grades.get(gradeKey("BBB", "WR"))!.z).toBeLessThan(0);
@@ -161,6 +162,47 @@ describe("scheduleStrength", () => {
     expect(reading.byes).toEqual([2]);
     expect(reading.weeks).toHaveLength(3);
     expect(reading.weeks[1]).toMatchObject({ week: 2, opponent: null, z: null });
+  });
+
+  it("grades each week on its own, in points and in tier", () => {
+    const reading = readings.get(gradeKey("AAA", "WR"))!;
+    // Week 3 is against DDD, the softest defense of the four.
+    const week3 = reading.weeks[2];
+
+    expect(week3.opponentRank).toBe(1);
+    expect(week3.outOf).toBe(4);
+    expect(week3.tier).toBe("easy");
+    expect(week3.pointsPerGame).toBeGreaterThan(0);
+    // Week 1 is against BBB, which is the second toughest.
+    expect(reading.weeks[0].tier).toBe("even");
+    expect(reading.weeks[0].pointsPerGame).toBeLessThan(0);
+  });
+
+  it("tiers a week against the board of defenses, not against the other slates", () => {
+    // AAA has the easiest *slate* of the four, and still draws a defense that
+    // is not soft in week 1. The two readings are different claims.
+    const reading = readings.get(gradeKey("AAA", "WR"))!;
+    expect(reading.tier).toBe("easy");
+    expect(reading.weeks[0].tier).not.toBe("easy");
+  });
+
+  it("leaves every grade off a bye rather than reading it as neutral", () => {
+    const slate = roundRobin().filter(
+      (row) => !(row.week === 2 && (row.team === "AAA" || row.opponent === "AAA")),
+    );
+
+    const bye = scheduleStrength(slate, board, weekWindow(1, 3))
+      .get(gradeKey("AAA", "WR"))!
+      .weeks[1];
+
+    expect(bye).toMatchObject({
+      week: 2,
+      opponent: null,
+      z: null,
+      pointsPerGame: null,
+      opponentRank: null,
+      tier: null,
+    });
   });
 
   it("names the opponent and the side of the field for every week", () => {
@@ -276,6 +318,13 @@ describe("windowsFor", () => {
 
   it("puts the whole slate ahead before kickoff", () => {
     expect(windowsFor(clock).ros).toHaveLength(17);
+  });
+
+  it("covers the league's whole window on the season key, byes and all", () => {
+    expect(windowsFor({ ...clock, currentWeek: 9 }).season).toHaveLength(17);
+    expect(windowsFor({ ...clock, startWeek: 2, endWeek: 15 }).season).toEqual([
+      2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+    ]);
   });
 
   it("takes the playoffs as the last three weeks the league plays", () => {
