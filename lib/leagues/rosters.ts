@@ -37,6 +37,12 @@ export type RosterPlayer = {
   /** Null when nothing has priced them yet, which is not the same as zero. */
   value: number | null;
   valueSource: string | null;
+  /**
+   * §5's rest-of-season projected points — the same `player_values.ros_points`
+   * the needs vector folds and the trade page's lineup delta is measured in.
+   * Null where nothing projects him, which is not zero for the usual reason.
+   */
+  rosPoints: number | null;
   band: RosterBand;
 };
 
@@ -49,6 +55,14 @@ export type TeamRoster = {
   value: number | null;
   /** Rostered players carrying no price, so the sum understates them. */
   unpriced: number;
+  /**
+   * Rest-of-season projected points from the players in a starting slot. The
+   * lineup is what a team scores with, so the bench is not in it; the roster's
+   * whole projection is a different and much less useful number.
+   */
+  startingPoints: number | null;
+  /** Starters with no projection, so that sum understates the lineup. */
+  unprojected: number;
 };
 
 /** The order a roster is read in, matching the manual league's roster editor. */
@@ -157,6 +171,7 @@ export async function loadLeagueRosters(
       isStarter: row.is_starter,
       value: price?.value ?? null,
       valueSource: price?.source ?? null,
+      rosPoints: price?.rosPoints ?? null,
       band: bandOf(row.is_starter, row.slot),
     };
 
@@ -170,37 +185,52 @@ export async function loadLeagueRosters(
       players.sort(byBandThenPosition);
 
       const priced = players.filter((player) => player.value !== null);
+      const starting = players.filter((player) => player.band === "starting");
+      const projected = starting.filter((player) => player.rosPoints !== null);
 
       return [
         teamId,
         {
           teamId,
           players,
-          starters: players.filter((player) => player.band === "starting")
-            .length,
+          starters: starting.length,
           value:
             priced.length === 0
               ? null
               : priced.reduce((sum, player) => sum + (player.value ?? 0), 0),
           unpriced: players.length - priced.length,
+          startingPoints:
+            projected.length === 0
+              ? null
+              : projected.reduce(
+                  (sum, player) => sum + (player.rosPoints ?? 0),
+                  0,
+                ),
+          unprojected: starting.length - projected.length,
         },
       ];
     }),
   );
 }
 
-/** The league's own prices for a set of players, by player id. */
+type Price = { value: number; source: string; rosPoints: number | null };
+
+/**
+ * The league's own prices for a set of players, by player id — and the
+ * rest-of-season projection behind each one, which rides along on the same row
+ * rather than costing a second read of the same table.
+ */
 async function loadPrices(
   db: Db,
   leagueId: string,
   playerIds: number[],
-): Promise<Map<number, { value: number; source: string }>> {
-  const prices = new Map<number, { value: number; source: string }>();
+): Promise<Map<number, Price>> {
+  const prices = new Map<number, Price>();
   if (playerIds.length === 0) return prices;
 
   const { data, error } = await db
     .from("player_values")
-    .select("player_id, value, value_source")
+    .select("player_id, value, value_source, ros_points")
     .eq("league_id", leagueId)
     .in("player_id", [...new Set(playerIds)]);
 
@@ -213,6 +243,8 @@ async function loadPrices(
     prices.set(row.player_id, {
       value: Number(row.value),
       source: row.value_source,
+      // Postgres numerics arrive as strings often enough to be worth the cast.
+      rosPoints: row.ros_points === null ? null : Number(row.ros_points),
     });
   }
 
