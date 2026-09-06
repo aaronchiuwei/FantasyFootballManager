@@ -19,6 +19,8 @@ import {
   FAIR_BAND,
   MIN_LINEUP_GAIN,
   searchWinWin,
+  SHOP_LIMITS,
+  shopPackage,
   tradeability,
   WIN_WIN_LIMITS,
   type Suggestion,
@@ -702,6 +704,178 @@ function syntheticLeague(teams: number, size: number): SuggestionTeam[] {
 
   return built;
 }
+
+describe("shopping a package around the league", () => {
+  /**
+   * The user is A, three deep at running back. B and C are both starved there
+   * and deep at receiver, so either should want the spare back — and A's own
+   * lineup gains from the receiver coming the other way.
+   */
+  function shoppingLeague() {
+    const [a, b] = mirroredLeague();
+    const c = team(
+      "C",
+      [
+        asset(21, { position: "WR", points: 205, value: 3000 }),
+        asset(22, { position: "WR", points: 195, value: 3000 }),
+        asset(23, { position: "WR", points: 185, value: 3000 }),
+        asset(24, { position: "RB", points: 55, value: 3000 }),
+      ],
+      { surplusZ: { WR: 1.5, RB: -1.2 }, need: { WR: -1.5, RB: 1.2 } },
+    );
+
+    return { a, others: [b, c] };
+  }
+
+  it("answers the mirror of the builder: who wants these, and for what", () => {
+    const { a, others } = shoppingLeague();
+    const offer = [a.roster[1]];
+
+    const { suggestions, stats } = shopPackage({ offer, from: a, others }, SLOTS);
+
+    expect(stats.blocked).toBeNull();
+    expect(stats.teams).toBe(2);
+    expect(suggestions).not.toHaveLength(0);
+
+    for (const suggestion of suggestions) {
+      expect(suggestion.teamA).toBe("A");
+      expect(suggestion.a).toEqual(offer);
+      expect(suggestion.b.every((back) => back.teamId === suggestion.teamB)).toBe(true);
+    }
+  });
+
+  it("reaches every team in the league, not just the one on the other side", () => {
+    const { a, others } = shoppingLeague();
+    const { suggestions } = shopPackage({ offer: [a.roster[1]], from: a, others }, SLOTS);
+
+    expect(new Set(suggestions.map((entry) => entry.teamB))).toEqual(new Set(["B", "C"]));
+  });
+
+  it("holds every suggestion to the same win-win test §9 uses", () => {
+    const { a, others } = shoppingLeague();
+    const { suggestions } = shopPackage({ offer: [a.roster[1]], from: a, others }, SLOTS);
+
+    expect(suggestions).not.toHaveLength(0);
+    for (const suggestion of suggestions) {
+      expect(suggestion.lineupA.delta).toBeGreaterThan(MIN_LINEUP_GAIN);
+      expect(suggestion.lineupB.delta).toBeGreaterThan(MIN_LINEUP_GAIN);
+      expect(suggestion.analysis.verdict?.pct).toBeLessThan(FAIR_BAND);
+    }
+  });
+
+  it("agrees with the analyzer it will hand the trade to", () => {
+    // The property the whole module rests on: a package this search proposes
+    // and the analyzer then calls unfair would be a bug, not a disagreement.
+    const { a, others } = shoppingLeague();
+    const { suggestions } = shopPackage({ offer: [a.roster[1]], from: a, others }, SLOTS);
+
+    expect(suggestions).not.toHaveLength(0);
+    for (const suggestion of suggestions) {
+      const rerun = analyzeTrade(suggestion.a, suggestion.b, DEFAULT_TRADE_PARAMS);
+      expect(rerun.verdict?.band).toBe(suggestion.analysis.verdict?.band);
+      expect(rerun.verdict?.pct).toBeCloseTo(suggestion.analysis.verdict?.pct ?? -1, 10);
+    }
+  });
+
+  it("refuses a package it cannot price, exactly as the analyzer does", () => {
+    const { a, others } = shoppingLeague();
+    const unpriced = { ...a.roster[1], source: "floor" as const };
+
+    const { suggestions, stats } = shopPackage({ offer: [unpriced], from: a, others }, SLOTS);
+
+    expect(stats.blocked).toBe("unvalued");
+    expect(suggestions).toHaveLength(0);
+    expect(stats.evaluated).toBe(0);
+  });
+
+  it("has nothing to search with an empty offer", () => {
+    const { a, others } = shoppingLeague();
+    const { suggestions, stats } = shopPackage({ offer: [], from: a, others }, SLOTS);
+
+    expect(stats.blocked).toBe("empty");
+    expect(suggestions).toHaveLength(0);
+  });
+
+  it("never proposes a return off the user's own roster", () => {
+    const { a, others } = shoppingLeague();
+    const { suggestions } = shopPackage(
+      // `others` deliberately contains A too, the way a caller that forgot to
+      // filter would hand it over.
+      { offer: [a.roster[1]], from: a, others: [a, ...others] },
+      SLOTS,
+    );
+
+    expect(suggestions).not.toHaveLength(0);
+    for (const suggestion of suggestions) {
+      expect(suggestion.teamB).not.toBe("A");
+      for (const back of suggestion.b) expect(back.teamId).not.toBe("A");
+    }
+  });
+
+  it("keeps one roster from filling the whole list", () => {
+    const { a, others } = shoppingLeague();
+    const { suggestions } = shopPackage({ offer: [a.roster[1]], from: a, others }, SLOTS);
+
+    for (const teamId of ["B", "C"]) {
+      const fromTeam = suggestions.filter((entry) => entry.teamB === teamId);
+      expect(fromTeam.length).toBeLessThanOrEqual(SHOP_LIMITS.perTeam);
+    }
+  });
+
+  it("ranks the way every other engine ranks", () => {
+    const { a, others } = shoppingLeague();
+    const { suggestions } = shopPackage({ offer: [a.roster[1]], from: a, others }, SLOTS);
+
+    const sorted = [...suggestions].sort(compareSuggestions);
+    expect(suggestions.map((entry) => entry.score.minGain)).toEqual(
+      sorted.map((entry) => entry.score.minGain),
+    );
+  });
+
+  it("prunes on value without ever discarding a fair return", () => {
+    const { a, others } = shoppingLeague();
+    const offer = [a.roster[1]];
+
+    const pruned = shopPackage({ offer, from: a, others }, SLOTS);
+    expect(pruned.stats.pruned).toBeGreaterThan(0);
+
+    // The same search with the window opened all the way. The prune is a bound
+    // on §6's adjustments rather than a heuristic, so the two must agree
+    // exactly on what came back.
+    const exhaustive = shopPackage({ offer, from: a, others }, SLOTS, DEFAULT_TRADE_PARAMS, {
+      ...SHOP_LIMITS,
+      results: 500,
+      perTeam: 500,
+    });
+    const wide = exhaustive.suggestions.filter(
+      (entry) => entry.b.length <= SHOP_LIMITS.maxPackage,
+    );
+
+    for (const suggestion of pruned.suggestions) {
+      expect(
+        wide.some(
+          (entry) =>
+            entry.teamB === suggestion.teamB &&
+            entry.b.map((x) => x.playerId).join() ===
+              suggestion.b.map((x) => x.playerId).join(),
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("shops a two-player package and allows three back", () => {
+    const { a, others } = shoppingLeague();
+    const offer = [a.roster[1], a.roster[2]];
+
+    const { suggestions, stats } = shopPackage({ offer, from: a, others }, SLOTS);
+
+    expect(stats.blocked).toBeNull();
+    for (const suggestion of suggestions) {
+      expect(suggestion.a).toHaveLength(2);
+      expect(suggestion.b.length).toBeLessThanOrEqual(SHOP_LIMITS.maxPackage);
+    }
+  });
+});
 
 describe("§9's stage budget", () => {
   it("searches a twelve-team league well inside one sync stage", () => {

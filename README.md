@@ -1055,7 +1055,50 @@ Three decisions inside that:
   this player costs; declining to tell you because your bench gets thinner is
   answering a different question.
 
-### One is cached, one is not
+### Shopping your own players is the third shape
+
+§9 asks "which trades in this league are win-win" and answers over every pair of
+rosters. §10 fixes the player you *want*. Neither answers the question a manager
+actually asks looking at their own bench, which is the mirror of §10 and was the
+one shape missing: **I am willing to move these two. Who wants them, and what
+comes back?**
+
+`shopPackage` fixes the outgoing side and enumerates the other eleven rosters —
+`C(8,1) + C(8,2) + C(8,3)` = 92 packages a team, against §9's 36, because the
+offer is fixed and consolidating is the whole reason anyone shops two good
+players. Everything under it is machinery both other engines already use:
+`candidateAssets` for who is realistically available, `baseRatioWindow` for the
+exact prune, `analyzeTrade` for the verdict, `lineupChangeFrom` for both roster
+deltas.
+
+**Both lineups have to improve**, which is §9's test rather than §10's, and the
+difference is the point. §10 does not require the seller to gain, because a
+manager who has decided they want Jefferson will pay for him. A manager shopping
+their own players has decided no such thing: a return that leaves their starters
+worse is not an offer, it is a mistake with a fair price on it.
+
+It lives **in the trade analyzer**, not on the suggestions screen, and it runs in
+the browser on every pick. That is the same argument §2 makes about the verdict:
+the page already handed over the league's whole rostered board, and this is a
+pure function over it. Measured on a live 12-team league, a two-player offer is
+**3.9 ms** — 402 packages priced, 610 pruned before the analyzer was called, 123
+fair by value, 2 of those good for both. The cost is 4.1 kB on the trade route's
+bundle, which is what shipping `search.ts` and `engine.ts` to the client comes
+to.
+
+The funnel is printed rather than hidden, because the last number in it is
+usually small: "123 fair by value, 2 of those good for both" is the honest
+description of a league in which most fair trades help exactly one side. When
+nothing survives, the panel says which stage it died at — nobody could match the
+package inside the fair band, or fair returns exist and none of them improves
+both lineups. Those are different problems with different answers, and a single
+"no suggestions" would hide both.
+
+A card loads straight into the analyzer beneath it: the return goes on side B,
+the team picker follows it, and the deal becomes something to tune, argue with
+and save rather than something to read.
+
+### One is cached, two are not
 
 The win-win search is a fold over every pair of rosters in the league, which is
 the exact shape of work §9 hands to a sync stage — so it runs in stage 9, third,
@@ -1071,10 +1114,17 @@ rather than trusted from the browser, exactly as saving a trade re-reads it: the
 client sends two ids, and the packages that come back are the server's
 arithmetic over the server's values.
 
-Both engines run over `loadTradeBoard` — the analyzer's own read, which now
-carries §7's `surplusZ` next to `need`. A second query shaped for the search
-would be a second definition of "what is on this league's rosters", and the two
-would drift.
+The shop search is not cached either, and it goes one step further by running in
+the browser. Its input changes on every pick, it is a hundredth of the win-win
+search's size, and it sits inside a screen whose entire design premise is that
+the arithmetic is local (§2). A server action there would put a round trip
+between adding a player and seeing who wants him, which is exactly the latency
+the analyzer was built to avoid.
+
+All three engines run over `loadTradeBoard` — the analyzer's own read, which
+carries §7's `surplusZ` next to `need`. A second query shaped for a search would
+be a second definition of "what is on this league's rosters", and the two would
+drift.
 
 ### The stack
 

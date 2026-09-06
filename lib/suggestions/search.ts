@@ -708,6 +708,202 @@ function diversify<T extends SuggestionAsset>(
 }
 
 // ---------------------------------------------------------------------------
+// shopping a package around the league
+// ---------------------------------------------------------------------------
+
+export const SHOP_LIMITS = {
+  /** How many of the other team's assets enter the enumeration. §9's number. */
+  topAssets: 8,
+  /**
+   * How many players may come back. Three rather than §9's two, because the
+   * offer is fixed and consolidating is the whole reason anyone shops two good
+   * players: you send the pair and you are owed the option of three back. It
+   * costs 92 packages a team against 36, which is nothing next to the win-win
+   * search's 85,536 candidate trades — this one looks at eleven rosters, not
+   * sixty-six pairs of them.
+   */
+  maxPackage: 3,
+  /** Per team, so one deep roster cannot fill the whole list. */
+  perTeam: 2,
+  /** Overall. Long enough to be a market, short enough to read. */
+  results: 12,
+} as const;
+
+export type ShopBlock = "empty" | "unvalued";
+
+export type ShopStats = {
+  /** Rosters searched. */
+  teams: number;
+  /** Σ value of the fixed offer, before §6's adjustments. */
+  askingPrice: number;
+  evaluated: number;
+  pruned: number;
+  fair: number;
+  winWin: number;
+  /** §4: players on the other rosters with no resolved value, left out. */
+  unvalued: number;
+  blocked: ShopBlock | null;
+};
+
+export type ShopResult<T extends SuggestionAsset> = {
+  suggestions: Suggestion<T>[];
+  stats: ShopStats;
+};
+
+/**
+ * The third shape of the same search: a fixed package, and what the rest of the
+ * league would give up for it.
+ *
+ * §9 asks "which trades in this league are win-win" and answers over every pair
+ * of rosters. §10 asks "what would it take to get *this* player" and fixes the
+ * incoming side. Neither answers the question a manager actually asks while
+ * looking at their own bench, which is the mirror of §10 and the one shape
+ * missing: *I am willing to move these two. Who wants them, and what comes
+ * back?*
+ *
+ * It is the builder with the roles swapped and the loop moved outside — the
+ * user's side is fixed, the other side is enumerated, and it runs once per
+ * team instead of once. Everything under it is the machinery both engines
+ * already use: `candidateAssets` for who is realistically available,
+ * `baseRatioWindow` for the exact prune, `analyzeTrade` for the verdict and
+ * `lineupChangeFrom` for both roster deltas.
+ *
+ * **Both lineups must improve.** This is §9's win-win test rather than §10's,
+ * and it is the right one here: §10 does not require the *seller* to gain,
+ * because a manager who has decided they want Jefferson will pay for him. A
+ * manager shopping their own players has decided no such thing. A return that
+ * leaves their starters worse is not an offer, it is a mistake with a fair
+ * price on it.
+ */
+export function shopPackage<T extends SuggestionAsset>(
+  {
+    offer,
+    from,
+    others,
+  }: {
+    /** The fixed package leaving the user's roster. */
+    offer: T[];
+    /** The team sending it. */
+    from: SuggestionTeam<T>;
+    /** Every other roster in the league. */
+    others: SuggestionTeam<T>[];
+  },
+  slots: StartingSlot[],
+  params: TradeParams = DEFAULT_TRADE_PARAMS,
+  limits: {
+    topAssets: number;
+    maxPackage: number;
+    perTeam: number;
+    results: number;
+  } = SHOP_LIMITS,
+): ShopResult<T> {
+  const base = offer.reduce((sum, asset) => sum + asset.value, 0);
+
+  const stats: ShopStats = {
+    teams: 0,
+    askingPrice: base,
+    evaluated: 0,
+    pruned: 0,
+    fair: 0,
+    winWin: 0,
+    unvalued: 0,
+    blocked: null,
+  };
+
+  if (offer.length === 0) {
+    return { suggestions: [], stats: { ...stats, blocked: "empty" } };
+  }
+
+  // §4, and the same line the builder draws: a package holding a player nobody
+  // has priced cannot be given a verdict, so there is no search to run. The
+  // analyzer refuses it too, and the two must refuse it together.
+  if (offer.some((asset) => asset.source === "floor")) {
+    return { suggestions: [], stats: { ...stats, blocked: "unvalued" } };
+  }
+
+  // The prune is only exact if its bound covers the larger of the two sides:
+  // §6's depth penalty grows with the number of bodies, and the offer's size is
+  // the user's choice rather than a limit this function set.
+  const window = baseRatioWindow(
+    params,
+    Math.max(offer.length, limits.maxPackage),
+  );
+  const beforeFrom = bestLineup(from.roster, slots);
+
+  const found: Suggestion<T>[] = [];
+
+  for (const team of others) {
+    if (team.teamId === from.teamId) continue;
+    stats.teams += 1;
+
+    const ready = prepareTeam(team, slots, limits);
+    stats.unvalued += ready.candidates.unvalued;
+
+    const { start, end } = windowSlice(
+      ready.packages,
+      base * window.lo,
+      base * window.hi,
+    );
+    stats.pruned += ready.packages.length - (end - start);
+
+    const perTeam: Suggestion<T>[] = [];
+
+    for (let index = start; index < end; index += 1) {
+      const back = ready.packages[index];
+      stats.evaluated += 1;
+
+      const analysis = analyzeTrade(offer, back.assets, params);
+      if (!analysis.verdict || analysis.verdict.pct >= FAIR_BAND) continue;
+      stats.fair += 1;
+
+      const lineupA = lineupChangeFrom(
+        beforeFrom,
+        from.roster,
+        { out: offer, in: back.assets },
+        slots,
+      );
+      if (lineupA.delta <= MIN_LINEUP_GAIN) continue;
+
+      const lineupB = lineupChangeFrom(
+        ready.before,
+        team.roster,
+        { out: back.assets, in: offer },
+        slots,
+      );
+      if (lineupB.delta <= MIN_LINEUP_GAIN) continue;
+      stats.winWin += 1;
+
+      perTeam.push({
+        teamA: from.teamId,
+        teamB: team.teamId,
+        a: offer,
+        b: back.assets,
+        analysis,
+        lineupA,
+        lineupB,
+        score: {
+          minGain: Math.min(lineupA.delta, lineupB.delta),
+          totalGain: lineupA.delta + lineupB.delta,
+          marketShare: analysis.marketShare,
+          pct: analysis.verdict.pct,
+          bodies: offer.length + back.assets.length,
+        },
+      });
+    }
+
+    // Diversified per team for the reason the win-win search diversifies per
+    // pair: ranked purely, one roster's top three returns are the same two
+    // players three times with the throw-in changing.
+    found.push(...diversify(perTeam, limits.perTeam));
+  }
+
+  return {
+    suggestions: found.sort(compareSuggestions).slice(0, limits.results),
+    stats,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // the player-based builder (Requirement 10)
 // ---------------------------------------------------------------------------
 
