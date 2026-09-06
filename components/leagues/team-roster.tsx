@@ -104,16 +104,36 @@ function RosterRow({
         </div>
       </div>
 
-      <span
-        data-numeric
-        className={cn(
-          "shrink-0 font-plate text-sm tabular-nums",
-          player.value === null ? "text-chalk-dim" : "text-foreground",
-        )}
-        title={player.value === null ? "Not priced yet" : undefined}
-      >
-        {player.value === null ? "--" : Math.round(player.value).toLocaleString()}
-      </span>
+      <div className="shrink-0 text-right">
+        <span
+          data-numeric
+          className={cn(
+            "block font-plate text-sm tabular-nums",
+            player.value === null ? "text-chalk-dim" : "text-foreground",
+          )}
+          title={player.value === null ? "Not priced yet" : undefined}
+        >
+          {player.value === null
+            ? "--"
+            : Math.round(player.value).toLocaleString()}
+        </span>
+
+        {/* The price and the projection are different claims about the same
+            man and this app has always kept them apart: one is what the market
+            pays, the other is what he is expected to score. Both belong on the
+            row, stacked rather than mixed, with the unit said on the smaller. */}
+        <Stencil
+          data-numeric
+          className="block tabular-nums"
+          title={
+            player.rosPoints === null
+              ? "Nothing projects him for the rest of this season."
+              : "Projected fantasy points over the rest of this season, in this league's scoring."
+          }
+        >
+          {player.rosPoints === null ? "--" : player.rosPoints.toFixed(1)} proj
+        </Stencil>
+      </div>
     </div>
   );
 }
@@ -210,6 +230,22 @@ export function TeamRosterColumn({
               ? "--"
               : Math.round(roster.value).toLocaleString()}
           </p>
+          {/* The lineup's projection, not the roster's: a team scores with the
+              players it starts, and the bench is depth rather than points. */}
+          <Stencil
+            data-numeric
+            className="block tabular-nums"
+            title={
+              roster?.startingPoints == null
+                ? "Nothing projects this lineup yet."
+                : `Rest-of-season projected points from the ${roster.starters} players in a starting slot.`
+            }
+          >
+            {roster?.startingPoints == null
+              ? "--"
+              : Math.round(roster.startingPoints).toLocaleString()}{" "}
+            proj
+          </Stencil>
           <Stencil className="block">
             {players.length} player{players.length === 1 ? "" : "s"}
           </Stencil>
@@ -259,6 +295,14 @@ export function TeamRosterColumn({
             <p className="pt-2 text-xs text-muted-foreground">
               {roster.unpriced} of them {roster.unpriced === 1 ? "has" : "have"}{" "}
               no price yet, so this total is short of the roster.
+            </p>
+          ) : null}
+
+          {roster && roster.unprojected > 0 ? (
+            <p className="pt-2 text-xs text-muted-foreground">
+              {roster.unprojected} starter
+              {roster.unprojected === 1 ? " has" : "s have"} no projection, so
+              the lineup figure is short of it.
             </p>
           ) : null}
         </div>

@@ -90,8 +90,9 @@ app/
       not-found.tsx  a league that is missing, or is not yours — same answer
       [id]/          league + teams, identity resolution, the values board
         layout.tsx   breadcrumb + the section strip every screen below shares
-        loading.tsx  one skeleton for all seven, inside that layout
+        loading.tsx  one skeleton for all eight, inside that layout
         players/[playerId]/  one player: value, stats, week-by-week
+        lineup/          one week: start/sit, and what every team projects
         trade/           the trade analyzer, and the trades kept from it
         overview/        the twelve teams as positional strength radars
         waivers/         the available pool, ranked and need-weighted
@@ -848,9 +849,13 @@ claim about a roster over the rest of the season and treats a two-week absence
 as noise. That is defensible for trades and less so for a waiver claim you are
 making on Tuesday.
 
-**No bye weeks, still.** §7's overview would happily flag a team starting three
-running backs on bye in week 9, and nothing in the app maps a player to an NFL
-schedule — the same gap Phases 5 and 6 recorded, for the same reason.
+**The needs vector still has no bye weeks.** It would happily read a team
+starting three running backs on bye in week 9 as deep at the position, because
+strength is a claim about a roster over the rest of the season and a one-week
+absence is noise at that scale. The app *does* map a player to an NFL schedule
+now — `nfl_schedule` landed with strength of schedule, and the start/sit board
+below spends it — but nothing folds a bye back into the season-long vector, and
+nothing should.
 
 **The needs vector is cached, not live.** Adding a free agent in Yahoo does not
 move a radar until the next sync. That is §9's bargain everywhere else in the
@@ -1496,6 +1501,122 @@ and the column says so rather than printing a guess.
   columns and nothing else: the stage writes global reference rows and no price,
   needs vector or trade verdict reads them.
 
+## How start and sit works
+
+Every other reading in this app is denominated in **rest of season**: §5's value
+blend, §7's needs vector, §6's roster-context delta. That is the right unit for
+an asset, and the wrong one for the decision a manager actually makes most
+often. Sunday does not care that a receiver is the better player over fifteen
+weeks; it cares who is projected higher this week, who is on bye, and who is
+hurt. The weekly projection grid stage 4 has been pulling since Phase 5 was the
+whole answer, sitting unread behind the player detail page.
+
+`/leagues/{id}/lineup` reads one week of that grid against every roster in the
+league. It is a plain server render with **0 kB of client JavaScript** — a week
+is a URL, so a lineup call is something you can send to a league mate.
+
+### Two lineups, and the difference between them
+
+```
+current = Σ projections of the players in a starting slot right now
+best    = bestLineup(whole roster, league's own starting slots)
+gain    = best − current
+```
+
+`bestLineup` is the same solver §6's trade delta uses, over a different column,
+and it is optimal here for the same laminar-eligibility reason stated above. The
+new half is `current`, which is read off `is_starter` — the one flag both
+providers and the manual roster editor write — rather than re-derived from the
+slot name. The optimal lineup ignores that flag entirely: where a player sits
+today is not evidence about where he should.
+
+**The pairing is a decomposition, not an instruction.** The two lineups share
+most of their players; what differs is a set coming in and a set going out.
+Because everyone else is common to both, `Σ in − Σ out` is exactly `best −
+current`, so *any* pairing of the two sets sums to the same total — which is
+why the pairing is chosen for legibility (biggest gain first, against the
+weakest player it displaces) rather than for arithmetic. The slot printed on a
+swap is where the optimal lineup seats the incoming player, which is not always
+the seat the man he replaces was in: promoting the best receiver on the roster
+can put *him* at WR and push the receiver already there into the flex.
+
+**A gain under half a point is not advice.** A weekly projection is a point
+estimate with a standard error of several points, and a rearrangement worth a
+quarter of one is inside the noise of the number that recommended it. Under
+`MIN_GAIN` the lineup is called optimal and no name is marked, rather than
+shipping false precision with a button on it.
+
+**A player with no projection is never seated.** `bestLineup` will not score
+what it cannot see, so an unprojected starter is always in the sit list and
+sorts to the front of it — he is the least defensible name in the lineup, and
+usually the reason is a bye. A bye week is the one case where the swap really is
+worth the whole of the replacement, which is what the panel says.
+
+### Byes, at last
+
+Phases 5 through 7 each recorded the same gap: nothing in the app mapped a
+player to an NFL schedule, so a team starting three running backs on bye read as
+a normal team. `nfl_schedule` landed with strength of schedule and this is the
+screen that spends it. A rostered player whose NFL team has no row for the week
+is marked BYE, in the warning colour, with the word printed — never colour
+alone.
+
+The check is deliberately one-directional: **only a slate we have can put a
+player on bye.** With no schedule synced nobody is marked, because "we did not
+look" is not "he is off", and the page says so in an alert rather than rendering
+a league of rested players.
+
+### Projected points, per team and per player
+
+The same read answers the second question the app could not: what everyone is
+about to score. Every row on the board carries its week projection, and every
+team carries the sum of the nine it is starting, ranked against the other
+eleven. It is the only ordering in the app that is neither the standings nor
+roster value, and it disagrees with both often enough to be worth its own strip:
+a first-place team with three byes is a first-place team projected tenth.
+
+The bars share one drawn axis rather than each carrying its own — a scale per
+row would be twelve identical rulers, and what is being compared here is the
+rows against each other. The pale bar behind each one is that roster's *best*
+lineup, so the gap between the two is the points sitting on the bench, readable
+without reading a single figure.
+
+On the league overview the same question is asked over the whole season rather
+than one week: every roster row now carries its `ros_points` beside its price,
+and every team header the sum across its starters. The two are stacked rather
+than mixed, because "what the market pays for him" and "what he is expected to
+score" are different claims and this app has never let them share a column.
+
+### Weeks are the league's own
+
+The picker offers `start_week` to `end_week`, not one to eighteen, because that
+is the window stage 4 pulls the grid over: a league that ends in week 14 has no
+projection at week 17 and never plays it. The board opens on the live week; a
+week behind it is drawn with what was actually scored alongside what was
+projected, and the advice is labelled for what it then is — what the lineup
+should have been.
+
+### Where it falls short
+
+- **A projection is not a start/sit engine.** Sleeper's weekly numbers carry no
+  usage split, no weather, no snap-count trend and no beat-reporter note. They
+  are a reasonable prior and this screen is honest about being a fold over them,
+  not a model of its own.
+- **The schedule reading is not folded in.** `lib/schedule/sos.ts` grades a
+  single week's opponent — `WeekMatchup` is exactly the shape that argument
+  needs, and the player page already draws it — but the lineup solves on the
+  projection alone. Blending a matchup grade into a weekly projection is a
+  second model, and it needs a stated weight before it earns a place here.
+- **Nothing is written.** The board says what to start; setting it still happens
+  in Yahoo or ESPN. Writing a lineup back is the first thing in this app that
+  would need a provider's write scope.
+- **Injury status is printed, not priced.** A questionable player carries his
+  badge and his full projection. Sleeper's number may already discount him, or
+  may not, and guessing at which would be inventing a number twice.
+- **`is_starter` is the provider's, and it can be stale.** A lineup edited in
+  Yahoo after the last sync is compared against the one this app last read. The
+  optimal side is unaffected, since it depends only on the roster.
+
 ## How the sync works
 
 One button, but not one request. Yahoo's pagination plus a 14.6 MB Sleeper
@@ -1709,7 +1830,7 @@ that a league exists is telling them something.
 
 Two `loading.tsx` files, both earning their place rather than decorating:
 
-- `leagues/[id]/loading.tsx` covers all seven league screens at once, because a
+- `leagues/[id]/loading.tsx` covers all eight league screens at once, because a
   loading boundary wraps its segment *and* everything nested under it. Those
   pages do between three and seven Supabase round trips and a tab click used to
   do nothing visible for as long as they took. It renders inside the league

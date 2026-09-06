@@ -16,6 +16,7 @@ export type LeagueSectionKey =
   | "league"
   | "manage"
   | "moves"
+  | "lineup"
   | "values"
   | "trade"
   | "suggestions"
@@ -64,6 +65,10 @@ export const LEAGUE_SECTIONS: readonly LeagueSection[] = [
   // these two are where the season actually gets recorded.
   { key: "manage", label: "Manage", segment: "manage", only: "manual" },
   { key: "moves", label: "Moves", segment: "moves", only: "manual" },
+  // Ahead of the asset screens because it is the only weekly one. Everything
+  // from here down is denominated in rest-of-season points or in trade value,
+  // which is what a season is measured in; this is what a Sunday is.
+  { key: "lineup", label: "Start/sit", segment: "lineup" },
   { key: "values", label: "Values", segment: "values" },
   { key: "trade", label: "Trade", segment: "trade" },
   { key: "suggestions", label: "Suggestions", segment: "suggestions" },
