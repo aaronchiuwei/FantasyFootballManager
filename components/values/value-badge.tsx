@@ -24,7 +24,7 @@ const LABELS: Record<ValueSource, { short: string; title: string }> = {
   model_capped: {
     short: "Capped",
     title:
-      "Modelled and held under the QB2/TE2 ceiling: kickers and defenses are streamed, not traded",
+      "Priced on how far he beats a streamed replacement, held under the QB2/TE2 ceiling: kickers and defenses are started, not traded",
   },
   floor: {
     short: "Unvalued",

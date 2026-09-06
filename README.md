@@ -355,20 +355,32 @@ guarantees a better projection never earns a lower value.
 Three guardrails, and a live run of the engine against the 2026 preseason board
 (12-team, 1QB, full PPR — 191 market players, 633 valued in total):
 
-- **Clamp at the seam.** A modelled player is capped at the lowest market value
-  at their own position, so a waiver flyer can never leapfrog a priced starter.
-  Those caps are small — QB 23, TE 6, RB 3, WR 3 against a #1 of 10,775 —
-  because FantasyCalc's list bottoms out near zero. Most of the model tier
-  therefore lands on the market's floor, which is the honest answer: below the
-  seam, players really are worth about nothing in trade. The *ordering* still
-  has to mean something, so ranks break ties on VOR.
-- **Cap K/DEF.** §5 suggests the QB2/TE2 tier as the ceiling. On the real curve
-  that is 136, and the raw fit rates the best kicker at **3,195** — capping at
-  136 still ranked every kicker above all 365 modelled skill players. The
-  ceiling used instead is the market's own floor: the cheapest player
-  FantasyCalc will price at all. That is §13's seam check generalized to a
-  position the market declines to cover, and it matches §3's sharper statement
-  that in redraft their trade value "genuinely *is* near zero."
+- **Clamp at the seam.** A modelled player is held under the **tenth
+  percentile** of the market prices at his own position, so a waiver flyer
+  cannot leapfrog the starters the market has priced. It reads a percentile
+  rather than the minimum because a minimum is one player: measured on a live
+  board, the cheapest priced running back was a fading veteran at 14, and every
+  one of the 75 unpriced running backs in the league was therefore worth
+  exactly 14. The percentile is 114 on the same board and cannot be moved by
+  one stale price.
+- **Cap K/DEF.** The ceiling is §5's QB2/TE2 tier, computed as the market price
+  of the `2 × numTeams`-th quarterback and the tight end at the same rank,
+  averaged — 163 on one live board, 141 on another. Under it a kicker is not
+  priced by the fit at all, which rates the best one at **2,286**; he is priced
+  on how far he beats a streamed replacement, as a share of how far the best
+  kicker in football does. So the median kicker is worth the floor, which is
+  §3's "genuinely near zero" for the half of the position that deserves it, and
+  the good ones rank against each other above him.
+- **A ceiling compresses; it never truncates.** Both guardrails run through
+  `softCap`, which is the identity below half the ceiling and a rational
+  approach to it above, meeting with the same slope so there is no kink. This
+  is the correction to the shape both clamps used to have. `Math.min(x, cap)`
+  is not a cap but a delete — every value above the ceiling comes out as the
+  same number, and a position whose entire range sits above it collapses to a
+  point. That is exactly what happened: all 46 kickers and all 32 defenses came
+  out at 5 apiece, and the whole modelled running back tier at 14. The
+  ordering, which the *model* had computed correctly, was being thrown away by
+  the guardrail printed over it.
 - **Preseason degradation.** Until games are played the model runs on
   projections alone; actual pace then blends in at `w = min(0.7, games/10)`,
   and the result is scaled by `weeks_remaining / 17` because a redraft asset is
@@ -399,7 +411,7 @@ on the overlap is **0.928**, under the 0.98 target. Within a position it is
 much closer — QB 0.971, RB 0.974, WR 0.950, TE 0.865 — so the gap is mostly
 cross-position: a single curve has to span a market that prices QBs far below
 their VOR in a 1QB league. It matters less than the number suggests, because
-the seam clamps pin the whole model tier to the market's floor regardless, and
+the seam holds the whole model tier under the market's bottom decile, and
 §5's own arithmetic says every trade worth proposing is 100% market-valued.
 Per-position fits are the obvious next move if that ever stops being true.
 
@@ -573,9 +585,9 @@ situations produce no verdict object at all:
 
 Kickers and defenses are the case that looks similar and is not. They are
 flagged in the deal ("not a trade asset", §3) but they do not block anything,
-because the value engine already priced them at the market's own floor — adding
-two of them to a package moves the totals by less than a percent, which is the
-honest answer rather than a special case in the trade math.
+because the value engine holds them under the QB2/TE2 tier — so even the best
+kicker in football moves a package's total by a fraction of a percent, which is
+the honest answer rather than a special case in the trade math.
 
 ### Provenance survives into the verdict
 
