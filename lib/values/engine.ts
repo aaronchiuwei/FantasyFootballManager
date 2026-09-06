@@ -48,6 +48,74 @@ export const FLOOR_VALUE = 1;
 export const DEFAULT_KDEF_CAP = 200;
 
 /**
+ * Where the seam sits in a position's own market prices.
+ *
+ * The tenth percentile rather than the minimum, and the difference is not
+ * cosmetic. Measured on a live board, the cheapest market-priced running back
+ * was a fading veteran at 14 — and because the guardrail was a hard `min`, that
+ * one price pinned all 75 modelled running backs to 14 apiece. A handcuff
+ * projected for 70 rest-of-season points and a fifth-stringer projected for 44
+ * came out as the same number.
+ *
+ * A percentile cannot be pinned by one outlier. It still says what the seam
+ * exists to say — a modelled player is below all but a handful of the players
+ * the market was willing to price — while leaving the tier somewhere to spread
+ * out inside.
+ */
+export const SEAM_PERCENTILE = 0.1;
+
+/**
+ * Where a soft cap stops being the identity and starts bending.
+ *
+ * Below the knee a value passes through untouched, because a modelled player
+ * genuinely worth a third of the seam should be priced at a third of the seam.
+ * Above it the curve compresses toward the ceiling and never reaches it, so
+ * the ordering survives a clamp instead of being erased by it.
+ */
+export const SOFT_CAP_KNEE = 0.5;
+
+/**
+ * A ceiling that compresses rather than truncates.
+ *
+ * `Math.min(x, cap)` is not a cap, it is a delete: every value above the
+ * ceiling comes out as the same number, and a position whose whole range sits
+ * above it collapses to a single point. That is what happened to kickers (46
+ * players, one distinct value) and to the model tier at every position.
+ *
+ * This is the identity below `SOFT_CAP_KNEE × cap`, and `t / (1 + t)` in units
+ * of the remaining headroom above it. The two halves meet with the same slope,
+ * so there is no kink at the knee, and the map is strictly increasing
+ * everywhere — which is the property the whole fix turns on. A guardrail may
+ * compress what it does not believe. It may not throw away the ordering
+ * underneath.
+ *
+ * The rational curve is chosen over the more obvious `1 - exp(-t)` for a
+ * numerical reason rather than a mathematical one: both are strictly
+ * increasing on paper, but `exp(-t)` underflows to zero at t ≈ 37, so in
+ * double precision the exponential really does return `cap` for every input
+ * past that point and reintroduces the exact tie this function exists to
+ * prevent. `t / (1 + t)` decays as `1/t` and holds its ordering out past 1e15,
+ * which is comfortably beyond any value the fit can produce.
+ */
+export function softCap(value: number, cap: number): number {
+  if (!Number.isFinite(cap) || cap <= 0) return value;
+
+  const knee = cap * SOFT_CAP_KNEE;
+  if (value <= knee) return value;
+
+  const headroom = cap - knee;
+  const t = (value - knee) / headroom;
+  return knee + headroom * (t / (1 + t));
+}
+
+/** Nearest-rank percentile over an ascending list. */
+function percentile(ascending: number[], share: number): number | undefined {
+  if (ascending.length === 0) return undefined;
+  const index = Math.ceil(share * ascending.length) - 1;
+  return ascending[Math.min(ascending.length - 1, Math.max(0, index))];
+}
+
+/**
  * Confidence, surfaced as the badge's second line. Market is the market. A
  * modelled value is a real estimate; a modelled value extrapolated past the
  * bottom of the fit is an estimate about players the market declined to price,
@@ -163,53 +231,117 @@ export type ValueReport = {
 };
 
 /**
- * The lowest market-priced value at a position. Tier B is clamped here so a
- * waiver flyer can never leapfrog a rostered starter the market has priced —
- * the first of §5's three guardrails, and the one §13 checks for.
+ * Where the modelled tier at a position tops out: the `SEAM_PERCENTILE`
+ * quantile of that position's market prices.
+ *
+ * This is the first of §5's three guardrails, and the one §13 checks for. Its
+ * job is that a waiver flyer never leapfrogs the rostered starters the market
+ * has priced — but "never leapfrogs *anybody*" and "never leapfrogs all but
+ * the cheapest tenth" are different claims, and only the second one survives a
+ * board where one priced veteran has fallen to 14 while the next is at 21.
+ * Reading the seam off a percentile is what stops a single stale price from
+ * deciding what every unpriced player at that position is worth.
  */
 function seamCaps(players: EnginePlayer[]): Map<string, number> {
-  const caps = new Map<string, number>();
+  const byPosition = new Map<string, number[]>();
 
   for (const player of players) {
     if (!player.market) continue;
     const position = normalizePosition(player.position);
     if (!position) continue;
 
-    const current = caps.get(position);
-    if (current === undefined || player.market.value < current) {
-      caps.set(position, player.market.value);
-    }
+    const prices = byPosition.get(position);
+    if (prices) prices.push(player.market.value);
+    else byPosition.set(position, [player.market.value]);
+  }
+
+  const caps = new Map<string, number>();
+
+  for (const [position, prices] of byPosition) {
+    prices.sort((a, b) => a - b);
+    const seam = percentile(prices, SEAM_PERCENTILE);
+    if (seam !== undefined) caps.set(position, seam);
   }
 
   return caps;
 }
 
 /**
- * §5's second guardrail. Kickers and defenses have no market anchor and VOR
- * flatters them badly — they score consistently, so their spread above
- * replacement reads as reliability rather than scarcity. Measured against the
- * live board, the raw fit puts the best kicker at ~3,200, which would rank him
- * inside the top 20 assets in the league.
+ * §5's second guardrail, and the tier it actually names.
  *
- * The ceiling is the market's own floor: the cheapest player FantasyCalc is
- * willing to price at all. This is §13's seam check generalized to a position
- * the market declines to cover — if the market says the 190th-best skill
- * player is worth 3, a streamed kicker is not worth more than that.
+ * Kickers and defenses have no market anchor and VOR flatters them badly —
+ * they score consistently, so their spread above replacement reads as
+ * reliability rather than scarcity. Measured against the live board, the raw
+ * fit puts the best kicker at ~2,286, which would rank him inside the top 20
+ * assets in the league. Something has to hold them down.
  *
- * §5 suggests the QB2/TE2 tier for this ceiling; on the real curve that is
- * ~136, which would rank every kicker above all 365 modelled skill players.
- * §3 is the sharper statement of the same intent and the one followed here:
- * in redraft their trade value "genuinely *is* near zero."
+ * §5 asks for the QB2/TE2 tier and that is now what this returns: the market
+ * price of the `2 × numTeams`-th quarterback and of the tight end at the same
+ * rank, averaged. On a 12-team board those are the 24th QB and the 24th TE,
+ * which is exactly the player a manager rosters as a second one — measured at
+ * 215 and 111 on one live league, 202 and 80 on another.
+ *
+ * It previously returned the *global* market floor instead, the cheapest
+ * player FantasyCalc would price at all, which came to 5. Paired with a hard
+ * `min` that did not compress a position so much as erase it: all 46 kickers
+ * and all 32 defenses came out at 5 apiece, so the best kicker in football and
+ * a bye-week streamer were the same number. The argument for that ceiling was
+ * §3's "in redraft their trade value genuinely is near zero", which is a fair
+ * claim about the *tier* and no claim at all about the ordering inside it.
+ * Both are kept now: a kicker still cannot approach a startable skill player,
+ * and the good ones are still worth more than the bad ones.
+ *
+ * The two anchors are averaged rather than minimised because the deep end of
+ * the tight end market is thin and jumps around — 111 against 80 across two
+ * boards of the same market — while the pair together is stable.
  */
-export function kdefCap(players: EnginePlayer[]): number {
-  let floor = Infinity;
+export const KDEF_TIER_MULTIPLE = 2;
 
-  for (const player of players) {
-    if (player.market && player.market.value < floor) floor = player.market.value;
+export function kdefCap(players: EnginePlayer[], numTeams: number): number {
+  const rank = Math.max(1, Math.round(KDEF_TIER_MULTIPLE * Math.max(1, numTeams)));
+  const anchors: number[] = [];
+
+  for (const position of ["QB", "TE"]) {
+    const priced = players
+      .filter(
+        (player) =>
+          player.market !== null && normalizePosition(player.position) === position,
+      )
+      .map((player) => player.market!.value)
+      .sort((a, b) => b - a);
+
+    if (priced.length === 0) continue;
+    anchors.push(priced[Math.min(priced.length - 1, rank - 1)]);
   }
 
-  if (!Number.isFinite(floor)) return DEFAULT_KDEF_CAP;
-  return Math.max(FLOOR_VALUE, Math.round(floor));
+  if (anchors.length === 0) return DEFAULT_KDEF_CAP;
+
+  const mean = anchors.reduce((sum, value) => sum + value, 0) / anchors.length;
+  return Math.max(FLOOR_VALUE, Math.round(mean));
+}
+
+/**
+ * The largest VOR anyone carries at each position.
+ *
+ * Only K and DEF read this, and only because their scale has no market anchor
+ * to borrow. For a skill position the isotonic fit answers "what is this VOR
+ * worth in FantasyCalc points" from data; for a kicker there is no such data
+ * and never will be, so the honest reading is a relative one — how far above a
+ * streamer he is, as a share of how far above a streamer the best kicker in
+ * football is.
+ */
+function topVorByPosition(prepared: Prepared[]): Map<string, number> {
+  const top = new Map<string, number>();
+
+  for (const player of prepared) {
+    const position = player.normalizedPosition;
+    if (position === null || player.vor === null) continue;
+
+    const current = top.get(position);
+    if (current === undefined || player.vor > current) top.set(position, player.vor);
+  }
+
+  return top;
 }
 
 type Prepared = EnginePlayer & {
@@ -326,11 +458,11 @@ function compare(a: ValueRow, b: ValueRow): number {
     return (a.source === "market" ? 0 : 1) - (b.source === "market" ? 0 : 1);
   }
 
-  // Ties are the norm below the seam, not the exception: FantasyCalc's own
-  // curve bottoms out at 1, so the clamp legitimately flattens most of the
-  // model tier onto that floor. The values are telling the truth — those
-  // players really are worth about nothing in trade — but the *ordering* still
-  // has to mean something, and VOR is what it means.
+  // Ties are rarer than they were, now that the guardrails compress instead of
+  // truncating, but they are still routine at the bottom of the board: the
+  // model tier is rounded to whole points and the last few hundred players are
+  // all worth about the same nothing. The values are telling the truth about
+  // that; the *ordering* still has to mean something, and VOR is what it means.
   const vorA = a.vor ?? -Infinity;
   const vorB = b.vor ?? -Infinity;
   if (vorA !== vorB) return vorB - vorA;
@@ -353,7 +485,8 @@ export function computeValues(
   const { prepared, baselines } = prepare(players, config);
   const { fit, overlap, rankCorrelation } = buildFit(prepared);
   const caps = seamCaps(players);
-  const cap = kdefCap(players);
+  const cap = kdefCap(players, config.numTeams);
+  const topVor = topVorByPosition(prepared);
 
   const rows: ValueRow[] = prepared.map((player) => {
     const position = player.normalizedPosition;
@@ -397,9 +530,27 @@ export function computeValues(
     const baseValue = Math.round(fitted);
 
     if (position !== null && NON_TRADE_POSITIONS.has(position)) {
+      // Not `min(fit, cap)`. The fit's answer for a kicker is 2,286 against a
+      // ceiling of ~163, so a clamp would put every one of them on the ceiling
+      // and the position would carry one number. What survives instead is the
+      // shape the fit was reading: points above a streamed replacement, as a
+      // share of the best kicker in football, spent across the tier.
+      //
+      // The baseline for these two positions is the *median* of the position
+      // (see `prepare`), so half the pool sits at or below zero here and comes
+      // out at the floor. That is the right answer and the same one as before:
+      // a below-average kicker is not a trade asset. What has changed is that
+      // an above-average one is now allowed to say so.
+      const top = topVor.get(position) ?? 0;
+      const share =
+        top > 0 ? Math.max(0, Math.min(1, (player.vor as number) / top)) : 0;
+
       return {
         ...base,
-        value: Math.max(FLOOR_VALUE, Math.min(baseValue, cap)),
+        value: Math.max(
+          FLOOR_VALUE,
+          Math.round(FLOOR_VALUE + (cap - FLOOR_VALUE) * share),
+        ),
         baseValue,
         source: "model_capped" as const,
         confidence: CONFIDENCE.model_capped,
@@ -411,7 +562,7 @@ export function computeValues(
     }
 
     const seam = position === null ? undefined : caps.get(position);
-    const clamped = seam === undefined ? fitted : Math.min(fitted, seam);
+    const clamped = seam === undefined ? fitted : softCap(fitted, seam);
     const injured = clamped * injuryMultiplier(player.injuryStatus);
 
     return {
