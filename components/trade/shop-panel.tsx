@@ -5,14 +5,15 @@ import { ArrowRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Panel, Stencil } from "@/components/board/panel";
-import { EmptySeat } from "@/components/board/rail";
+import { EmptySeat, RailLine } from "@/components/board/rail";
 import { InjuryBadge } from "@/components/players/injury-badge";
 import { PositionBadge } from "@/components/values/position-badge";
 import { ValueBadge } from "@/components/values/value-badge";
 import {
   shopPackage,
   SHOP_LIMITS,
-  type Suggestion,
+  type ShopFit,
+  type ShopReturn,
 } from "@/lib/suggestions/search";
 import { BAND_META, type TradeParams } from "@/lib/trades/analyze";
 import type { TradeBoard, TradeBoardAsset } from "@/lib/trades/store";
@@ -48,6 +49,35 @@ const TONE: Record<"fair" | "tilted" | "lopsided", string> = {
   lopsided: "bg-destructive/14 text-destructive",
 };
 
+/**
+ * What a fair price does to the two lineups, said in words as well as in the
+ * two figures beside it. Fairness is a claim about value and carries no claim
+ * at all about whether either team gets better; the card has to make that its
+ * own line or the list reads as twelve equally good ideas.
+ */
+const FIT_WORDS: Record<ShopFit, { label: string; title: string }> = {
+  "win-win": {
+    label: "Both gain",
+    title:
+      "Both starting lineups improve. This is the deal the other manager has a reason to accept.",
+  },
+  yours: {
+    label: "Yours gains",
+    title:
+      "A fair price, but only your lineup improves. Worth asking; they have no lineup reason to say yes.",
+  },
+  theirs: {
+    label: "Theirs gains",
+    title:
+      "A fair price that improves their lineup and not yours. They would send this; you would be paying for the privilege.",
+  },
+  neither: {
+    label: "Even swap",
+    title:
+      "A fair price that moves neither Sunday. Common when two rosters are shaped the same way.",
+  },
+};
+
 /** One roster's answer: what comes back, and what it does to both lineups. */
 function Return({
   suggestion,
@@ -55,7 +85,7 @@ function Return({
   fromLabel,
   onLoad,
 }: {
-  suggestion: Suggestion<ShopAsset>;
+  suggestion: ShopReturn<ShopAsset>;
   teamName: string;
   /** Who is sending. "You" only when side A really is the user's team. */
   fromLabel: string;
@@ -77,7 +107,17 @@ function Return({
           {teamName}
         </Stencil>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5">
+          <span
+            className={cn(
+              "stencil inline-flex h-5 items-center rounded-xs px-1.5 text-[0.5625rem]",
+              "bg-[color-mix(in_oklch,var(--channel)_55%,transparent)] text-chalk-dim",
+            )}
+            title={FIT_WORDS[suggestion.fit].title}
+          >
+            {FIT_WORDS[suggestion.fit].label}
+          </span>
+
           <span
             className={cn(
               "stencil inline-flex h-5 items-center gap-1 rounded-xs px-1.5 text-[0.5625rem]",
@@ -127,7 +167,7 @@ function Return({
           <Stencil
             data-numeric
             className="tabular-nums"
-            title="What it does to theirs. Both have to improve or it is not on this list."
+            title="What it does to their starting lineup. A return only they gain from is one you are paying for."
           >
             Them {signed(suggestion.lineupB.delta)}
           </Stencil>
@@ -221,16 +261,36 @@ export function ShopPanel({
 
   if (!result) return null;
 
-  const { suggestions, stats } = result;
+  const { winWin, fair, stats } = result;
+  const shown = winWin.length + fair.length;
 
   const note =
     stats.blocked === "unvalued"
       ? "One of these players has no resolved value, so no package can be priced against them. The analyzer refuses this trade a verdict for the same reason."
-      : `Every other roster in the league, searched for a fair return that leaves both starting lineups better than it found them. ${stats.evaluated.toLocaleString()} packages priced across ${stats.teams} team${stats.teams === 1 ? "" : "s"}, ${stats.fair.toLocaleString()} fair by value, ${stats.winWin.toLocaleString()} of those good for both.`;
+      : `Every other roster in the league, searched for a package that prices out fair against this one. ${stats.evaluated.toLocaleString()} priced across ${stats.teams} team${stats.teams === 1 ? "" : "s"}, ${stats.fair.toLocaleString()} fair by value, ${stats.winWin.toLocaleString()} of those good for both lineups.`;
+
+  const list = (returns: typeof winWin) => (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {returns.map((suggestion) => (
+        <Return
+          key={`${suggestion.teamB}-${suggestion.b.map((a) => a.playerId).join("-")}`}
+          suggestion={suggestion}
+          teamName={names.get(suggestion.teamB) ?? "Unknown team"}
+          fromLabel={fromLabel}
+          onLoad={() =>
+            onLoad(
+              suggestion.teamB,
+              suggestion.b.map((asset) => asset.playerId),
+            )
+          }
+        />
+      ))}
+    </div>
+  );
 
   return (
     <Panel
-      label={`Who wants this · ${suggestions.length} return${suggestions.length === 1 ? "" : "s"}`}
+      label={`Who wants this · ${shown} return${shown === 1 ? "" : "s"}`}
       note={note}
       action={
         <div className="text-right">
@@ -244,37 +304,55 @@ export function ShopPanel({
         </div>
       }
     >
-      {suggestions.length === 0 ? (
+      {shown === 0 ? (
         <EmptySeat className="min-h-14 px-4 text-center">
           {stats.blocked === "unvalued"
             ? "Nothing to search"
-            : stats.fair === 0
-              ? "Nobody can match this package inside the fair band"
-              : "Fair returns exist, but none of them improves both lineups"}
+            : "Nobody can match this package inside the fair band"}
         </EmptySeat>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {suggestions.map((suggestion) => (
-            <Return
-              key={`${suggestion.teamB}-${suggestion.b.map((a) => a.playerId).join("-")}`}
-              suggestion={suggestion}
-              teamName={names.get(suggestion.teamB) ?? "Unknown team"}
-              fromLabel={fromLabel}
-              onLoad={() =>
-                onLoad(
-                  suggestion.teamB,
-                  suggestion.b.map((asset) => asset.playerId),
-                )
-              }
-            />
-          ))}
+        <div className="flex flex-col gap-5">
+          {/* Two lists rather than one, because the ordering of a mixed list
+              would have to mean two things at once. The first answers "which
+              of these would they send back"; the second answers the question
+              actually asked, which is what these players are worth. */}
+          {winWin.length > 0 ? (
+            <div className="flex flex-col gap-2.5">
+              <div className="flex items-baseline justify-between gap-3">
+                <Stencil tone="grease">
+                  Both lineups gain · {winWin.length}
+                </Stencil>
+                <p className="text-xs text-muted-foreground">
+                  Fair by value, and both starting lineups improve.
+                </p>
+              </div>
+              <RailLine />
+              {list(winWin)}
+            </div>
+          ) : null}
+
+          {fair.length > 0 ? (
+            <div className="flex flex-col gap-2.5">
+              <div className="flex items-baseline justify-between gap-3">
+                <Stencil>Fair value · {fair.length}</Stencil>
+                <p className="max-w-[46ch] text-right text-xs text-muted-foreground">
+                  {winWin.length === 0
+                    ? "Nothing improves both lineups. These are priced fair and labelled with who actually gains."
+                    : "A fair price where the lineup gain runs one way. Yours first, then by how close each came to helping both."}
+                </p>
+              </div>
+              <RailLine />
+              {list(fair)}
+            </div>
+          ) : null}
         </div>
       )}
 
-      {suggestions.length >= SHOP_LIMITS.results ? (
+      {winWin.length >= SHOP_LIMITS.winWinResults ||
+      fair.length >= SHOP_LIMITS.fairResults ? (
         <p className="pt-3 text-xs text-muted-foreground">
-          Showing the best {SHOP_LIMITS.results}, at most {SHOP_LIMITS.perTeam}{" "}
-          from any one roster.
+          Showing the best {SHOP_LIMITS.winWinResults} of each, at most{" "}
+          {SHOP_LIMITS.perTeam} per list from any one roster.
         </p>
       ) : null}
     </Panel>

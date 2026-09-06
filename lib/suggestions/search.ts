@@ -712,24 +712,55 @@ function diversify<T extends SuggestionAsset>(
 // ---------------------------------------------------------------------------
 
 export const SHOP_LIMITS = {
-  /** How many of the other team's assets enter the enumeration. §9's number. */
-  topAssets: 8,
+  /**
+   * How many of the other team's assets enter the enumeration.
+   *
+   * Twelve rather than §9's eight, for the reason §10's builder also takes
+   * twelve: this search has been told what the user wants to move, so it can
+   * afford to look further down somebody else's roster for the price of it.
+   * §9's eight is sized for sixty-six pairs of rosters; this looks at eleven.
+   */
+  topAssets: 12,
   /**
    * How many players may come back. Three rather than §9's two, because the
    * offer is fixed and consolidating is the whole reason anyone shops two good
-   * players: you send the pair and you are owed the option of three back. It
-   * costs 92 packages a team against 36, which is nothing next to the win-win
-   * search's 85,536 candidate trades — this one looks at eleven rosters, not
-   * sixty-six pairs of them.
+   * players: you send the pair and you are owed the option of three back.
    */
   maxPackage: 3,
-  /** Per team, so one deep roster cannot fill the whole list. */
+  /** Per team, per list, so one deep roster cannot fill either of them. */
   perTeam: 2,
-  /** Overall. Long enough to be a market, short enough to read. */
-  results: 12,
+  /** Returns that improve both lineups. */
+  winWinResults: 8,
+  /** Returns that are fair by value but do not. */
+  fairResults: 8,
 } as const;
 
 export type ShopBlock = "empty" | "unvalued";
+
+/**
+ * What a fair return actually does to the two lineups behind it.
+ *
+ * Fairness is a claim about value and says nothing about whether either team
+ * gets better, which is why the two are separate fields on a card rather than
+ * one verdict. `win-win` is §9's test. `yours` is the deal the other manager
+ * has to be talked into. `theirs` is the one you have to be talked into.
+ * `neither` is a fair swap that moves nobody's Sunday, which is a real and
+ * common outcome when two rosters are shaped the same way.
+ */
+export type ShopFit = "win-win" | "yours" | "theirs" | "neither";
+
+export function fitOf(lineupA: LineupChange, lineupB: LineupChange): ShopFit {
+  const mine = lineupA.delta > MIN_LINEUP_GAIN;
+  const theirs = lineupB.delta > MIN_LINEUP_GAIN;
+
+  if (mine && theirs) return "win-win";
+  if (mine) return "yours";
+  if (theirs) return "theirs";
+  return "neither";
+}
+
+export type ShopReturn<T extends SuggestionAsset = SuggestionAsset> =
+  Suggestion<T> & { fit: ShopFit };
 
 export type ShopStats = {
   /** Rosters searched. */
@@ -738,17 +769,123 @@ export type ShopStats = {
   askingPrice: number;
   evaluated: number;
   pruned: number;
+  /** Landed inside the fairness band. */
   fair: number;
+  /** Of those, the ones that improve both starting lineups. */
   winWin: number;
+  /** Of those, the ones that improve only the user's. */
+  yours: number;
   /** §4: players on the other rosters with no resolved value, left out. */
   unvalued: number;
   blocked: ShopBlock | null;
 };
 
 export type ShopResult<T extends SuggestionAsset> = {
-  suggestions: Suggestion<T>[];
+  /** Both starting lineups improve — §9's test, ranked §9's way. */
+  winWin: ShopReturn<T>[];
+  /** Fair by value and not win-win, ranked on what it does for the shopper. */
+  fair: ShopReturn<T>[];
   stats: ShopStats;
 };
+
+/**
+ * How coarsely the shop lists read `min(Δa, Δb)`.
+ *
+ * Rest-of-season lineup deltas are sums over a dozen players; a point between
+ * two of them is not a distinction a manager can act on. Read exactly, the
+ * objective lets a 0.2-point difference in what the *other* side loses decide
+ * the order — on a live board that put `you +0.1, them −1.0` above `you +21.8,
+ * them −1.2`, which is a ranking nobody would defend out loud.
+ *
+ * So the objective is read to the nearest point and `totalGain` settles the
+ * bucket. Two returns their worse-off side cannot tell apart are ordered by
+ * which creates more, and the user's own gain is most of what creates it.
+ */
+export const RETURN_GRAIN = 1;
+
+/**
+ * Who the deal has to help, before how much.
+ *
+ * A manager shopping their own players is not looking for returns that improve
+ * somebody else's lineup, and the objective alone will happily rank one above a
+ * return that improves theirs: `you −14, them +88` scores a better `min` than
+ * `you +70, them −16` and is the worse suggestion by any reading a user would
+ * recognise. So fit leads and the objective orders within it. Nothing is hidden
+ * — a fair price that only helps the other side is still a fact about what
+ * these players are worth — it simply sits below the ones that help.
+ */
+const FIT_RANK: Record<ShopFit, number> = {
+  "win-win": 0,
+  yours: 1,
+  neither: 2,
+  theirs: 3,
+};
+
+/**
+ * §9's objective at that resolution, under that tiering, for the two shop
+ * lists.
+ *
+ * Deliberately not applied to `searchWinWin`: its ordering is cached in
+ * `trade_suggestions` and read back by a screen that has always sorted this
+ * way, and re-grinding it would reshuffle every stored suggestion in the league
+ * for a panel that does not read them.
+ */
+export function compareReturns<T extends SuggestionAsset>(
+  first: Suggestion<T>,
+  second: Suggestion<T>,
+): number {
+  const tier =
+    FIT_RANK[fitOf(first.lineupA, first.lineupB)] -
+    FIT_RANK[fitOf(second.lineupA, second.lineupB)];
+  if (tier !== 0) return tier;
+
+  const coarse =
+    Math.round(second.score.minGain / RETURN_GRAIN) -
+    Math.round(first.score.minGain / RETURN_GRAIN);
+  if (coarse !== 0) return coarse;
+
+  if (differs(first.score.totalGain, second.score.totalGain)) {
+    return second.score.totalGain - first.score.totalGain;
+  }
+  if (differs(first.score.marketShare, second.score.marketShare)) {
+    return second.score.marketShare - first.score.marketShare;
+  }
+  if (differs(first.score.pct, second.score.pct)) {
+    return first.score.pct - second.score.pct;
+  }
+  if (first.score.bodies !== second.score.bodies) {
+    return first.score.bodies - second.score.bodies;
+  }
+
+  return assetKey(first.a, first.b) < assetKey(second.a, second.b) ? -1 : 1;
+}
+
+/**
+ * Keeps the best `limit` returns that are different deals, per roster.
+ *
+ * The same suppression `diversify` applies to the win-win search and for the
+ * same reason: ranked purely, one roster's top three returns are the same two
+ * players three times with the throw-in changing.
+ */
+function topPerTeam<T extends SuggestionAsset>(
+  found: ShopReturn<T>[],
+  limit: number,
+): ShopReturn<T>[] {
+  const kept: ShopReturn<T>[] = [];
+  const seen = new Set<string>();
+
+  for (const suggestion of [...found].sort(compareReturns)) {
+    if (kept.length >= limit) break;
+
+    const key = `${suggestion.teamB}:${suggestion.analysis.b.best?.playerId ?? 0}`;
+    if (seen.has(key)) continue;
+
+    seen.add(key);
+    kept.push(suggestion);
+  }
+
+  return kept;
+}
 
 /**
  * The third shape of the same search: a fixed package, and what the rest of the
@@ -762,18 +899,37 @@ export type ShopResult<T extends SuggestionAsset> = {
  * back?*
  *
  * It is the builder with the roles swapped and the loop moved outside — the
- * user's side is fixed, the other side is enumerated, and it runs once per
- * team instead of once. Everything under it is the machinery both engines
- * already use: `candidateAssets` for who is realistically available,
- * `baseRatioWindow` for the exact prune, `analyzeTrade` for the verdict and
- * `lineupChangeFrom` for both roster deltas.
+ * user's side is fixed, the other side is enumerated, and it runs once per team
+ * instead of once. Everything under it is the machinery both engines already
+ * use: `candidateAssets` for who is realistically available, `baseRatioWindow`
+ * for the exact prune, `analyzeTrade` for the verdict and `lineupChangeFrom`
+ * for both roster deltas.
  *
- * **Both lineups must improve.** This is §9's win-win test rather than §10's,
- * and it is the right one here: §10 does not require the *seller* to gain,
- * because a manager who has decided they want Jefferson will pay for him. A
- * manager shopping their own players has decided no such thing. A return that
- * leaves their starters worse is not an offer, it is a mistake with a fair
- * price on it.
+ * **Two lists come back, split by fit and ranked identically.** §9's win-win
+ * test is the right bar for a trade the app is *recommending*, and on a real
+ * board it is brutal: 322 fair returns collapsing to 12 that improve both
+ * lineups is a normal measurement, because most fair trades help exactly one
+ * side. Reporting only those twelve answers "which deals would both managers
+ * send" — a fine question, and not the one a manager shopping their own players
+ * is asking. They asked what their players are worth. So every fair return
+ * survives, carrying what it does to each lineup.
+ *
+ * Both lists lead on `min(Δa, Δb)`, and that is not a convenience. Below zero
+ * §9's objective keeps meaning something exact: how much the worse-off side
+ * loses. Maximising it ranks the fair list by how close each return came to
+ * being win-win, which is the only ordering that survived contact with a real
+ * board. Two others were tried and both produced a menu whose first entry was
+ * its worst:
+ *
+ * - **The shopper's own gain** puts `you +58.0, them −52.0` on top — a fair
+ *   price at which the other manager sends three starters for one and craters
+ *   his lineup. Fair by value is not the same as acceptable.
+ * - **`totalGain`** fixes that case and breaks the mirror of it, leading with
+ *   `you −28.6, them +49.2`: a deal that creates plenty and creates all of it
+ *   for the other guy.
+ *
+ * `min` is the only one of the three that cannot be gamed by either side's
+ * extreme, because it is a claim about whoever the deal treats worst.
  */
 export function shopPackage<T extends SuggestionAsset>(
   {
@@ -794,7 +950,8 @@ export function shopPackage<T extends SuggestionAsset>(
     topAssets: number;
     maxPackage: number;
     perTeam: number;
-    results: number;
+    winWinResults: number;
+    fairResults: number;
   } = SHOP_LIMITS,
 ): ShopResult<T> {
   const base = offer.reduce((sum, asset) => sum + asset.value, 0);
@@ -806,20 +963,23 @@ export function shopPackage<T extends SuggestionAsset>(
     pruned: 0,
     fair: 0,
     winWin: 0,
+    yours: 0,
     unvalued: 0,
     blocked: null,
   };
 
-  if (offer.length === 0) {
-    return { suggestions: [], stats: { ...stats, blocked: "empty" } };
-  }
+  const nothing = (blocked: ShopBlock): ShopResult<T> => ({
+    winWin: [],
+    fair: [],
+    stats: { ...stats, blocked },
+  });
+
+  if (offer.length === 0) return nothing("empty");
 
   // §4, and the same line the builder draws: a package holding a player nobody
   // has priced cannot be given a verdict, so there is no search to run. The
   // analyzer refuses it too, and the two must refuse it together.
-  if (offer.some((asset) => asset.source === "floor")) {
-    return { suggestions: [], stats: { ...stats, blocked: "unvalued" } };
-  }
+  if (offer.some((asset) => asset.source === "floor")) return nothing("unvalued");
 
   // The prune is only exact if its bound covers the larger of the two sides:
   // §6's depth penalty grows with the number of bodies, and the offer's size is
@@ -830,7 +990,8 @@ export function shopPackage<T extends SuggestionAsset>(
   );
   const beforeFrom = bestLineup(from.roster, slots);
 
-  const found: Suggestion<T>[] = [];
+  const winWin: ShopReturn<T>[] = [];
+  const fair: ShopReturn<T>[] = [];
 
   for (const team of others) {
     if (team.teamId === from.teamId) continue;
@@ -846,7 +1007,8 @@ export function shopPackage<T extends SuggestionAsset>(
     );
     stats.pruned += ready.packages.length - (end - start);
 
-    const perTeam: Suggestion<T>[] = [];
+    const teamWinWin: ShopReturn<T>[] = [];
+    const teamFair: ShopReturn<T>[] = [];
 
     for (let index = start; index < end; index += 1) {
       const back = ready.packages[index];
@@ -862,18 +1024,18 @@ export function shopPackage<T extends SuggestionAsset>(
         { out: offer, in: back.assets },
         slots,
       );
-      if (lineupA.delta <= MIN_LINEUP_GAIN) continue;
-
       const lineupB = lineupChangeFrom(
         ready.before,
         team.roster,
         { out: back.assets, in: offer },
         slots,
       );
-      if (lineupB.delta <= MIN_LINEUP_GAIN) continue;
-      stats.winWin += 1;
 
-      perTeam.push({
+      const fit = fitOf(lineupA, lineupB);
+      if (fit === "win-win") stats.winWin += 1;
+      else if (fit === "yours") stats.yours += 1;
+
+      const entry: ShopReturn<T> = {
         teamA: from.teamId,
         teamB: team.teamId,
         a: offer,
@@ -881,6 +1043,7 @@ export function shopPackage<T extends SuggestionAsset>(
         analysis,
         lineupA,
         lineupB,
+        fit,
         score: {
           minGain: Math.min(lineupA.delta, lineupB.delta),
           totalGain: lineupA.delta + lineupB.delta,
@@ -888,17 +1051,19 @@ export function shopPackage<T extends SuggestionAsset>(
           pct: analysis.verdict.pct,
           bodies: offer.length + back.assets.length,
         },
-      });
+      };
+
+      if (fit === "win-win") teamWinWin.push(entry);
+      else teamFair.push(entry);
     }
 
-    // Diversified per team for the reason the win-win search diversifies per
-    // pair: ranked purely, one roster's top three returns are the same two
-    // players three times with the throw-in changing.
-    found.push(...diversify(perTeam, limits.perTeam));
+    winWin.push(...topPerTeam(teamWinWin, limits.perTeam));
+    fair.push(...topPerTeam(teamFair, limits.perTeam));
   }
 
   return {
-    suggestions: found.sort(compareSuggestions).slice(0, limits.results),
+    winWin: winWin.sort(compareReturns).slice(0, limits.winWinResults),
+    fair: fair.sort(compareReturns).slice(0, limits.fairResults),
     stats,
   };
 }

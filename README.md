@@ -1064,39 +1064,78 @@ one shape missing: **I am willing to move these two. Who wants them, and what
 comes back?**
 
 `shopPackage` fixes the outgoing side and enumerates the other eleven rosters —
-`C(8,1) + C(8,2) + C(8,3)` = 92 packages a team, against §9's 36, because the
-offer is fixed and consolidating is the whole reason anyone shops two good
-players. Everything under it is machinery both other engines already use:
-`candidateAssets` for who is realistically available, `baseRatioWindow` for the
-exact prune, `analyzeTrade` for the verdict, `lineupChangeFrom` for both roster
-deltas.
+`C(12,1) + C(12,2) + C(12,3)` = 298 packages a team, at §10's twelve assets
+rather than §9's eight, because this search has already been told what the user
+wants to move and can afford to look further down somebody else's roster for the
+price of it. Everything under it is machinery both other engines already use:
+`candidateAssets`, `baseRatioWindow` for the exact prune, `analyzeTrade` for the
+verdict, `lineupChangeFrom` for both roster deltas.
 
-**Both lineups have to improve**, which is §9's test rather than §10's, and the
-difference is the point. §10 does not require the seller to gain, because a
-manager who has decided they want Jefferson will pay for him. A manager shopping
-their own players has decided no such thing: a return that leaves their starters
-worse is not an offer, it is a mistake with a fair price on it.
+### Two lists, because the win-win bar is the wrong one to filter on
 
-It lives **in the trade analyzer**, not on the suggestions screen, and it runs in
-the browser on every pick. That is the same argument §2 makes about the verdict:
-the page already handed over the league's whole rostered board, and this is a
-pure function over it. Measured on a live 12-team league, a two-player offer is
-**3.9 ms** — 402 packages priced, 610 pruned before the analyzer was called, 123
-fair by value, 2 of those good for both. The cost is 4.1 kB on the trade route's
-bundle, which is what shipping `search.ts` and `engine.ts` to the client comes
-to.
+§9's test — both starting lineups improve — is right for a trade the app is
+*recommending*, and on a real board it is brutal. Measured on a live 12-team
+league shopping one player: **1,096 packages priced, 322 fair by value, 12 that
+improve both lineups.** Reporting only those twelve answers "which deals would
+both managers send", which is a fine question and not the one being asked. The
+manager asked what their players are worth.
 
-The funnel is printed rather than hidden, because the last number in it is
-usually small: "123 fair by value, 2 of those good for both" is the honest
-description of a league in which most fair trades help exactly one side. When
-nothing survives, the panel says which stage it died at — nobody could match the
-package inside the fair band, or fair returns exist and none of them improves
-both lineups. Those are different problems with different answers, and a single
-"no suggestions" would hide both.
+So every fair return survives and the split is by *fit*, not by filter:
+`win-win`, `yours`, `theirs`, `neither`. Each card prints the word alongside
+both lineup deltas, because fairness is a claim about value and carries no claim
+at all about whether either team gets better — a list of twelve equally-priced
+returns with no fit label reads as twelve equally good ideas.
 
-A card loads straight into the analyzer beneath it: the return goes on side B,
-the team picker follows it, and the deal becomes something to tune, argue with
-and save rather than something to read.
+### The ordering is `min`, and two better-sounding ones were wrong
+
+Both lists lead on `min(Δa, Δb)`. Below zero §9's objective keeps meaning
+something exact — how much the worse-off side loses — so maximising it ranks the
+fair list by how close each return came to being win-win. Two alternatives were
+tried against the live board and both produced a menu whose first entry was its
+worst:
+
+- **The shopper's own gain** leads with `you +58.0, them −52.0`: a genuinely
+  fair *price* at which the other manager sends three starters for one and
+  craters his own lineup. Fair by value is not the same as acceptable.
+- **`totalGain`** fixes that and breaks its mirror, leading with `you −28.6,
+  them +49.2` — a deal that creates plenty and creates all of it for the other
+  guy.
+
+`min` is the only one of the three that neither extreme can game, because it is
+a claim about whoever the deal treats worst.
+
+It is not the *first* key, though, because on its own it will happily rank `you
+−14, them +88` above `you +70, them −16` — a better `min` and the worse
+suggestion by any reading a shopper would recognise. So fit leads and the
+objective orders within it: returns that help you, then ones that help nobody,
+then ones that help only them. Nothing is hidden — a fair price that only helps
+the other manager is still a fact about what these players are worth — it simply
+sits below the ones that help.
+
+It is read to the nearest point (`RETURN_GRAIN`), and that is not rounding for
+tidiness. Read exactly, a 0.2-point difference in what the *other* side loses
+decides the order: the live board put `you +0.1, them −1.0` above `you +21.8,
+them −1.2`. Inside a point the two are the same deal from that side's point of
+view, and `totalGain` settles the bucket. `searchWinWin` keeps the exact
+comparator, because its ordering is cached in `trade_suggestions` and re-grinding
+it would reshuffle every stored suggestion for a panel that does not read them.
+
+### Where it runs, and what that costs
+
+**In the trade analyzer**, not on the suggestions screen, and in the browser on
+every pick. That is §2's own argument about the verdict applied unchanged: the
+page already handed over the league's whole rostered board, and this is a pure
+function over it. A two-player offer measures **14 ms** on the live board — 1,119
+packages priced, 349 fair, 7 win-win — against a 4.1 kB bundle cost for shipping
+`search.ts` and `engine.ts` to the client. A server action there would put a
+round trip between adding a player and seeing who wants him.
+
+The funnel is printed rather than hidden, because its last number is usually
+small: "349 fair by value, 7 of those good for both lineups" is the honest
+description of a league in which most fair trades help exactly one side. A card
+loads straight into the analyzer beneath it — the return goes on side B, the team
+picker follows it, and the deal becomes something to tune, argue with and save
+rather than something to read.
 
 ### One is cached, two are not
 
