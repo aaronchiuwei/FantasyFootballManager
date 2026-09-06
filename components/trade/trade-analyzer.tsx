@@ -19,6 +19,7 @@ import type { TradeBoard, TradeBoardAsset } from "@/lib/trades/store";
 
 import { RosterDeltaPanel } from "./roster-delta-panel";
 import { SavedTrades, type SavedTradeView } from "./saved-trades";
+import { ShopPanel } from "./shop-panel";
 import { TradeSide } from "./trade-side";
 import { TuningPanel } from "./tuning-panel";
 import { VerdictPanel } from "./verdict-panel";
@@ -304,6 +305,18 @@ export function TradeAnalyzer({
     });
   }
 
+  /**
+   * Puts a suggested return on the other side, so a proposal arrives in the
+   * analyzer rather than in a screenshot. The team is set alongside it, because
+   * a package from a roster the picker is not pointed at would render as an
+   * empty column.
+   */
+  function takeReturn(teamId: string, playerIds: number[]) {
+    if (teamId === teams.a) return;
+    setTeams({ ...teams, b: teamId });
+    setPicks({ ...picks, b: playerIds });
+  }
+
   const empty = picks.a.length === 0 && picks.b.length === 0;
 
   return (
@@ -316,6 +329,20 @@ export function TradeAnalyzer({
           number that may well still exist. */}
       {picks.a.length > 0 && picks.b.length > 0 ? (
         <RosterDeltaPanel names={names} sides={context} />
+      ) : null}
+
+      {/* Shown the moment there is something to shop. It answers a different
+          question from the verdict above it — not "is this deal fair" but "who
+          would do it" — so it does not wait for the other side to be built.
+          That is the whole point: the other side is what it is proposing. */}
+      {picks.a.length > 0 ? (
+        <ShopPanel
+          board={board}
+          offer={packages.a}
+          fromTeamId={teams.a}
+          params={params}
+          onLoad={takeReturn}
+        />
       ) : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
