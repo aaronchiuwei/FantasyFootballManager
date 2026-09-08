@@ -28,6 +28,30 @@ export class YahooApiError extends Error {
   }
 }
 
+/**
+ * A 401 that survived a *successful* token refresh.
+ *
+ * The link cannot be expired — Yahoo minted a token for it moments ago — so
+ * this is about what the app is allowed to read, not about the credential.
+ * Calling it an expired link sends the user round the consent screen again and
+ * lands them back here, which is the loop this class exists to break: the
+ * usual cause is a Yahoo app registered without Fantasy Sports read.
+ */
+export class YahooAccessDenied extends YahooApiError {
+  constructor(detail: string) {
+    super(
+      "Yahoo refused to read your fantasy leagues with a token it had just " +
+        "issued, so the link itself is fine. That is a permission on the Yahoo " +
+        "app rather than an expired link: its registration at " +
+        "developer.yahoo.com needs Fantasy Sports read access, and granting it " +
+        "only takes effect once you connect again." +
+        (detail ? ` Yahoo said: ${detail}` : ""),
+      401,
+    );
+    this.name = "YahooAccessDenied";
+  }
+}
+
 async function request(path: string, accessToken: string) {
   const separator = path.includes("?") ? "&" : "?";
   return fetch(`${API_BASE}/${path}${separator}format=json`, {
@@ -42,15 +66,23 @@ async function request(path: string, accessToken: string) {
 /**
  * GETs a Yahoo Fantasy resource and returns its normalized `fantasy_content`.
  *
- * A 401 mid-flight means the access token died early; refresh once and retry.
+ * A 401 mid-flight is ambiguous: the access token may have died early, or
+ * Yahoo may be refusing this resource whatever token it is shown. Forcing a
+ * refresh settles which — if Yahoo hands back a new token the credential is
+ * alive, so a second 401 is a permission and must not be reported as an
+ * expired link (§12). A refresh Yahoo *rejects* raises `YahooReauthRequired`
+ * from `getAccessToken` itself, which is the real re-link prompt.
+ *
  * Rate limits are undocumented, so 429/5xx get one backed-off retry too.
  */
 export async function yahooGet(userId: string, path: string): Promise<Plain> {
   let accessToken = await getAccessToken(userId);
   let response = await request(path, accessToken);
+  let refreshed = false;
 
   if (response.status === 401) {
     accessToken = await getAccessToken(userId, { forceRefresh: true });
+    refreshed = true;
     response = await request(path, accessToken);
   }
 
@@ -60,7 +92,12 @@ export async function yahooGet(userId: string, path: string): Promise<Plain> {
   }
 
   if (response.status === 401) {
-    throw new YahooReauthRequired("Yahoo rejected the access token");
+    const body = await response.text();
+    // Only reachable without a refresh when the backed-off retry above turned
+    // a 429/5xx into a 401, which leaves the token genuinely unproven.
+    throw refreshed
+      ? new YahooAccessDenied(body.slice(0, 200))
+      : new YahooReauthRequired("Yahoo rejected the access token");
   }
 
   if (!response.ok) {

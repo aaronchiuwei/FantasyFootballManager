@@ -93,21 +93,26 @@ export default async function LeaguesPage({
 
   let discovered: DiscoveredLeague[] = [];
   let discoveryError: string | null = null;
+  // Only a token Yahoo itself refused to renew is an expired link. Every other
+  // way discovery can fail — Yahoo down, a refused permission, a payload we
+  // could not parse — leaves the link healthy, and saying otherwise sends the
+  // user through the consent screen to no effect.
+  let expired = false;
 
   if (connection.connected && !connection.needsReauth) {
     try {
       ({ leagues: discovered } = await discoverLeagues(user!.id));
     } catch (cause) {
-      discoveryError =
-        cause instanceof YahooReauthRequired
-          ? "Your Yahoo link expired. Reconnect to keep importing."
-          : cause instanceof Error
-            ? cause.message
-            : "Could not reach Yahoo.";
+      expired = cause instanceof YahooReauthRequired;
+      discoveryError = expired
+        ? "Your Yahoo link expired. Reconnect to keep importing."
+        : cause instanceof Error
+          ? cause.message
+          : "Could not reach Yahoo.";
     }
   }
 
-  const needsReauth = connection.needsReauth || discoveryError !== null;
+  const needsReauth = connection.needsReauth || expired;
 
   return (
     <div className="flex flex-col gap-8">
@@ -129,7 +134,7 @@ export default async function LeaguesPage({
         </Alert>
       ) : null}
 
-      {connected ? (
+      {connected && !discoveryError ? (
         <Alert>
           <CheckCircle2 />
           <AlertTitle>Yahoo connected</AlertTitle>
@@ -143,17 +148,31 @@ export default async function LeaguesPage({
           connection.connected
             ? needsReauth
               ? "The link needs renewing before leagues can be read."
-              : "Linked. Tokens are stored encrypted, server-side only."
+              : discoveryError
+                ? "Linked — Yahoo took the token and would not answer with it."
+                : "Linked. Tokens are stored encrypted, server-side only."
             : "Read-only access to your fantasy leagues."
         }
         action={
-          connection.connected && !needsReauth ? (
-            <DisconnectYahooButton />
+          connection.connected ? (
+            <div className="flex items-center gap-1">
+              {needsReauth ? null : <DisconnectYahooButton />}
+              {/* A link that works needs no reconnect button; one that failed
+                  for any reason gets one, since re-consenting is what picks up
+                  a permission granted after the fact. */}
+              {needsReauth || discoveryError ? (
+                <Button
+                  asChild
+                  size="sm"
+                  variant={needsReauth ? "default" : "outline"}
+                >
+                  <a href="/api/yahoo/authorize">Reconnect Yahoo</a>
+                </Button>
+              ) : null}
+            </div>
           ) : (
             <Button asChild size="sm">
-              <a href="/api/yahoo/authorize">
-                {connection.connected ? "Reconnect Yahoo" : "Connect Yahoo"}
-              </a>
+              <a href="/api/yahoo/authorize">Connect Yahoo</a>
             </Button>
           )
         }
