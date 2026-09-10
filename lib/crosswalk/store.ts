@@ -328,7 +328,6 @@ export type ResolutionReport = {
 
 async function fetchKeyed<T extends { source_id: string }>(
   db: Db,
-  table: "player_crosswalk" | "player_id_overrides",
   columns: string,
   sourceIds: string[],
   source: ProviderSource,
@@ -337,13 +336,46 @@ async function fetchKeyed<T extends { source_id: string }>(
 
   for (const batch of chunk(sourceIds, FILTER_CHUNK)) {
     const { data, error } = await db
-      .from(table)
+      .from("player_crosswalk")
       .select(columns)
       .eq("source", source)
       .in("source_id", batch);
 
-    if (error) throw new Error(`Failed to read ${table}: ${error.message}`);
+    if (error) throw new Error(`Failed to read player_crosswalk: ${error.message}`);
     for (const row of (data ?? []) as unknown as T[]) map.set(row.source_id, row);
+  }
+
+  return map;
+}
+
+/**
+ * This league's manual overrides, as `source_id` -> `player_id`.
+ *
+ * Read per league rather than globally, which is the shape of the decision:
+ * the crosswalk is a shared identity map seeded from public data, an override
+ * is one manager's judgement about their own pool, and two leagues are allowed
+ * to resolve the same provider id to different players.
+ */
+async function fetchOverrides(
+  db: Db,
+  leagueId: string,
+  sourceIds: string[],
+  source: ProviderSource,
+): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+
+  for (const batch of chunk(sourceIds, FILTER_CHUNK)) {
+    const { data, error } = await db
+      .from("player_id_overrides")
+      .select("source_id, player_id")
+      .eq("league_id", leagueId)
+      .eq("source", source)
+      .in("source_id", batch);
+
+    if (error) {
+      throw new Error(`Failed to read player_id_overrides: ${error.message}`);
+    }
+    for (const row of data ?? []) map.set(row.source_id, row.player_id);
   }
 
   return map;
@@ -368,25 +400,13 @@ export async function resolvePool(
 
   const sourceIds = pool.map((entry) => entry.yahooPlayerId);
   const [overrides, existing] = await Promise.all([
-    fetchKeyed<{ source_id: string; player_id: number }>(
-      db,
-      "player_id_overrides",
-      "source_id, player_id",
-      sourceIds,
-      source,
-    ),
+    fetchOverrides(db, leagueId, sourceIds, source),
     fetchKeyed<{
       source_id: string;
       player_id: number;
       match_method: string;
       confidence: number;
-    }>(
-      db,
-      "player_crosswalk",
-      "source_id, player_id, match_method, confidence",
-      sourceIds,
-      source,
-    ),
+    }>(db, "source_id, player_id, match_method, confidence", sourceIds, source),
   ]);
 
   const index = new CandidateIndex(toCandidates(players));
@@ -402,8 +422,8 @@ export async function resolvePool(
 
     let resolution: Resolution | null = null;
 
-    if (override) {
-      resolution = { playerId: override.player_id, method: "override", confidence: 1 };
+    if (override !== undefined) {
+      resolution = { playerId: override, method: "override", confidence: 1 };
     } else if (known) {
       resolution = {
         playerId: known.player_id,
@@ -654,9 +674,15 @@ export async function getIdentityStatus(
 
 /**
  * "These are the same person." Writes the manual override that outranks every
- * other rung of the ladder (§4 step 1), then applies it immediately — the
- * crosswalk row, the roster slot the player was missing from, and closing out
+ * other rung of the ladder (§4 step 1) *for this league*, then applies it
+ * immediately — the roster slot the player was missing from, and closing out
  * the unmatched entry — so one click is genuinely one click.
+ *
+ * The decision deliberately stops at the league boundary. It used to be copied
+ * into `player_crosswalk` as well, which is global and service-role write
+ * only, so one manager's call silently repriced the same player on every other
+ * board. The override table is consulted ahead of the crosswalk by both the
+ * resolver and the views, so keeping it here costs this league nothing.
  */
 export async function applyOverride(
   userId: string,
@@ -667,7 +693,6 @@ export async function applyOverride(
   }: { leagueId: string; unmatchedId: string; playerId: number },
 ): Promise<{ name: string }> {
   const supabase = await createClient();
-  const admin = createAdminClient();
 
   const { data: row, error } = await supabase
     .from("unmatched_players")
@@ -700,12 +725,14 @@ export async function applyOverride(
   await supabase
     .from("player_id_overrides")
     .delete()
+    .eq("league_id", leagueId)
     .eq("source", source)
     .eq("source_id", row.yahoo_player_id);
 
   const { error: overrideError } = await supabase
     .from("player_id_overrides")
     .insert({
+      league_id: leagueId,
       source,
       source_id: row.yahoo_player_id,
       player_id: playerId,
@@ -715,21 +742,6 @@ export async function applyOverride(
 
   if (overrideError) {
     throw new Error(`Failed to save override: ${overrideError.message}`);
-  }
-
-  const { error: crosswalkError } = await admin.from("player_crosswalk").upsert(
-    {
-      source,
-      source_id: row.yahoo_player_id,
-      player_id: playerId,
-      match_method: "override",
-      confidence: 1,
-    },
-    { onConflict: "source,source_id" },
-  );
-
-  if (crosswalkError) {
-    throw new Error(`Failed to save crosswalk: ${crosswalkError.message}`);
   }
 
   if (payload.teamKey) {

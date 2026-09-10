@@ -300,7 +300,7 @@ than once per sync:
 
 | # | Rung | Where |
 |---|---|---|
-| 1 | Manual override | `player_id_overrides`, written by the identity screen |
+| 1 | Manual override | `player_id_overrides`, written by the identity screen, scoped to that league |
 | 2 | DynastyProcess `db_playerids.csv` | seeded into the crosswalk on each master refresh |
 | 3 | Sleeper's own `yahoo_id` / `espn_id` | same seeding pass, lower precedence |
 | 4 | Team defense by NFL team abbreviation | both providers model a defense as a team, not a player |
@@ -2090,6 +2090,11 @@ checks are about.
 - **Global reference data is service-role only.** `players`, `player_crosswalk`,
   stats, projections and `stat_coverage` are readable by any signed-in user and
   written only by the admin client; league data stays user-scoped and RLS-bound.
+  A judgement a user makes is league data even when it is *about* reference
+  data, which is why `player_id_overrides` carries a `league_id` and the
+  identity screen no longer writes its decision into the shared crosswalk: one
+  manager resolving an ambiguous name must not reprice that player on boards
+  they cannot see.
 - **Data-access modules take a client, they do not make one.** Which client is
   right depends on the caller — the user's RLS-bound one interactively, the
   service role inside the sync pipeline — so `Db` is a parameter (`lib/supabase/db.ts`).

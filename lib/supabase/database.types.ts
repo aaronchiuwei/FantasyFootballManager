@@ -266,6 +266,7 @@ export type Database = {
       };
       player_id_overrides: {
         Row: {
+          league_id: string;
           source: string;
           source_id: string;
           player_id: number;
@@ -274,6 +275,7 @@ export type Database = {
           created_at: string;
         };
         Insert: {
+          league_id: string;
           source: string;
           source_id: string;
           player_id: number;
