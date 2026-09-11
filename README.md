@@ -92,6 +92,7 @@ app/
         layout.tsx   breadcrumb + the section strip every screen below shares
         loading.tsx  one skeleton for all eight, inside that layout
         players/[playerId]/  one player: value, stats, week-by-week
+        matchup/         one week head to head: live scores and the odds
         lineup/          one week: start/sit, and what every team projects
         trade/           the trade analyzer, and the trades kept from it
         overview/        the twelve teams as positional strength radars
@@ -148,6 +149,10 @@ lib/trades/
 lib/schedule/
   sos.ts             defense grades, slate walking, the rank — pure and tested
   store.ts           sync stage 6 — the slate and the aggregates; the two boards' read
+lib/matchups/
+  live.ts            banked vs still to play, and the win probability — pure
+  board.ts           schedule rows × rosters → this week's pairings — pure
+  store.ts           the matchup screen's read, over the start/sit board's
 lib/needs/
   needs.ts           §7's needs vector — pure, and what Phases 8–9 stand on
   lineup.ts          the best startable lineup, and what a trade does to it — pure
@@ -182,6 +187,7 @@ components/
   values/            value badges, the values board
   schedule/          the strength-of-schedule stamp the board and the rosters
                      carry, and the player page's week-by-week slate
+  matchup/           the head-to-head panel, the scoreboard rail, the odds bar
   trade/             the balance beam, the drop zones, the verdict, the lineup delta
   needs/             the positional radar, need and depth chips, the team card
   waivers/           the ranked wire, and the λ slider that tilts it
@@ -1717,6 +1723,134 @@ should have been.
 - **`is_starter` is the provider's, and it can be stale.** A lineup edited in
   Yahoo after the last sync is compared against the one this app last read. The
   optimal side is unaffected, since it depends only on the roster.
+
+## How the live matchup works
+
+Every other screen here is about a decision, and all of them are denominated in
+something the manager controls. This one is not. By Sunday afternoon the
+decisions are made and the only question left is whether they were enough,
+which is a question about two scores and about how much football is still to be
+played.
+
+All three of those facts were already in the database and none of them had a
+screen. Sync stage 6 has written each week's scoreboard to `matchups` since
+Phase 2 and **nothing ever read the table**; stage 5 re-pulls the live week's
+stat lines on every run, because `settledWeeks` freezes only the weeks *behind*
+the current one; and the start/sit board deliberately hides those actuals until
+the week is over, since its own question is a forecast. `/leagues/{id}/matchup`
+is mostly the join that was missing: the schedule row that says who plays whom,
+against the lineups that say who is left to play.
+
+Like the board next door it is a plain server render with **0 kB of client
+JavaScript**, and it reuses `loadWeekBoard` rather than reading the week again.
+Two screens that read the same week separately are two screens that can
+disagree about a receiver's projection, which costs the user their trust in
+both. One read, one extra query.
+
+### A score is two numbers, not one
+
+```
+banked    = the league's own running total     (fallback: Σ our starters' lines)
+remaining = Σ projections of starters with no line yet
+projected = banked + remaining
+```
+
+The split is the whole screen. `banked` comes from the provider where there is
+one, because that is the figure the league will settle on — computed under its
+real scoring rules, including the defense and kicker categories this app models
+more loosely than it models a receiver. `remaining` comes from our own weekly
+grid, because the provider will not tell you *who* is left, and who is left is
+the reason to keep watching.
+
+A player counts as played the moment a stat line exists for him, which is the
+only signal either provider gives at this grain.
+
+### The odds
+
+Each starter still to come is modelled as normal around his projection, with a
+spread that is a fraction of it:
+
+| | QB | RB | WR | TE | K | DEF |
+|---|---|---|---|---|---|---|
+| sd / projection | 0.42 | 0.55 | 0.62 | 0.65 | 0.45 | 0.75 |
+
+with a floor of **1.5 points**, because a low projection is not a confident one
+— it is usually a statement about playing time, which is exactly the thing that
+swings. The two sides' finals are sums of independents, so the margin is normal
+with the variances added, and `P(win) = Φ((projA − projB) / √(varA + varB))`.
+
+Φ is Abramowitz & Stegun 26.2.17, written out in nine lines rather than pulled
+in, since this app has no numerics dependency.
+
+The consequence worth stating is that **the odds are mostly about how much is
+left, not about the lead**. A ten-point lead with both benches empty is a win; a
+ten-point lead with a flex still to play is a coin flip with a lean. That is the
+one thing a scoreboard cannot tell a manager and this can.
+
+Rounding is clamped to 1–99% while anything is still to be played. A 99.6%
+favourite is not a winner, and printing "100%" over a game with a flex to come
+is the fastest way to make somebody stop believing the number. Certainty is
+reserved for the case that is certain: nobody left, which the model returns as
+exactly 1 or 0.
+
+### A finished week stops projecting
+
+`settled()` is not a formality. A starter with no stat line is the ordinary case
+at the end of a week — inactive, or a line that never landed — and left alone he
+carries his full projection into `remaining` forever. A week that finished 131
+to nothing would then read as close, with a 39% chance sitting over a team that
+had already lost. So when the phase is `final`, everything that is a claim about
+the future comes off: the projection, its uncertainty, and the men it was
+attached to. `banked` survives, because by then it is the final score.
+
+The phase itself reads the clock first and the provider second:
+
+```
+week < current_week          → final     (the clock has moved past it)
+status = postevent           → final
+week > current_week          → upcoming
+status = midevent            → live
+any points on the board      → live
+otherwise                    → upcoming
+```
+
+The clock leads because stage 1 resolves it fresh from Sleeper on every sync,
+while `status` is whatever the last scoreboard pull happened to write. The
+points-on-the-board fallback is for ESPN, whose schedule view publishes no
+in-progress state at all — only whether a winner has been declared — and it is
+also what keeps the live week from reading as "live" on the Wednesday before
+anybody has kicked off.
+
+### Orientation is a read concern
+
+Rows are stored with their two sides ordered by provider team key, so that a
+re-sync overwrites the row it wrote last time instead of mirroring it. That is
+an invariant about writes and has no business reaching a screen, so the pairing
+turns the user's team to side A — and the probability with it, since `P(a beats
+b)` is only useful if `a` is the side the reader identifies with.
+
+### Where it falls short
+
+- **A player mid-game is booked at what he has so far.** His line is partial for
+  those three hours, so his side is briefly understated. The alternative —
+  keeping him in `remaining` at his full projection *and* counting the points he
+  has banked — overstates him, and by more.
+- **`nfl_schedule.kickoff` is a date, not a time.** Nothing here knows that the
+  late window has not started. "Yet to play" is derived from the absence of a
+  stat line, which is a weaker signal than a real kickoff clock would be.
+- **Correlation is ignored.** A quarterback and the receiver he throws to have
+  the same good afternoon; so, in a shootout, do both sides. Adding variances as
+  though they were independent pulls probabilities slightly away from 50% — a
+  little too confident, and never in a direction that flips a call.
+- **Nothing refreshes on its own.** The page is as live as the last sync. There
+  is no polling and no Realtime subscription here; the only one in the app is
+  sync progress. Pressing sync is still the thing that moves the numbers.
+- **A tie has probability zero.** The margin is continuous, so the model can
+  only ever say "outscores". A finished dead heat is reported as 50/50 rather
+  than as the tie it is.
+- **A manual league has no schedule at all.** `matchups` rows only come from
+  stage 6, so a hand-kept league gets an honest empty state. Inventing a pairing
+  would be worse than showing none.
 
 ## How the sync works
 

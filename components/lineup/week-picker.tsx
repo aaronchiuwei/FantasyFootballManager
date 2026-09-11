@@ -16,18 +16,26 @@ import { cn } from "@/lib/utils";
  * the same and the two times they are not are exactly when it matters: looking
  * back at a week already played, and looking ahead at one that has not
  * arrived.
+ *
+ * `segment` is what makes it shared. Two screens are weekly — the start/sit
+ * board and the matchup screen — and they are the same picker over the same
+ * range; only the page a chip lands on differs. Moving between weeks should
+ * not also move between screens.
  */
 export function WeekPicker({
   leagueId,
   weeks,
   week,
   currentWeek,
+  segment,
 }: {
   leagueId: string;
   weeks: number[];
   week: number;
   /** The live NFL week, where the season clock knows one. */
   currentWeek: number | null;
+  /** The league section the chips link into. */
+  segment: "lineup" | "matchup";
 }) {
   return (
     <div className="-mx-4 overflow-x-auto px-4 sm:-mx-6 sm:px-6">
@@ -41,7 +49,7 @@ export function WeekPicker({
           return (
             <Link
               key={entry}
-              href={`/leagues/${leagueId}/lineup?week=${entry}`}
+              href={`/leagues/${leagueId}/${segment}?week=${entry}`}
               aria-current={selected ? "page" : undefined}
               title={
                 live

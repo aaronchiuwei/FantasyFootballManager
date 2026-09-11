@@ -16,6 +16,7 @@ export type LeagueSectionKey =
   | "league"
   | "manage"
   | "moves"
+  | "matchup"
   | "lineup"
   | "values"
   | "trade"
@@ -65,9 +66,12 @@ export const LEAGUE_SECTIONS: readonly LeagueSection[] = [
   // these two are where the season actually gets recorded.
   { key: "manage", label: "Manage", segment: "manage", only: "manual" },
   { key: "moves", label: "Moves", segment: "moves", only: "manual" },
-  // Ahead of the asset screens because it is the only weekly one. Everything
-  // from here down is denominated in rest-of-season points or in trade value,
-  // which is what a season is measured in; this is what a Sunday is.
+  // Ahead of the asset screens because these two are the weekly ones.
+  // Everything from here down is denominated in rest-of-season points or in
+  // trade value, which is what a season is measured in; these are what a
+  // Sunday is. The matchup leads the pair because it is the one with an
+  // outcome in it — the lineup is a decision, and by kickoff it is made.
+  { key: "matchup", label: "Matchup", segment: "matchup" },
   { key: "lineup", label: "Start/sit", segment: "lineup" },
   { key: "values", label: "Values", segment: "values" },
   { key: "trade", label: "Trade", segment: "trade" },

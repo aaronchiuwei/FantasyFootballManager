@@ -6,11 +6,13 @@ import {
   ArrowLeftRight,
   ArrowRightIcon,
   ArrowRightLeft,
+  ClipboardCheck,
   ListPlus,
   PencilLineIcon,
   Radar,
   Scale,
   Sparkles,
+  Swords,
   Users,
 } from "lucide-react";
 
@@ -82,6 +84,7 @@ export default async function LeaguePage({
     { count: needsCount },
     { count: suggestionCount },
     { count: moveCount },
+    { count: matchupCount },
   ] = await Promise.all([
       latestRun(supabase, league.id),
       teamIds.length === 0
@@ -118,6 +121,10 @@ export default async function LeaguePage({
         .from("transactions")
         .select("id", { count: "exact", head: true })
         .eq("league_id", league.id),
+      supabase
+        .from("matchups")
+        .select("team_a", { count: "exact", head: true })
+        .eq("league_id", league.id),
     ]);
 
   const starters = (league.roster_slots as unknown as RosterSlot[])
@@ -137,7 +144,7 @@ export default async function LeaguePage({
   const unclaimed = espn && !(teams ?? []).some((team) => team.is_users_team);
 
   /**
-   * The board's index. One shape, repeated, because these are seven doors off
+   * The board's index. One shape, repeated, because these are nine doors off
    * the same room. Each carries its own live state so the reader can see which
    * doors are open before walking to one.
    */
@@ -189,6 +196,42 @@ export default async function LeaguePage({
             ready: matched !== 0,
           },
         ]),
+    // The two weekly doors, ahead of the asset screens for the reason the
+    // section strip puts them there: everything below is denominated in rest
+    // of season, and these are what a Sunday is. The matchup leads the pair
+    // because it is the one with an outcome in it — the lineup is a decision,
+    // and by kickoff it is already made.
+    {
+      href: `/leagues/${league.id}/matchup`,
+      icon: Swords,
+      label: "Matchup",
+      title: "This week head to head",
+      state: manual
+        ? "A hand-kept league has no schedule, so nothing here knows who plays whom. Every other weekly reading works without one."
+        : matchupCount === 0
+          ? "No schedule read yet. A sync pairs every team off for the weeks that are under way or already played."
+          : league.current_week
+            ? `Week ${league.current_week}: what each side has banked, who is left to play, and the odds between them.`
+            : `${matchupCount?.toLocaleString()} matchups read. The board opens on the live week once the season has one.`,
+      cta: !manual && matchupCount ? "Open" : "Details",
+      ready: !manual && Boolean(matchupCount),
+    },
+    {
+      href: `/leagues/${league.id}/lineup`,
+      icon: ClipboardCheck,
+      label: "Start/sit",
+      title: "Start and sit",
+      state:
+        matched === 0
+          ? manual
+            ? "No players on any roster yet. Fill them in and every week of the season opens up here."
+            : `No rosters read yet. Run a sync to pull them and the week-by-week projections behind them.`
+          : `Every roster in the league solved against this league's own starting slots${
+              league.current_week ? ` for week ${league.current_week}` : ""
+            }, and the points sitting on each bench.`,
+      cta: matched ? "Open" : "Details",
+      ready: matched !== 0,
+    },
     {
       href: `/leagues/${league.id}/values`,
       icon: Scale,
