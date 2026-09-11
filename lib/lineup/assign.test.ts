@@ -8,6 +8,7 @@ import {
   seats,
   type Seatable,
 } from "./assign";
+import { bestLineup } from "@/lib/needs/lineup";
 import type { StartingSlot } from "@/lib/values/vor";
 
 const SLOTS: StartingSlot[] = [
@@ -327,5 +328,65 @@ describe("resolveLineup", () => {
     expect(
       resolveLineup(roster, SLOTS, new Map([[roster[0].playerId, "QB"]])).size,
     ).toBe(3);
+  });
+});
+
+describe("an unset week, end to end", () => {
+  // The bug this pins: the board filled its seats from `rosters.slot`, which
+  // is what a provider last said and is under no obligation to describe a
+  // legal lineup. It held more men than the league had seats, so the board
+  // totalled 132.2 next to a start/sit panel saying the best possible was
+  // 120.0. Resolving first is what makes the two agree by construction.
+  const roster = [
+    p("QB", 18, "QB"),
+    p("RB", 19, "RB"),
+    p("RB", 16, "RB"),
+    p("RB", 10, "RB"), // a third back, stored as RB: one more than there are seats
+    p("WR", 12, "WR"),
+    p("WR", 11, "WR"),
+    p("WR", 10, "WR"), // likewise a third receiver
+    p("TE", 10, "TE"),
+  ];
+
+  it("seats no more men than the league has seats", () => {
+    const resolved = resolveLineup(roster, SLOTS, new Map());
+    const shown = roster.map((player) => ({
+      ...player,
+      slot: resolved.get(player.playerId)!,
+    }));
+
+    const filled = seats(shown, SLOTS).filter((seat) => seat.player);
+    const startingSeats = SLOTS.filter((slot) => slot.isStarting).reduce(
+      (sum, slot) => sum + slot.count,
+      0,
+    );
+
+    expect(filled.length).toBeLessThanOrEqual(startingSeats);
+  });
+
+  it("totals exactly what the solver says the best lineup is worth", () => {
+    const resolved = resolveLineup(roster, SLOTS, new Map());
+    const shown = roster.map((player) => ({
+      ...player,
+      slot: resolved.get(player.playerId)!,
+    }));
+
+    const total = seats(shown, SLOTS).reduce(
+      (sum, seat) => sum + (seat.player?.points ?? 0),
+      0,
+    );
+
+    expect(total).toBeCloseTo(bestLineup(roster, SLOTS).points, 5);
+  });
+
+  it("would not have, before the resolve", () => {
+    // Reading the stored slots straight off the roster seats all three backs
+    // and all three receivers, which is the old total.
+    const straight = seats(roster, SLOTS).reduce(
+      (sum, seat) => sum + (seat.player?.points ?? 0),
+      0,
+    );
+
+    expect(straight).toBeGreaterThan(bestLineup(roster, SLOTS).points);
   });
 });

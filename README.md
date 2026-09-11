@@ -1631,8 +1631,11 @@ hurt. The weekly projection grid stage 4 has been pulling since Phase 5 was the
 whole answer, sitting unread behind the player detail page.
 
 `/leagues/{id}/lineup` reads one week of that grid against every roster in the
-league. It is a plain server render with **0 kB of client JavaScript** — a week
-is a URL, so a lineup call is something you can send to a league mate.
+league. Everything that only reads is a plain server render — the week picker,
+the team picker and every board below them are links, so a week or a team is a
+URL you can send to a league mate. The only client code on the page is the
+lineup board a hand-kept league writes with, which an imported league never
+loads at all.
 
 ### Two lineups, and the difference between them
 
@@ -1766,6 +1769,21 @@ It sits on **this** screen rather than on `manage`, because a lineup is a
 decision about a week and this is the screen with a week on it. The header says
 which of the two it is looking at: `set`, or `best available` for a week nobody
 has touched.
+
+**Every team, not just yours.** A hand-kept league is one person keeping twelve
+rosters, so "your team" is the wrong scope for the one control that writes a
+lineup — a board that only ever offered the user's own roster would leave
+eleven lineups unsettable. The team picker carries the week across with it,
+because moving between teams to compare one week is what it is for.
+
+The board resolves its lineup through `resolveLineup` exactly as the boards
+below it do, and that is a correctness requirement rather than tidiness.
+`rosters.slot` is what a provider last said, and it is under no obligation to
+describe a legal lineup: it can hold more men in a slot than the league has
+seats for. Filling the board's seats straight from it totalled 132.2 next to a
+start/sit panel saying the best this roster could do was 120.0 — two numbers
+about the same ten men, on the same screen, disagreeing. Resolving first is
+what makes them agree by construction rather than by coincidence.
 
 **One button seats the solver's answer.** `bestAssignment` runs `bestLineup`
 and then benches everyone it did not seat, which is the part that is easy to

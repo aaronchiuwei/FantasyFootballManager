@@ -6,6 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
 import { Panel } from "@/components/board/panel";
 import { LineupBoard } from "@/components/leagues/lineup-board";
+import { TeamPicker } from "@/components/lineup/team-picker";
 import { ProjectionBoard } from "@/components/lineup/projection-board";
 import { StartSitCalls } from "@/components/lineup/start-sit-calls";
 import { TeamWeekColumn } from "@/components/lineup/team-week-column";
@@ -50,7 +51,7 @@ export default async function LineupPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ week?: string }>;
+  searchParams: Promise<{ week?: string; team?: string }>;
 }) {
   const { id } = await params;
   const search = await searchParams;
@@ -84,15 +85,21 @@ export default async function LineupPage({
    * overwrites it on every sync — so this screen tells that manager what to
    * change and leaves the changing to Yahoo or ESPN.
    */
+  // Which team's lineup is being set: the one in the URL, this user's own, or
+  // the first. A hand-kept league is one person keeping every roster in it, so
+  // every roster is theirs to set.
+  const setting =
+    board.teams.find((team) => team.id === search.team) ?? mine ?? board.teams[0];
+
   const editable =
-    manual && mine
+    manual && setting
       ? await (async () => {
           const context = await loadLineupContext(supabase, league.id, week);
           return {
-            team: mine,
+            team: setting,
             roster: await loadLineupRoster(supabase, {
               leagueId: league.id,
-              teamId: mine.id,
+              teamId: setting.id,
               ...context,
             }),
             slots: context.slots,
@@ -196,7 +203,18 @@ export default async function LineupPage({
           ) : null}
 
           {editable ? (
-            <LineupBoard
+            <>
+              <TeamPicker
+                leagueId={league.id}
+                week={week}
+                teams={board.teams.map((team) => ({
+                  id: team.id,
+                  name: team.name,
+                  isUsersTeam: team.isUsersTeam,
+                }))}
+                selectedId={editable.team.id}
+              />
+              <LineupBoard
               key={`${editable.team.id}:${week}`}
               teamName={editable.team.name}
               week={week}
@@ -218,7 +236,8 @@ export default async function LineupPage({
                   week,
                 ),
               }}
-            />
+              />
+            </>
           ) : null}
 
           {mine ? (
