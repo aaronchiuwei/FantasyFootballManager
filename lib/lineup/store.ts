@@ -1,5 +1,6 @@
 import "server-only";
 
+import { isManualLeague } from "@/lib/leagues/manual";
 import { loadLeagueRosters, type RosterBand } from "@/lib/leagues/rosters";
 import { loadCoverage } from "@/lib/players/stats";
 import { weekWindow } from "@/lib/schedule/sos";
@@ -8,6 +9,7 @@ import type { RosterSlot } from "@/lib/sources/yahoo";
 import type { Db } from "@/lib/supabase/db";
 import type { StartingSlot } from "@/lib/values/vor";
 
+import { BENCH, isReserveSlot, resolveLineup } from "./assign";
 import { weekLineup, type WeekLineup, type WeekPlayer } from "./weekly";
 
 /**
@@ -109,6 +111,40 @@ async function readWeek(
   return lines;
 }
 
+/**
+ * The stored lineups for one week, by team.
+ *
+ * A team with no rows is absent from the map rather than present and empty,
+ * because those are different states: one is a week nobody has set and the
+ * other cannot happen — a lineup somebody set has somebody in it.
+ */
+async function readWeekLineups(
+  db: Db,
+  { teamIds, week }: { teamIds: string[]; week: number },
+): Promise<Map<string, Map<number, string>>> {
+  const byTeam = new Map<string, Map<number, string>>();
+  if (teamIds.length === 0) return byTeam;
+
+  const { data, error } = await db
+    .from("lineups")
+    .select("team_id, player_id, slot")
+    .in("team_id", teamIds)
+    .eq("week", week);
+
+  // A lineup table that cannot be read costs the board its overrides, not its
+  // rosters: every week falls back to the best lineup, which is what an unset
+  // week resolves to anyway.
+  if (error) return byTeam;
+
+  for (const row of data ?? []) {
+    const team = byTeam.get(row.team_id) ?? new Map<number, string>();
+    team.set(row.player_id, row.slot);
+    byTeam.set(row.team_id, team);
+  }
+
+  return byTeam;
+}
+
 /** Who each NFL team plays in one week. A bye is the absence of a row. */
 async function readSlate(
   db: Db,
@@ -139,6 +175,8 @@ export type WeekLeague = {
   currentWeek: number | null;
   startWeek: number | null;
   endWeek: number | null;
+  /** Whose lineup it is: ours to resolve, or the provider's to state. */
+  isManual: boolean;
 };
 
 /**
@@ -186,6 +224,7 @@ export function toWeekLeague(row: {
   current_week: number | null;
   start_week: number | null;
   end_week: number | null;
+  source: string | null;
 }): WeekLeague {
   return {
     id: row.id,
@@ -195,6 +234,7 @@ export function toWeekLeague(row: {
     currentWeek: row.current_week,
     startWeek: row.start_week,
     endWeek: row.end_week,
+    isManual: isManualLeague(row.source),
   };
 }
 
@@ -231,7 +271,7 @@ export async function loadWeekBoard(
     ),
   ];
 
-  const [projections, actuals, slate, coverage] = await Promise.all([
+  const [projections, actuals, slate, coverage, stored] = await Promise.all([
     readWeek(db, "player_projections", {
       season: league.season,
       week,
@@ -246,6 +286,7 @@ export async function loadWeekBoard(
     }),
     readSlate(db, { season: league.season, week }),
     loadCoverage(db, [league.season]),
+    readWeekLineups(db, { teamIds: (teams ?? []).map((team) => team.id), week }),
   ]);
 
   const pulled = coverage.get(`${league.season}:projected:${week}`) ?? null;
@@ -276,6 +317,33 @@ export async function loadWeekBoard(
         };
       },
     );
+
+    // The week's lineup, resolved. An unset week on a hand-kept league is the
+    // best lineup the roster could field rather than eleven empty seats, and
+    // an unset week on an imported one is whatever the provider last said —
+    // guessing a better lineup for a league whose lineup we do not own would
+    // be overruling it.
+    const seats = resolveLineup(
+      players,
+      league.rosterSlots,
+      stored.get(team.id) ?? new Map(),
+      league.isManual ? "best" : "keep",
+    );
+
+    for (const player of players) {
+      const slot = seats.get(player.playerId) ?? BENCH;
+      player.slot = slot;
+      player.isStarter = !isReserveSlot(slot) && slot !== BENCH;
+      // The band is re-read from the week too. It groups the column into
+      // starting, bench and reserve, and a band left over from the roster's
+      // own arrangement would print a heading that disagreed with the seats
+      // underneath it.
+      player.band = player.isStarter
+        ? "starting"
+        : isReserveSlot(slot)
+          ? "reserve"
+          : "bench";
+    }
 
     return {
       id: team.id,

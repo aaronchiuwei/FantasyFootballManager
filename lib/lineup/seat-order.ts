@@ -102,6 +102,24 @@ function byPosition(position: string | null): number {
 }
 
 /**
+ * Where one seat falls against another, for anything that lists seats.
+ *
+ * Exported because two surfaces list them: the matchup screen sorts players by
+ * the seat each is in, and the lineup board lays out the seats themselves. A
+ * manager who sets a lineup and then looks at the matchup should be reading
+ * the same ten rows in the same ten places, which they cannot be if each
+ * surface decides the order for itself.
+ */
+export function compareSeats(
+  a: { slot: string | null; position: string | null },
+  b: { slot: string | null; position: string | null },
+): number {
+  const left = rankOf(a.slot, a.position);
+  const right = rankOf(b.slot, b.position);
+  return left[0] - right[0] || left[1] - right[1];
+}
+
+/**
  * Sort a starting lineup into seat order.
  *
  * Players sharing a seat — two running backs, two flexes — share a rank and
@@ -118,14 +136,7 @@ export function bySlotOrder<T extends { slot: string | null; position: string | 
   // in every engine this runs on, and the index tiebreak makes that explicit
   // rather than relied upon.
   return starters
-    .map((player, index) => ({
-      player,
-      index,
-      rank: rankOf(player.slot, player.position),
-    }))
-    .sort(
-      (a, b) =>
-        a.rank[0] - b.rank[0] || a.rank[1] - b.rank[1] || a.index - b.index,
-    )
+    .map((player, index) => ({ player, index }))
+    .sort((a, b) => compareSeats(a.player, b.player) || a.index - b.index)
     .map((entry) => entry.player);
 }

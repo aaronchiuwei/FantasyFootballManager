@@ -6,7 +6,14 @@ import type { RosterSlot } from "@/lib/sources/yahoo-parse";
 import type { Db } from "@/lib/supabase/db";
 import type { StartingSlot } from "@/lib/values/vor";
 
-import { BENCH, bestAssignment, seatMoves, type Seatable } from "./assign";
+import {
+  BENCH,
+  bestAssignment,
+  isReserveSlot,
+  resolveLineup,
+  seatMoves,
+  type Seatable,
+} from "./assign";
 import { resolveWeek } from "./store";
 
 /**
@@ -18,12 +25,16 @@ import { resolveWeek } from "./store";
  * An imported league's lineup belongs to its provider and is read, never
  * written.
  *
- * Nothing here calls `markLeagueDirty`, and nothing needs to. `rosters` has a
- * `before update` trigger on `updated_at`, so a seating change is already
- * visible to `rostersMovedSince` and the next page load starts a run. Worth
- * knowing that it *does* — a lineup change moves no value and no needs vector,
- * since `bestLineup` solves from scratch and has never read `is_starter`, so
- * the run it triggers has nothing to find.
+ * Written to `lineups`, keyed by week, and never to `rosters`. A lineup is a
+ * decision about a week; `rosters.slot` answers a question about ownership and
+ * about what the provider last said, which is not the same question and cannot
+ * hold two weeks' answers at once.
+ *
+ * Nothing here marks the league for recomputation, and nothing should. A
+ * lineup moves no value and no needs vector — `bestLineup` solves from scratch
+ * and has never read a stored slot — so a run triggered by one would have
+ * nothing to find. Writing to its own table rather than to `rosters` is also
+ * what keeps the auto-sync's dirty check from firing on every seat change.
  */
 
 /**
@@ -38,13 +49,19 @@ export type LineupContext = {
   season: number;
   ppr: number;
   slots: StartingSlot[];
-  /** The week a lineup is chosen for: the live one, or the league's first. */
+  /** The week this lineup is for, clamped to one the league actually plays. */
   week: number;
 };
 
+/**
+ * `week` is passed in and then checked against the league's own window rather
+ * than trusted: a lineup for a week the league does not play is a row nothing
+ * will ever read, and `resolveWeek` already knows which weeks those are.
+ */
 export async function loadLineupContext(
   db: Db,
   leagueId: string,
+  week: number,
 ): Promise<LineupContext> {
   const { data, error } = await db
     .from("leagues")
@@ -65,7 +82,7 @@ export async function loadLineupContext(
         startWeek: data.start_week,
         endWeek: data.end_week,
       },
-      undefined,
+      week,
     ),
   };
 }
@@ -86,6 +103,12 @@ export type LineupRoster = {
   basis: LineupBasis;
   /** The week `basis: "week"` refers to. Null when the solve fell back. */
   week: number | null;
+  /**
+   * The week's lineup as stored, which is empty until somebody sets one. Kept
+   * separate from the players so a caller can tell "nobody has set this week"
+   * from "this week is set and he is benched".
+   */
+  stored: Map<number, string>;
 };
 
 /**
@@ -111,7 +134,7 @@ export async function loadLineupRoster(
     leagueId: string;
     teamId: string;
     season: number;
-    week: number | null;
+    week: number;
     ppr: number;
   },
 ): Promise<LineupRoster> {
@@ -138,10 +161,10 @@ export async function loadLineupRoster(
   const rows = (data ?? []) as unknown as Joined[];
   const playerIds = rows.map((row) => row.player_id);
 
-  const weekly =
-    week === null
-      ? new Map<number, number | null>()
-      : await readWeeklyProjections(db, { season, week, playerIds, ppr });
+  const [weekly, stored] = await Promise.all([
+    readWeeklyProjections(db, { season, week, playerIds, ppr }),
+    readWeek(db, teamId, week),
+  ]);
 
   // "Has this week been covered for this roster" rather than "does the table
   // have any row at all": a grid pulled for a season this league does not play
@@ -158,7 +181,10 @@ export async function loadLineupRoster(
     position: row.players?.position ?? null,
     nflTeam: row.players?.nfl_team ?? null,
     injuryStatus: row.players?.injury_status ?? null,
-    slot: row.slot,
+    // The week's own seat where there is one, and the roster's otherwise —
+    // which is what carries a reserve slot through, since `lineups` stores
+    // starters only.
+    slot: stored.get(row.player_id) ?? row.slot,
     points:
       (basis === "week" ? weekly.get(row.player_id) : seasonPoints.get(row.player_id)) ??
       null,
@@ -168,6 +194,7 @@ export async function loadLineupRoster(
     players,
     basis,
     week: basis === "week" ? week : null,
+    stored,
   };
 }
 
@@ -232,31 +259,60 @@ async function readSeasonPoints(
   return points;
 }
 
-/** Writes a set of slot changes, and nothing else about the roster rows. */
-async function writeSlots(
+/**
+ * Writes one week's lineup whole: the seated players, and nobody else.
+ *
+ * Replaced rather than merged, and the delete is the important half. The bench
+ * is the absence of a row, so a player who has just been benched is removed —
+ * an upsert alone would leave him seated in a lineup that no longer has him,
+ * and the resolver would read the week as having two men in one seat.
+ */
+async function writeWeek(
   db: Db,
   teamId: string,
-  moves: { playerId: number; slot: string }[],
+  week: number,
+  assignment: ReadonlyMap<number, string>,
 ): Promise<number> {
-  if (moves.length === 0) return 0;
+  const seated = [...assignment].filter(
+    ([, slot]) => slot !== BENCH && !isReserveSlot(slot),
+  );
 
-  const stamped = new Date().toISOString();
+  const { error: cleared } = await db
+    .from("lineups")
+    .delete()
+    .eq("team_id", teamId)
+    .eq("week", week);
 
-  const { error } = await db.from("rosters").upsert(
-    moves.map((move) => ({
+  if (cleared) throw new Error(`Could not clear the lineup: ${cleared.message}`);
+  if (seated.length === 0) return 0;
+
+  const { error } = await db.from("lineups").insert(
+    seated.map(([playerId, slot]) => ({
       team_id: teamId,
-      player_id: move.playerId,
-      slot: move.slot,
-      // The one invariant this write carries: a starter is a man in a starting
-      // seat. `setRosterEntry` says the same thing the same way.
-      is_starter: move.slot !== BENCH && move.slot !== "IR",
-      updated_at: stamped,
+      player_id: playerId,
+      week,
+      slot,
     })),
-    { onConflict: "team_id,player_id" },
   );
 
   if (error) throw new Error(`Could not save the lineup: ${error.message}`);
-  return moves.length;
+  return seated.length;
+}
+
+/** The week as it stands, which is empty until somebody sets one. */
+async function readWeek(
+  db: Db,
+  teamId: string,
+  week: number,
+): Promise<Map<number, string>> {
+  const { data, error } = await db
+    .from("lineups")
+    .select("player_id, slot")
+    .eq("team_id", teamId)
+    .eq("week", week);
+
+  if (error) throw new Error(`Could not read the lineup: ${error.message}`);
+  return new Map((data ?? []).map((row) => [row.player_id, row.slot]));
 }
 
 async function requireTeam(db: Db, leagueId: string, teamId: string) {
@@ -278,19 +334,20 @@ async function requireTeam(db: Db, leagueId: string, teamId: string) {
  */
 export async function applyBestLineup(
   db: Db,
-  { leagueId, teamId }: { leagueId: string; teamId: string },
+  {
+    leagueId,
+    teamId,
+    week,
+  }: { leagueId: string; teamId: string; week: number },
 ): Promise<{ seated: number; basis: LineupBasis }> {
   await requireTeam(db, leagueId, teamId);
 
-  const context = await loadLineupContext(db, leagueId);
+  const context = await loadLineupContext(db, leagueId, week);
   const roster = await loadLineupRoster(db, { leagueId, teamId, ...context });
   const assignment = bestAssignment(roster.players, context.slots);
 
-  const moves = [...assignment].map(([playerId, slot]) => ({ playerId, slot }));
-  await writeSlots(db, teamId, moves);
-
   return {
-    seated: moves.filter((move) => move.slot !== BENCH).length,
+    seated: await writeWeek(db, teamId, week, assignment),
     basis: roster.basis,
   };
 }
@@ -309,12 +366,14 @@ export async function seatPlayer(
   {
     leagueId,
     teamId,
+    week,
     slot,
     incomingId,
     outgoingId,
   }: {
     leagueId: string;
     teamId: string;
+    week: number;
     slot: string;
     incomingId: number | null;
     outgoingId: number | null;
@@ -322,7 +381,7 @@ export async function seatPlayer(
 ): Promise<void> {
   await requireTeam(db, leagueId, teamId);
 
-  const context = await loadLineupContext(db, leagueId);
+  const context = await loadLineupContext(db, leagueId, week);
 
   // The seat has to be one the league actually has. Without this, a posted
   // slot name would let anybody invent a seat and park a player in it, and
@@ -337,5 +396,16 @@ export async function seatPlayer(
   if (!legal) throw new Error("This league has no such starting slot.");
 
   const roster = await loadLineupRoster(db, { leagueId, teamId, ...context });
-  await writeSlots(db, teamId, seatMoves(roster.players, slot, incomingId, outgoingId));
+
+  // The whole week is materialised before one seat in it is changed. An unset
+  // week is shown as the best lineup, so a manager moving one man off it means
+  // "that lineup, but with this change" — writing only the two men who moved
+  // would store a two-man lineup and bench the nine they were looking at.
+  const resolved = resolveLineup(roster.players, context.slots, roster.stored);
+
+  for (const move of seatMoves(roster.players, slot, incomingId, outgoingId)) {
+    resolved.set(move.playerId, move.slot);
+  }
+
+  await writeWeek(db, teamId, week, resolved);
 }

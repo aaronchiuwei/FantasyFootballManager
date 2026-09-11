@@ -149,7 +149,8 @@ lib/trades/
 lib/lineup/
   weekly.ts          one week solved: current vs best, and the swap — pure
   assign.ts          which seat each man sits in, and what a swap moves — pure
-  manual.ts          writing a hand-kept league's lineup; imported ones are read
+  seat-order.ts      QB, RB, WR, TE, flex, K, DEF — pure, shared by both screens
+  manual.ts          writing a hand-kept league's lineup, one week at a time
   store.ts           the start/sit board's one read
 lib/schedule/
   sos.ts             defense grades, slate walking, the rank — pure and tested
@@ -158,7 +159,6 @@ lib/matchups/
   live.ts            banked vs still to play, and the win probability — pure
   live-refresh.ts    the two things that move on a Sunday, re-pulled
   board.ts           schedule rows × rosters → this week's pairings — pure
-  slots.ts           a lineup in seat order: QB, RB, WR, TE, flex, K, DEF — pure
   manual-input.ts    a hand-typed week, validated — pure
   manual.ts          writing a manual league's schedule, one week at a time
   store.ts           the matchup screen's read, over the start/sit board's
@@ -1715,6 +1715,39 @@ week behind it is drawn with what was actually scored alongside what was
 projected, and the advice is labelled for what it then is — what the lineup
 should have been.
 
+### A lineup is a decision about a week
+
+`rosters.slot` carried a lineup from Phase 3 and is the wrong shape for one. It
+is a single current state, so a hand-kept league could say who it was starting
+but not who it *started* in week 4, and setting week 9 in advance meant setting
+today's lineup and remembering to change it back. `rosters` answers a question
+about ownership — who is on this team, and what the provider last said they
+were doing — which is not the same question and cannot hold two weeks' answers
+at once.
+
+So `lineups(team_id, week, player_id, slot)` is additive and `rosters` keeps
+its meaning unchanged. An imported league writes nothing there: stage 7 owns
+its lineups and overwrites them on every sync.
+
+**The absence of rows is a state, and it is the important one.** A week nobody
+has set is not an empty lineup, it is an *unset* one, and `resolveLineup` reads
+it as the best lineup the roster could field. Without that, a hand-kept league
+would score nothing in every week its manager had not visited, and entering a
+season of schedules would oblige you to enter a season of lineups too. A set
+week is the whole week — anybody not named in it is benched, because a stored
+lineup that left a starter out would otherwise read as "still starting, we just
+did not mention him".
+
+One consequence worth stating plainly: **changing one seat on an unset week
+materialises the whole week first.** What is on screen is a full lineup, so
+moving one man off it means "that lineup, but with this change"; writing only
+the two men who moved would store a two-man lineup and bench the nine the
+manager was looking at.
+
+The bench is the absence of a row, for the same reason a bye is the absence of
+a schedule row: fifteen rows a week to say nothing about ten of them is a table
+paying rent on silence.
+
 ### Setting one, on a hand-kept league
 
 `bestLineup` has answered "what is the best lineup this roster can field" since
@@ -1725,10 +1758,14 @@ had only the roster editor, where a lineup is set by choosing a slot for each
 of fifteen men one at a time and hoping the total comes out right. The optimal
 lineup was advice nobody could take.
 
-The lineup board on the manage screen is the other half. It asks the question
-the way a manager asks it — for each seat, who is in it — where the roster
-editor asks it backwards, for each player, which slot. Nobody sets a lineup by
-going through their bench.
+The lineup board is the other half. It asks the question the way a manager asks
+it — for each seat, who is in it — where the roster editor asks it backwards,
+for each player, which slot. Nobody sets a lineup by going through their bench.
+
+It sits on **this** screen rather than on `manage`, because a lineup is a
+decision about a week and this is the screen with a week on it. The header says
+which of the two it is looking at: `set`, or `best available` for a week nobody
+has touched.
 
 **One button seats the solver's answer.** `bestAssignment` runs `bestLineup`
 and then benches everyone it did not seat, which is the part that is easy to
@@ -1757,11 +1794,25 @@ league with two RB slots has two rows both saying `RB`; `seats()` pairs them
 off by order, and every write goes through the slot name, so nothing depends on
 a manager and this app agreeing about which running back is the first one.
 
+### Everything else solves its own
+
+The needs vector, both suggestion searches and the trade delta have always run
+`bestLineup` from scratch and have never read a stored slot, and the overview's
+roster card now does the same. It used to total whatever was in a starting slot,
+which made "how good is this team" depend on the arrangement its manager
+happened to have out on a Tuesday — a roster is as good as the best lineup it
+*could* field, and a manager who has not set week 9 has not thereby got worse.
+
+The stored lineup reaches exactly two screens: start/sit and the matchup. Those
+are the two asking what a team will actually score.
+
 ### Where it falls short
 
-- **A hand-kept lineup is not per week.** `rosters.slot` is one current state,
-  so setting a lineup sets it for now rather than for a week — which is why the
-  board is on the manage screen and not behind the start/sit week picker.
+- **Only a hand-kept league can set one.** An imported league's lineup belongs
+  to its provider and stage 7 overwrites it every sync, so this screen says
+  what to change and Yahoo or ESPN is where you change it.
+- **An imported league has one lineup, not one per week.** `rosters.is_starter`
+  is what the provider last said, so a past week is drawn with today's lineup.
 - **A projection is not a start/sit engine.** Sleeper's weekly numbers carry no
   usage split, no weather, no snap-count trend and no beat-reporter note. They
   are a reasonable prior and this screen is honest about being a fold over them,

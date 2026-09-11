@@ -6,6 +6,7 @@ import {
   type WeekLeague,
   type WeekTeam,
 } from "@/lib/lineup/store";
+import { bySlotOrder } from "@/lib/lineup/seat-order";
 import type { Db } from "@/lib/supabase/db";
 
 import {
@@ -14,7 +15,7 @@ import {
   type MatchupRow,
   type Pairing,
 } from "./board";
-import { bySlotOrder } from "./slots";
+
 
 /**
  * The matchup screen's read: one week of the schedule, over the same rosters

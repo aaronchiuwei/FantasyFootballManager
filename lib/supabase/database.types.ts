@@ -718,6 +718,24 @@ export type Database = {
         >;
         Relationships: [];
       };
+      lineups: {
+        Row: {
+          team_id: string;
+          player_id: number;
+          week: number;
+          slot: string;
+          updated_at: string;
+        };
+        Insert: {
+          team_id: string;
+          player_id: number;
+          week: number;
+          slot: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["lineups"]["Insert"]>;
+        Relationships: [];
+      };
       matchups: {
         Row: {
           league_id: string;

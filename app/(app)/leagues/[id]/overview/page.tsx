@@ -12,6 +12,7 @@ import { TeamRosterColumn } from "@/components/leagues/team-roster";
 import { startingStrength } from "@/lib/needs/needs";
 import { loadLeagueNeeds } from "@/lib/needs/store";
 import { loadLeagueRosters } from "@/lib/leagues/rosters";
+import type { StartingSlot } from "@/lib/values/vor";
 import { loadLeagueSos } from "@/lib/schedule/store";
 import { latestRun } from "@/lib/sync/run";
 import { isManualLeague } from "@/lib/leagues/manual";
@@ -52,7 +53,7 @@ export default async function OverviewPage({
   const { data: league } = await supabase
     .from("leagues")
     .select(
-      "id, name, season, source, ppr, current_week, start_week, end_week",
+      "id, name, season, source, ppr, roster_slots, current_week, start_week, end_week",
     )
     .eq("id", id)
     .maybeSingle();
@@ -63,7 +64,11 @@ export default async function OverviewPage({
 
   const [needs, rosters, run, sos] = await Promise.all([
     loadLeagueNeeds(supabase, league.id),
-    loadLeagueRosters(supabase, league.id),
+    loadLeagueRosters(
+      supabase,
+      league.id,
+      league.roster_slots as unknown as StartingSlot[],
+    ),
     latestRun(supabase, league.id),
     loadLeagueSos(supabase, {
       season: league.season,

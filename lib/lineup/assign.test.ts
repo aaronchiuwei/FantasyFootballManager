@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { bestAssignment, isReserveSlot, seatMoves, seats, type Seatable } from "./assign";
+import {
+  bestAssignment,
+  isReserveSlot,
+  resolveLineup,
+  seatMoves,
+  seats,
+  type Seatable,
+} from "./assign";
 import type { StartingSlot } from "@/lib/values/vor";
 
 const SLOTS: StartingSlot[] = [
@@ -37,15 +44,17 @@ describe("isReserveSlot", () => {
 });
 
 describe("seats", () => {
-  it("lays out the league's own seats in the league's own order", () => {
+  it("lays out the league's seats in seat order, not the settings' order", () => {
+    // SLOTS lists its flex before its tight end, as Yahoo's settings commonly
+    // do. The board reads the way a lineup reads either way.
     expect(seats([], SLOTS).map((seat) => seat.slot)).toEqual([
       "QB",
       "RB",
       "RB",
       "WR",
       "WR",
-      "W/R/T",
       "TE",
+      "W/R/T",
     ]);
   });
 
@@ -263,5 +272,60 @@ describe("seatMoves", () => {
 
   it("does nothing at all when neither side is named", () => {
     expect(seatMoves([p("WR", 9, "WR")], "WR", null, null)).toEqual([]);
+  });
+});
+
+describe("resolveLineup", () => {
+  it("solves an unset week rather than leaving it empty", () => {
+    const qb = p("QB", 20);
+    const resolved = resolveLineup([qb, p("QB", 4)], SLOTS, new Map());
+
+    expect(resolved.get(qb.playerId)).toBe("QB");
+  });
+
+  it("keeps the provider's own lineup on an unset week when told to", () => {
+    const seated = p("QB", 4, "QB");
+    const benched = p("QB", 20, "BN");
+
+    const resolved = resolveLineup([seated, benched], SLOTS, new Map(), "keep");
+
+    expect(resolved.get(seated.playerId)).toBe("QB");
+    expect(resolved.get(benched.playerId)).toBe("BN");
+  });
+
+  it("reads a set week as the whole week", () => {
+    const seated = p("QB", 4, "BN");
+    const better = p("QB", 20, "QB");
+
+    const resolved = resolveLineup(
+      [seated, better],
+      SLOTS,
+      new Map([[seated.playerId, "QB"]]),
+    );
+
+    expect(resolved.get(seated.playerId)).toBe("QB");
+    // Not named in the week, so not in it — even though the roster still says
+    // he is starting and even though he is the better player.
+    expect(resolved.get(better.playerId)).toBe("BN");
+  });
+
+  it("leaves a man on reserve where he is, set or unset", () => {
+    const hurt = p("RB", 30, "IR");
+
+    expect(resolveLineup([hurt], SLOTS, new Map()).get(hurt.playerId)).toBe("IR");
+    expect(
+      resolveLineup([hurt, p("RB", 9)], SLOTS, new Map([[999, "RB"]])).get(
+        hurt.playerId,
+      ),
+    ).toBe("IR");
+  });
+
+  it("accounts for every player either way", () => {
+    const roster = [p("QB", 20), p("RB", 14), p("WR", 9)];
+
+    expect(resolveLineup(roster, SLOTS, new Map()).size).toBe(3);
+    expect(
+      resolveLineup(roster, SLOTS, new Map([[roster[0].playerId, "QB"]])).size,
+    ).toBe(3);
   });
 });

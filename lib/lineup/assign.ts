@@ -19,6 +19,8 @@
 import { bestLineup, slotFits, type LineupPlayer } from "@/lib/needs/lineup";
 import type { StartingSlot } from "@/lib/values/vor";
 
+import { compareSeats } from "./seat-order";
+
 /** The bench. Where a player goes when he is in no starting seat. */
 export const BENCH = "BN";
 
@@ -57,7 +59,7 @@ export type Seat<T extends Seatable = Seatable> = {
 };
 
 /**
- * The league's starting seats, in the league's own order, filled from a roster.
+ * The league's starting seats, in seat order, filled from a roster.
  *
  * A player in a starting slot the league does not have — a lineup that was
  * legal before the settings changed — is not dropped. He keeps his row at the
@@ -100,7 +102,20 @@ export function seats<T extends Seatable>(
     });
   }
 
-  return built;
+  // Laid out in the same order the matchup screen reads a lineup in, and not
+  // in the order `roster_slots` happens to list — a manager who sets a lineup
+  // here and then looks at it over there should be reading the same ten rows
+  // in the same ten places.
+  return built
+    .map((seat, index) => ({ seat, index }))
+    .sort(
+      (a, b) =>
+        compareSeats(
+          { slot: a.seat.slot, position: null },
+          { slot: b.seat.slot, position: null },
+        ) || a.index - b.index,
+    )
+    .map((entry) => entry.seat);
 }
 
 /**
@@ -144,6 +159,49 @@ export function bestAssignment<T extends Seatable>(
   }
 
   return assignment;
+}
+
+/**
+ * Which seat each player holds in one week.
+ *
+ * Three states, not two, and the third is the one that matters. A week with
+ * rows is a lineup somebody set. A week with none is not an empty lineup — it
+ * is an *unset* one, and resolving it to eleven empty seats would mean a
+ * hand-kept league scored nothing in every week its manager had not visited.
+ *
+ * So an unset week resolves to the best lineup the roster could field, which
+ * is the same answer the app would give as advice anyway. Entering a season of
+ * schedules is then useful without also entering a season of lineups, and the
+ * weeks a manager does care about are the ones they touch.
+ *
+ * `whenUnset` is `keep` for an imported league, whose lineup belongs to its
+ * provider: stage 7 writes `rosters.slot` on every sync and that is the answer
+ * for the live week, so guessing a better one would be overruling the league.
+ */
+export function resolveLineup<T extends Seatable>(
+  players: T[],
+  slots: StartingSlot[],
+  stored: ReadonlyMap<number, string>,
+  whenUnset: "best" | "keep" = "best",
+): Map<number, string> {
+  if (stored.size === 0) {
+    if (whenUnset === "best") return bestAssignment(players, slots);
+
+    return new Map(
+      players.map((player) => [player.playerId, player.slot ?? BENCH]),
+    );
+  }
+
+  // A set week is the whole week. Anybody not named in it is benched — a
+  // stored lineup that left a starter out would otherwise be read as "still
+  // starting, we just did not mention him".
+  return new Map(
+    players.map((player) => [
+      player.playerId,
+      stored.get(player.playerId) ??
+        (isReserveSlot(player.slot) ? player.slot! : BENCH),
+    ]),
+  );
 }
 
 /** What a seating move writes: a player, and the slot he ends up in. */

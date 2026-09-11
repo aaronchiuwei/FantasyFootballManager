@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { bySlotOrder, slotKey } from "./slots";
+import { bySlotOrder, slotKey } from "./seat-order";
 
 type Seat = { slot: string | null; position: string | null; name: string };
 
