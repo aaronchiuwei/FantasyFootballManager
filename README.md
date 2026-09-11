@@ -1774,6 +1774,20 @@ four men already scored read as `0.0`, threw away every point on the board, and
 told the phase below that the week had not started. A zero standing next to
 stat lines that say otherwise is a stale row, not a shutout.
 
+Every player's row carries the same split in the same two places: what he has
+scored above, what he was projected for below. An earlier form put a word where
+the lower figure goes — `to play`, `bye`, `no line` — which read as a status
+column that happened to contain numbers some of the time, and it meant the two
+figures could never answer each other. A man still to come has a projection
+like everybody else; what he does not have is a score, and a dash in the
+score's place says that more plainly than a phrase in the projection's place
+did. Why he is not playing — bye, hurt, benched — is already on his line beside
+his name, where it costs no figure its seat.
+
+A week that has not started is the one exception: every score in it really is
+zero, nobody is waiting on anybody, and a column of dashes over a fixture three
+weeks out says nothing the date had not already said.
+
 ### The odds
 
 Each starter still to come is modelled as normal around his projection, with a

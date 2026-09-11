@@ -19,15 +19,19 @@ import { cn } from "@/lib/utils";
  * who are done, at what they actually scored, and the men still to come, at
  * what they are still projected for.
  *
- * Both figures stay on a played row. "He scored 6.1" is the fact; "he was
- * projected 14.2" is why the side is behind, and dropping it would leave the
- * manager reading a deficit with no account of where it came from.
+ * Two figures on every row, in the same two places on every row: what he has
+ * scored above, what he was projected for below. That is the point of the
+ * column — "he scored 6.1" is the fact, "he was projected 14.2" is why the
+ * side is behind, and the two only answer each other when they are always both
+ * there and always the same way round.
  *
- * The one row that changes with the phase is the starter with no stat line.
- * Mid-afternoon he is a man still to come, carrying his projection. Once the
- * week is over he is a man who never played, and printing what he was
- * projected for as though it were still owed would be a promise about a week
- * that has already happened.
+ * The earlier form put a word where the second figure goes — `to play`, `bye`,
+ * `no line` — which read as a status column that happened to contain numbers
+ * some of the time. A man still to come has a projection like everybody else;
+ * what he does not have is a score, and a dash in the score's place says that
+ * more plainly than a phrase in the projection's place ever did. What he is on
+ * bye or hurt or benched for is already on his line, in the meta beside his
+ * name, where it does not cost a figure its seat.
  */
 
 function StarterRow({
@@ -40,7 +44,17 @@ function StarterRow({
   phase: MatchupPhase;
 }) {
   const done = player.actual !== null;
-  const missed = !done && phase === "final";
+
+  /**
+   * What he has banked.
+   *
+   * Null prints as a dash: no line has landed, so there is no score to state,
+   * and a zero there would be a claim that he played and did nothing. A week
+   * that has not started is the exception — nobody is waiting on anybody, every
+   * score in it really is zero, and a column of dashes over a fixture three
+   * weeks out says nothing a reader did not already know from the date.
+   */
+  const scored = player.actual ?? (phase === "upcoming" ? 0 : null);
 
   return (
     <div className="flex items-center gap-2.5 py-1.5">
@@ -78,26 +92,30 @@ function StarterRow({
           title={
             done
               ? "What he has scored so far. A line exists for him, which is the only signal either provider gives that his game has started."
-              : missed
-                ? "The week is over and no stat line ever landed for him. Whatever the league credited for him is already in the score above."
-                : player.onBye
-                  ? "On bye. No projection, and no points either way."
-                  : player.points === null
-                    ? "Nothing projects him this week, so this side's projected final is short of him."
-                    : "Projected, and still to play."
+              : phase === "upcoming"
+                ? "The week has not started, so nobody has scored anything yet."
+                : phase === "final"
+                  ? "The week is over and no stat line ever landed for him. Whatever the league credited for him is already in the score above."
+                  : player.onBye
+                    ? "On bye. He will not play this week, so no score is coming."
+                    : "No line yet, so nothing to show. His game has not started, or the feed has not caught up with it."
           }
         >
-          {points(done ? player.actual : missed ? null : player.points)}
+          {points(scored)}
         </span>
 
-        <Stencil data-numeric className="block tabular-nums">
-          {done
-            ? `proj ${points(player.points)}`
-            : missed
-              ? "no line"
-              : player.onBye
-                ? "bye"
-                : "to play"}
+        <Stencil
+          data-numeric
+          className="block tabular-nums"
+          title={
+            player.points === null
+              ? player.onBye
+                ? "On bye. Nothing projects a player who is not playing."
+                : "Nothing projects him this week, so this side's projected final is short of him."
+              : "What this week's grid projects him for, in this league's scoring."
+          }
+        >
+          proj {points(player.points)}
         </Stencil>
       </div>
     </div>
