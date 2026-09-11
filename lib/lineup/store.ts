@@ -1,7 +1,11 @@
 import "server-only";
 
 import { isManualLeague } from "@/lib/leagues/manual";
-import { loadLeagueRosters, type RosterBand } from "@/lib/leagues/rosters";
+import {
+  byBandThenPosition,
+  loadLeagueRosters,
+  type RosterBand,
+} from "@/lib/leagues/rosters";
 import { loadCoverage } from "@/lib/players/stats";
 import { weekWindow } from "@/lib/schedule/sos";
 import { scoredPoints, type StatLine } from "@/lib/sources/sleeper-parse";
@@ -344,6 +348,12 @@ export async function loadWeekBoard(
           ? "reserve"
           : "bench";
     }
+
+    // And re-sorted, because the bands just changed under an array that was
+    // sorted by the old ones. A week that starts somebody this roster has
+    // benched leaves him sitting in the bench's half of the list — which is
+    // how a quarterback came to render under the defense.
+    players.sort(byBandThenPosition);
 
     return {
       id: team.id,

@@ -8,6 +8,8 @@ import {
   seats,
   type Seatable,
 } from "./assign";
+import { byBandThenPosition } from "@/lib/leagues/rosters";
+import { bestLineup } from "@/lib/needs/lineup";
 import type { StartingSlot } from "@/lib/values/vor";
 
 const SLOTS: StartingSlot[] = [
@@ -327,5 +329,129 @@ describe("resolveLineup", () => {
     expect(
       resolveLineup(roster, SLOTS, new Map([[roster[0].playerId, "QB"]])).size,
     ).toBe(3);
+  });
+});
+
+describe("an unset week, end to end", () => {
+  // The bug this pins: the board filled its seats from `rosters.slot`, which
+  // is what a provider last said and is under no obligation to describe a
+  // legal lineup. It held more men than the league had seats, so the board
+  // totalled 132.2 next to a start/sit panel saying the best possible was
+  // 120.0. Resolving first is what makes the two agree by construction.
+  const roster = [
+    p("QB", 18, "QB"),
+    p("RB", 19, "RB"),
+    p("RB", 16, "RB"),
+    p("RB", 10, "RB"), // a third back, stored as RB: one more than there are seats
+    p("WR", 12, "WR"),
+    p("WR", 11, "WR"),
+    p("WR", 10, "WR"), // likewise a third receiver
+    p("TE", 10, "TE"),
+  ];
+
+  it("seats no more men than the league has seats", () => {
+    const resolved = resolveLineup(roster, SLOTS, new Map());
+    const shown = roster.map((player) => ({
+      ...player,
+      slot: resolved.get(player.playerId)!,
+    }));
+
+    const filled = seats(shown, SLOTS).filter((seat) => seat.player);
+    const startingSeats = SLOTS.filter((slot) => slot.isStarting).reduce(
+      (sum, slot) => sum + slot.count,
+      0,
+    );
+
+    expect(filled.length).toBeLessThanOrEqual(startingSeats);
+  });
+
+  it("totals exactly what the solver says the best lineup is worth", () => {
+    const resolved = resolveLineup(roster, SLOTS, new Map());
+    const shown = roster.map((player) => ({
+      ...player,
+      slot: resolved.get(player.playerId)!,
+    }));
+
+    const total = seats(shown, SLOTS).reduce(
+      (sum, seat) => sum + (seat.player?.points ?? 0),
+      0,
+    );
+
+    expect(total).toBeCloseTo(bestLineup(roster, SLOTS).points, 5);
+  });
+
+  it("would not have, before the resolve", () => {
+    // Reading the stored slots straight off the roster seats all three backs
+    // and all three receivers, which is the old total.
+    const straight = seats(roster, SLOTS).reduce(
+      (sum, seat) => sum + (seat.player?.points ?? 0),
+      0,
+    );
+
+    expect(straight).toBeGreaterThan(bestLineup(roster, SLOTS).points);
+  });
+});
+
+describe("re-banding a roster changes its order", () => {
+  // The bug this pins lives in `loadWeekBoard`, which cannot be unit tested
+  // without a database — but the claim underneath it is about sorting, and
+  // that can be. A roster is sorted by the band its stored slots imply; a
+  // week's lineup can imply different ones; the array has to be sorted again
+  // or a promoted quarterback keeps his place among the bench.
+  type Row = {
+    band: "starting" | "bench" | "reserve";
+    position: string | null;
+    value: number | null;
+    name: string;
+  };
+
+  const row = (name: string, position: string, band: Row["band"]): Row => ({
+    name,
+    position,
+    band,
+    value: 1000,
+  });
+
+  it("puts a promoted quarterback back at the top", () => {
+    // As `loadLeagueRosters` left it: the stored starters first, the benched
+    // quarterback after them.
+    const asRead: Row[] = [
+      row("Williams", "RB", "starting"),
+      row("Ferguson", "TE", "starting"),
+      row("Steelers", "DEF", "starting"),
+      row("Purdy", "QB", "bench"),
+    ];
+
+    // As the week resolves it: the quarterback starts.
+    const rebanded = asRead.map((entry) =>
+      entry.name === "Purdy" ? { ...entry, band: "starting" as const } : entry,
+    );
+
+    expect(rebanded.map((entry) => entry.name)).toEqual([
+      "Williams",
+      "Ferguson",
+      "Steelers",
+      "Purdy",
+    ]);
+
+    rebanded.sort(byBandThenPosition);
+
+    expect(rebanded.map((entry) => entry.name)).toEqual([
+      "Purdy",
+      "Williams",
+      "Ferguson",
+      "Steelers",
+    ]);
+  });
+
+  it("drops a demoted starter into the bench", () => {
+    const rows: Row[] = [
+      row("Purdy", "QB", "bench"),
+      row("Williams", "RB", "starting"),
+    ];
+
+    rows.sort(byBandThenPosition);
+
+    expect(rows.map((entry) => entry.name)).toEqual(["Williams", "Purdy"]);
   });
 });

@@ -130,12 +130,14 @@ export async function loadLineupRoster(
     season,
     week,
     ppr,
+    slots,
   }: {
     leagueId: string;
     teamId: string;
     season: number;
     week: number;
     ppr: number;
+    slots: StartingSlot[];
   },
 ): Promise<LineupRoster> {
   const { data, error } = await db
@@ -181,14 +183,26 @@ export async function loadLineupRoster(
     position: row.players?.position ?? null,
     nflTeam: row.players?.nfl_team ?? null,
     injuryStatus: row.players?.injury_status ?? null,
-    // The week's own seat where there is one, and the roster's otherwise —
-    // which is what carries a reserve slot through, since `lineups` stores
-    // starters only.
+    // The roster's own slot for now. Resolved to the week's seat below, which
+    // needs every player's points to have been read first.
     slot: stored.get(row.player_id) ?? row.slot,
     points:
       (basis === "week" ? weekly.get(row.player_id) : seasonPoints.get(row.player_id)) ??
       null,
   }));
+
+  // The same resolution the start/sit board makes, made here too.
+  //
+  // Not an optimisation — a correctness requirement. `rosters.slot` is what
+  // the provider last said or what an older version of this screen wrote, and
+  // it is under no obligation to describe a legal lineup: it can hold more men
+  // in a slot than the league has seats for, which is how this board came to
+  // total more points than the best possible lineup it was sitting next to.
+  // An unset week is the best lineup available, and both screens say so.
+  const seats = resolveLineup(players, slots, stored);
+  for (const player of players) {
+    player.slot = seats.get(player.playerId) ?? BENCH;
+  }
 
   return {
     players,
@@ -401,7 +415,11 @@ export async function seatPlayer(
   // week is shown as the best lineup, so a manager moving one man off it means
   // "that lineup, but with this change" — writing only the two men who moved
   // would store a two-man lineup and bench the nine they were looking at.
-  const resolved = resolveLineup(roster.players, context.slots, roster.stored);
+  // Every player already carries his resolved seat, which is what makes this
+  // the lineup on screen rather than a second opinion about it.
+  const resolved = new Map(
+    roster.players.map((player) => [player.playerId, player.slot ?? BENCH]),
+  );
 
   for (const move of seatMoves(roster.players, slot, incomingId, outgoingId)) {
     resolved.set(move.playerId, move.slot);
