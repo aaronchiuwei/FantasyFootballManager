@@ -146,6 +146,11 @@ lib/trades/
   analyze.ts         §6's bonus math and fairness bands — pure, runs in the browser
   saved.ts           the frozen payload a saved trade stores, parsed with Zod
   store.ts           league_settings and saved_trades, plus the analyzer's one read
+lib/lineup/
+  weekly.ts          one week solved: current vs best, and the swap — pure
+  assign.ts          which seat each man sits in, and what a swap moves — pure
+  manual.ts          writing a hand-kept league's lineup; imported ones are read
+  store.ts           the start/sit board's one read
 lib/schedule/
   sos.ts             defense grades, slate walking, the rank — pure and tested
   store.ts           sync stage 6 — the slate and the aggregates; the two boards' read
@@ -200,7 +205,8 @@ components/
                      and the three-team ring card and its per-team board
   sync/              the sync button, progress ring and staged checklist
   leagues/           the section strip, the import / disconnect buttons, and
-                     the manual league form, team list and roster editor
+                     the manual league form, team list, roster editor and the
+                     lineup board that seats it
   transactions/      the move form and the ledger it writes to
 supabase/migrations/
 ```
@@ -1708,8 +1714,53 @@ week behind it is drawn with what was actually scored alongside what was
 projected, and the advice is labelled for what it then is — what the lineup
 should have been.
 
+### Setting one, on a hand-kept league
+
+`bestLineup` has answered "what is the best lineup this roster can field" since
+Phase 7, and until now **nothing could act on the answer**. An imported
+league's lineup belongs to its provider — stage 7 overwrites `is_starter` on
+every sync, so writing one would be work that vanishes — and a manual league
+had only the roster editor, where a lineup is set by choosing a slot for each
+of fifteen men one at a time and hoping the total comes out right. The optimal
+lineup was advice nobody could take.
+
+The lineup board on the manage screen is the other half. It asks the question
+the way a manager asks it — for each seat, who is in it — where the roster
+editor asks it backwards, for each player, which slot. Nobody sets a lineup by
+going through their bench.
+
+**One button seats the solver's answer.** `bestAssignment` runs `bestLineup`
+and then benches everyone it did not seat, which is the part that is easy to
+get wrong: a lineup that is optimal *and* leaves a stale starter behind is not
+optimal, it is over-full, and `is_starter` would be counted by every screen
+that totals starters. Reserve is left alone — a man on IR is held out by a rule
+this app does not model, so sweeping him into the solve would seat somebody who
+cannot play and sweeping him to the bench would undo a decision quietly.
+
+**Every seat is also a dropdown**, and changing one moves whoever was in it.
+`seatMoves` asks one question to decide where: does the outgoing player fit the
+seat the incoming player is leaving? Picking the flex's receiver for an empty
+WR seat should not cost the lineup its flex; picking a bench player for it
+should not leave the displaced starter secretly still starting. A man coming
+off the bench vacates nothing, so the answer is no and he benches the man he
+replaces — the same branch rather than a special case.
+
+The figures are **this week's projection**, falling back to rest-of-season when
+the weekly grid has never covered this league. Only ever one of the two inside
+a solve: 14 points this Sunday and 180 across the rest of the year are not
+numbers that can be compared, and a lineup built by comparing them would be
+nonsense presented as advice. The board says which it used.
+
+A seat is presentational. The database stores a slot name and not a seat, so a
+league with two RB slots has two rows both saying `RB`; `seats()` pairs them
+off by order, and every write goes through the slot name, so nothing depends on
+a manager and this app agreeing about which running back is the first one.
+
 ### Where it falls short
 
+- **A hand-kept lineup is not per week.** `rosters.slot` is one current state,
+  so setting a lineup sets it for now rather than for a week — which is why the
+  board is on the manage screen and not behind the start/sit week picker.
 - **A projection is not a start/sit engine.** Sleeper's weekly numbers carry no
   usage split, no weather, no snap-count trend and no beat-reporter note. They
   are a reasonable prior and this screen is honest about being a fold over them,
