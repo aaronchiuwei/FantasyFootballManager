@@ -6,6 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
 import { Panel } from "@/components/board/panel";
 import { HeadToHead } from "@/components/matchup/head-to-head";
+import { LiveRefresh } from "@/components/matchup/live-refresh";
 import { MatchupRail } from "@/components/matchup/matchup-rail";
 import { ScheduleEditor } from "@/components/matchup/schedule-editor";
 import { WeekPicker } from "@/components/lineup/week-picker";
@@ -89,6 +90,13 @@ export default async function MatchupPage({
     0,
   );
 
+  // Polled only while there is something to poll for. A week nobody has
+  // kicked off in and a week already settled both return the same rows every
+  // time, so asking again is a request spent to redraw what is on screen.
+  const isLive =
+    week === board.currentWeek &&
+    pairings.some((pairing) => pairing.phase === "live");
+
   /**
    * A hand-kept league types its own schedule in, right here, under whatever
    * it has entered so far.
@@ -140,7 +148,10 @@ export default async function MatchupPage({
           </p>
         </div>
 
-        {manual ? null : <SyncButton leagueId={league.id} initialRun={run} />}
+        <div className="flex flex-wrap items-center gap-3">
+          {isLive ? <LiveRefresh leagueId={league.id} week={week} /> : null}
+          {manual ? null : <SyncButton leagueId={league.id} initialRun={run} />}
+        </div>
       </div>
 
       <WeekPicker
