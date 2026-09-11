@@ -70,6 +70,8 @@ export type WeekBoard = {
   projectedLines: number;
   /** False when the NFL slate for this week has not been synced, so byes are unknown. */
   hasSlate: boolean;
+  /** Every distinct kickoff date this week has, for "is football on today". */
+  kickoffs: string[];
 };
 
 /**
@@ -153,22 +155,28 @@ async function readWeekLineups(
 async function readSlate(
   db: Db,
   { season, week }: { season: number; week: number },
-): Promise<Map<string, { opponent: string; isHome: boolean }>> {
-  const slate = new Map<string, { opponent: string; isHome: boolean }>();
+): Promise<{
+  byTeam: Map<string, { opponent: string; isHome: boolean }>;
+  /** Every distinct kickoff date in the week. Day granularity is all there is. */
+  kickoffs: string[];
+}> {
+  const byTeam = new Map<string, { opponent: string; isHome: boolean }>();
+  const kickoffs = new Set<string>();
 
   const { data, error } = await db
     .from("nfl_schedule")
-    .select("team, opponent, is_home")
+    .select("team, opponent, is_home, kickoff")
     .eq("season", season)
     .eq("week", week);
 
-  if (error) return slate;
+  if (error) return { byTeam, kickoffs: [] };
 
   for (const row of data ?? []) {
-    slate.set(row.team, { opponent: row.opponent, isHome: row.is_home });
+    byTeam.set(row.team, { opponent: row.opponent, isHome: row.is_home });
+    if (row.kickoff) kickoffs.add(row.kickoff);
   }
 
-  return slate;
+  return { byTeam, kickoffs: [...kickoffs] };
 }
 
 export type WeekLeague = {
@@ -298,7 +306,7 @@ export async function loadWeekBoard(
   const built: WeekTeam[] = (teams ?? []).map((team) => {
     const players: WeekRosterPlayer[] = (rosters.get(team.id)?.players ?? []).map(
       (player) => {
-        const game = player.nflTeam ? slate.get(player.nflTeam) : undefined;
+        const game = player.nflTeam ? slate.byTeam.get(player.nflTeam) : undefined;
 
         return {
           playerId: player.playerId,
@@ -317,7 +325,10 @@ export async function loadWeekBoard(
           isHome: game?.isHome ?? false,
           // Only a slate we have can put a player on bye. Without one the
           // whole league would read as rested, which is a claim nobody made.
-          onBye: slate.size > 0 && player.nflTeam !== null && game === undefined,
+          onBye:
+            slate.byTeam.size > 0 &&
+            player.nflTeam !== null &&
+            game === undefined,
         };
       },
     );
@@ -377,6 +388,7 @@ export async function loadWeekBoard(
     rosterSlots: league.rosterSlots,
     projectedAt: pulled?.fetchedAt ?? null,
     projectedLines: pulled?.players ?? 0,
-    hasSlate: slate.size > 0,
+    hasSlate: slate.byTeam.size > 0,
+    kickoffs: slate.kickoffs,
   };
 }

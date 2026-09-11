@@ -1816,10 +1816,17 @@ a manager and this app agreeing about which running back is the first one.
 
 The needs vector, both suggestion searches and the trade delta have always run
 `bestLineup` from scratch and have never read a stored slot, and the overview's
-roster card now does the same. It used to total whatever was in a starting slot,
-which made "how good is this team" depend on the arrangement its manager
-happened to have out on a Tuesday — a roster is as good as the best lineup it
-*could* field, and a manager who has not set week 9 has not thereby got worse.
+roster board now does the same — **both the figure and the list**. It used to
+total whatever was in a starting slot, which made "how good is this team"
+depend on the arrangement its manager happened to have out on a Tuesday; a
+roster is as good as the best lineup it *could* field, and a manager who has
+not set week 9 has not thereby got worse.
+
+Solving for the figure while listing the provider's arrangement beside it was
+briefly the worst of both. A team with a better back on its bench showed eight
+starters under a heading and a ten-man total next to it, and nothing on screen
+said which of the two was the claim. The overview re-bands from the solved
+lineup and re-sorts, so the names under `Starting` are the names in the total.
 
 The stored lineup reaches exactly two screens: start/sit and the matchup. Those
 are the two asking what a team will actually score.
@@ -2099,14 +2106,39 @@ not been played, so refreshing either spends a request to rewrite what is
 already there — and a caller free to name any week is a caller free to turn a
 page timer into a loop over the whole season.
 
-Four things keep the timer from being a nuisance:
+**Offered, never started.** The control begins paused and polling is something
+the user turns on, because "we could poll" and "please poll" are different
+statements and a page that starts making requests against somebody's Yahoo
+account because they opened a tab is making the second one on their behalf. The
+choice is remembered, so going live is a thing you do once a Sunday rather than
+once a page.
+
+It is only offered at all on a day with football on it. Three conditions, and
+the third is the one that stops a Friday polling:
+
+```
+week == current_week          the week on screen is the live one
+some pairing is "live"        something in it has started
+isGameDay(this week's slate)  there is football on today
+```
+
+A Thursday night game puts stat lines on the board and leaves the whole week
+reading as live until the clock rolls past it, so without the last check the
+screen would spend Friday and Saturday asking for changes that cannot happen.
+`nfl_schedule.kickoff` is a date, so the gate is honest about being coarse: it
+knows a Saturday has no games and does not know that Sunday's late window has
+not started. The date it compares against is **eastern**, not the server's —
+01:30 UTC on a Monday is Sunday evening in New York, which is the middle of the
+late games, and a live screen that switches itself off before the fourth
+quarter is worse than one that never switched itself on.
+
+Three more rules keep the timer from being a nuisance once it is on:
 
 | | |
 |---|---|
 | A 45s server-side floor | `stat_coverage.fetched_at` and `matchups.updated_at` say when each half was last written, so a hammered tab is harmless |
 | Stops when the tab is hidden | nobody is reading a background tab, and the request still costs somebody's rate limit |
 | Gives up after three failures | a lapsed Yahoo token should say so once, not retry into a wall every minute |
-| Can be paused | it makes requests against the user's own provider account, and anything that does that needs an off switch in reach |
 
 The poller is the only client component on this screen, and the page stays a
 server render underneath it: `router.refresh()` re-runs the server components
@@ -2133,10 +2165,9 @@ b)` is only useful if `a` is the side the reader identifies with.
   the same good afternoon; so, in a shootout, do both sides. Adding variances as
   though they were independent pulls probabilities slightly away from 50% — a
   little too confident, and never in a direction that flips a call.
-- **The timer only runs while a matchup is live.** A week nobody has kicked off
-  in and a week already settled both return the same rows every time, so the
-  poller is not mounted at all — which also means a week that *should* be live
-  but has no evidence of play yet stays still until something lands.
+- **The timer is never on by default,** and is not offered outside a game day
+  in a started week — which also means a week that *should* be live but has no
+  evidence of play yet offers nothing until something lands.
 - **Nothing pushes.** This is polling, not a subscription: the only Realtime
   channel in the app is sync progress. A score can be up to a minute old, plus
   whatever Sleeper's own cadence adds.

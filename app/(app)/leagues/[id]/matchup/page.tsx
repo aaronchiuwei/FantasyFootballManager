@@ -14,6 +14,7 @@ import { SyncButton } from "@/components/sync/sync-button";
 import { isManualLeague } from "@/lib/leagues/manual";
 import { resolveWeek, toWeekLeague } from "@/lib/lineup/store";
 import { resolveMatchup } from "@/lib/matchups/board";
+import { isGameDay } from "@/lib/matchups/live";
 import { loadMatchupBoard } from "@/lib/matchups/store";
 import { latestRun } from "@/lib/sync/run";
 import { createClient } from "@/lib/supabase/server";
@@ -90,12 +91,23 @@ export default async function MatchupPage({
     0,
   );
 
-  // Polled only while there is something to poll for. A week nobody has
-  // kicked off in and a week already settled both return the same rows every
-  // time, so asking again is a request spent to redraw what is on screen.
-  const isLive =
+  /**
+   * Whether live updates are even offered.
+   *
+   * Three conditions, and the third is the one that stops a Friday polling.
+   * The week has to be the live one; something in it has to have started; and
+   * there has to be football on *today* — a Thursday night game leaves the
+   * whole week reading as live until the clock rolls past it, so without the
+   * last check the screen would spend Friday and Saturday asking for changes
+   * that cannot happen.
+   *
+   * The control is only ever offered, never started: it begins paused, and
+   * polling is something the user turns on.
+   */
+  const canGoLive =
     week === board.currentWeek &&
-    pairings.some((pairing) => pairing.phase === "live");
+    pairings.some((pairing) => pairing.phase === "live") &&
+    isGameDay(board.board.kickoffs);
 
   /**
    * A hand-kept league types its own schedule in, right here, under whatever
@@ -149,7 +161,7 @@ export default async function MatchupPage({
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {isLive ? <LiveRefresh leagueId={league.id} week={week} /> : null}
+          {canGoLive ? <LiveRefresh leagueId={league.id} week={week} /> : null}
           {manual ? null : <SyncButton leagueId={league.id} initialRun={run} />}
         </div>
       </div>

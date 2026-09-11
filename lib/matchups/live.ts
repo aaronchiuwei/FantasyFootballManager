@@ -310,3 +310,49 @@ export function matchupPhase({
   if (status === "midevent") return "live";
   return banked > 0 || playedStarters > 0 ? "live" : "upcoming";
 }
+
+
+/**
+ * Today's date where the NFL keeps time.
+ *
+ * Every kickoff this app stores is a date rather than an instant, and the date
+ * a provider means is the one in the eastern United States. Asking the server
+ * what day it is would end Sunday at 8pm in New York on a UTC host — which is
+ * to say, in the middle of the late games — and a live screen that switches
+ * itself off before the fourth quarter is worse than one that never switched
+ * itself on.
+ */
+export function nflToday(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
+
+/**
+ * Whether this week's slate has a game on today.
+ *
+ * The difference between "the week is under way" and "football is being
+ * played", which the phase above cannot tell apart: a Thursday night game puts
+ * stat lines on the board and leaves the whole week reading as live until the
+ * clock rolls past it, so a Friday and a Saturday with no football in them
+ * would poll for changes that cannot happen.
+ *
+ * Day granularity is all `nfl_schedule.kickoff` can offer, so this is honest
+ * about being a coarse gate: it knows a Saturday has no games and does not
+ * know that Sunday's late window has not started.
+ *
+ * Answers false for a slate that was never synced. A gate that opens when we
+ * know nothing would be on every day of the year.
+ */
+export function isGameDay(
+  kickoffs: Iterable<string | null>,
+  today: string = nflToday(),
+): boolean {
+  for (const kickoff of kickoffs) {
+    if (kickoff !== null && kickoff.slice(0, 10) === today) return true;
+  }
+  return false;
+}

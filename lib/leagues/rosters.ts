@@ -225,6 +225,35 @@ export async function loadLeagueRosters(
           )
         : null;
 
+      // Which is also who is *listed* as starting, not only what the total
+      // says. Reading the provider's arrangement for the list while solving
+      // for the figure beside it was the worst of both: a team with a better
+      // back on its bench showed eight starters and a ten-man total, and the
+      // reader had no way to tell which of the two was the claim.
+      if (best) {
+        const seat = new Map<number, string>();
+        for (const filled of best.slots) {
+          if (filled.player) seat.set(filled.player.playerId, filled.slot);
+        }
+
+        for (const player of players) {
+          const held = seat.get(player.playerId);
+          if (held !== undefined) {
+            player.slot = held;
+            player.isStarter = true;
+            player.band = "starting";
+          } else if (player.band !== "reserve") {
+            // Reserve is left alone: a man on IR is held out by a rule this
+            // app does not model, and calling him benched would be a claim.
+            player.slot = "BN";
+            player.isStarter = false;
+            player.band = "bench";
+          }
+        }
+
+        players.sort(byBandThenPosition);
+      }
+
       const starting = players.filter((player) => player.band === "starting");
       const projected = starting.filter((player) => player.rosPoints !== null);
 
