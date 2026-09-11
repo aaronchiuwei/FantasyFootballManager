@@ -6,9 +6,12 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { ManualLeagueForm } from "@/components/leagues/manual-league-form";
 import { ManualManageBoard } from "@/components/leagues/manual-manage-board";
+import { LineupBoard } from "@/components/leagues/lineup-board";
 import { RosterEditor } from "@/components/leagues/roster-editor";
 import type { EditableTeam } from "@/components/leagues/teams-editor";
 import { AutoSyncNotice } from "@/components/sync/auto-sync-notice";
+import { seats } from "@/lib/lineup/assign";
+import { loadLineupContext, loadLineupRoster } from "@/lib/lineup/manual";
 import { latestRun } from "@/lib/sync/run";
 import { formatLineup } from "@/lib/leagues/manual-input";
 import {
@@ -22,9 +25,11 @@ import { createClient } from "@/lib/supabase/server";
 
 import {
   addTeamAction,
+  autoFillLineupAction,
   deleteTeamAction,
   removeRosterEntryAction,
   searchPlayersAction,
+  seatPlayerAction,
   setRosterEntryAction,
   setUsersTeamAction,
   updateSettingsAction,
@@ -111,8 +116,26 @@ export default async function ManageLeaguePage({
     teams[0] ??
     null;
 
-  const roster = selected ? await loadTeamRoster(supabase, selected.id) : [];
   const slots = league.roster_slots as unknown as RosterSlot[];
+
+  // Two reads of the same fifteen rows, on purpose. The editor below wants a
+  // roster — who is here, what slot each is in — and the board above wants a
+  // lineup priced for a decision, which is a different question over a
+  // different set of joins. Merging them would entangle two modules to save a
+  // query against a table with one team's worth of rows in it.
+  const context = selected ? await loadLineupContext(supabase, league.id) : null;
+
+  const [roster, lineup] =
+    selected && context
+      ? await Promise.all([
+          loadTeamRoster(supabase, selected.id),
+          loadLineupRoster(supabase, {
+            leagueId: league.id,
+            teamId: selected.id,
+            ...context,
+          }),
+        ])
+      : [[], null];
 
   return (
     <div className="flex flex-col gap-8">
@@ -188,6 +211,22 @@ export default async function ManageLeaguePage({
           remove: deleteTeamAction.bind(null, league.id),
         }}
       >
+        {selected && lineup && context ? (
+          <LineupBoard
+            key={selected.id}
+            teamName={selected.name}
+            seats={seats(lineup.players, context.slots)}
+            roster={lineup.players}
+            basis={lineup.basis}
+            week={lineup.week}
+            disabled={!masterReady}
+            actions={{
+              autoFill: autoFillLineupAction.bind(null, league.id, selected.id),
+              seat: seatPlayerAction.bind(null, league.id, selected.id),
+            }}
+          />
+        ) : null}
+
         {selected ? (
           <RosterEditor
             teamName={selected.name}

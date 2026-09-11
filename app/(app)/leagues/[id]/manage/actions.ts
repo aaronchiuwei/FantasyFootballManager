@@ -16,6 +16,7 @@ import {
   type PlayerHit,
 } from "@/lib/leagues/manual";
 import { planManualSettings } from "@/lib/leagues/manual-input";
+import { applyBestLineup, seatPlayer } from "@/lib/lineup/manual";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -57,6 +58,9 @@ function refresh(leagueId: string) {
   revalidatePath(`/leagues/${leagueId}`);
   revalidatePath(`/leagues/${leagueId}/manage`);
   revalidatePath(`/leagues/${leagueId}/moves`);
+  // Both weekly screens read `is_starter` and nothing else tells them it moved.
+  revalidatePath(`/leagues/${leagueId}/lineup`);
+  revalidatePath(`/leagues/${leagueId}/matchup`);
 }
 
 export async function updateSettingsAction(
@@ -240,6 +244,55 @@ export async function removeRosterEntryAction(
 
   try {
     await removeRosterEntry(supabase, leagueId, teamId, playerId);
+  } catch (cause) {
+    return { error: describe(cause) };
+  }
+
+  refresh(leagueId);
+  return {};
+}
+
+/**
+ * Seats the best lineup the solver can find, and moves one man by hand.
+ *
+ * Neither takes the league's starting slots from the caller. They are the
+ * league's own settings and the shape of every legal lineup in it, so both
+ * writers read them from the row — a posted slot list is a posted claim about
+ * what the league allows.
+ */
+export async function autoFillLineupAction(
+  leagueId: string,
+  teamId: string,
+): Promise<ActionResult> {
+  const supabase = await requireUser(leagueId);
+
+  try {
+    await applyBestLineup(supabase, { leagueId, teamId });
+  } catch (cause) {
+    return { error: describe(cause) };
+  }
+
+  refresh(leagueId);
+  return {};
+}
+
+export async function seatPlayerAction(
+  leagueId: string,
+  teamId: string,
+  slot: string,
+  incomingId: number | null,
+  outgoingId: number | null,
+): Promise<ActionResult> {
+  const supabase = await requireUser(leagueId);
+
+  try {
+    await seatPlayer(supabase, {
+      leagueId,
+      teamId,
+      slot,
+      incomingId,
+      outgoingId,
+    });
   } catch (cause) {
     return { error: describe(cause) };
   }

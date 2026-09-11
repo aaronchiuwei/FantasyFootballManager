@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Panel } from "@/components/board/panel";
 import { HeadToHead } from "@/components/matchup/head-to-head";
 import { MatchupRail } from "@/components/matchup/matchup-rail";
+import { ScheduleEditor } from "@/components/matchup/schedule-editor";
 import { WeekPicker } from "@/components/lineup/week-picker";
 import { SyncButton } from "@/components/sync/sync-button";
 import { isManualLeague } from "@/lib/leagues/manual";
@@ -15,6 +16,8 @@ import { resolveMatchup } from "@/lib/matchups/board";
 import { loadMatchupBoard } from "@/lib/matchups/store";
 import { latestRun } from "@/lib/sync/run";
 import { createClient } from "@/lib/supabase/server";
+
+import { clearScheduleAction, saveScheduleAction } from "./actions";
 
 export const metadata: Metadata = { title: "Matchup" };
 
@@ -86,6 +89,41 @@ export default async function MatchupPage({
     0,
   );
 
+  /**
+   * A hand-kept league types its own schedule in, right here, under whatever
+   * it has entered so far.
+   *
+   * On the screen that draws the schedule rather than on the manage screen
+   * with the rest of the manual editing, because a schedule is the one thing
+   * about a league that is per week — and the week picker, the pairings it
+   * already has and the thing being edited are all on this page. Putting it on
+   * manage would mean a second week picker over there and a reason to look in
+   * two places.
+   */
+  const editor =
+    manual && board.board.teams.length >= 2 ? (
+      <ScheduleEditor
+        // Remounted per week. The rows are local state seeded from the week on
+        // screen, and without this a move to the next week would reconcile
+        // into the same component and leave last week's pairings sitting in
+        // selectors labelled with the new one.
+        key={`${league.id}:${week}`}
+        week={week}
+        teams={board.board.teams.map((team) => ({
+          id: team.id,
+          name: team.name,
+        }))}
+        existing={pairings.map((pairing) => ({
+          a: pairing.a.team.id,
+          b: pairing.b?.team.id ?? null,
+        }))}
+        actions={{
+          save: saveScheduleAction.bind(null, league.id, week),
+          clear: clearScheduleAction.bind(null, league.id, week),
+        }}
+      />
+    ) : null;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -134,15 +172,18 @@ export default async function MatchupPage({
           </CardContent>
         </Card>
       ) : pairings.length === 0 ? (
-        <Alert>
-          <AlertTriangle />
-          <AlertTitle>No schedule for week {week}</AlertTitle>
-          <AlertDescription>
-            {manual
-              ? "A hand-kept league has no schedule to read. Nothing in this app knows who plays whom in it, and inventing a pairing would be worse than showing none. The start/sit board works from the same rosters and needs no schedule."
-              : "Nothing has paired these teams off for this week. The scoreboard is pulled for weeks that are under way or already played, so a week still ahead of the league has none yet — and a week behind it that is empty means the pull has not run since."}
-          </AlertDescription>
-        </Alert>
+        manual ? null : (
+          <Alert>
+            <AlertTriangle />
+            <AlertTitle>No schedule for week {week}</AlertTitle>
+            <AlertDescription>
+              Nothing has paired these teams off for this week. The scoreboard
+              is pulled for every week this league plays, so an empty one means
+              the pull has not run since the league was set up — or that the
+              provider has not published this week&rsquo;s pairings yet.
+            </AlertDescription>
+          </Alert>
+        )
       ) : (
         <>
           {board.board.projectedAt === null ? (
@@ -221,6 +262,8 @@ export default async function MatchupPage({
           ) : null}
         </>
       )}
+
+      {editor}
     </div>
   );
 }
