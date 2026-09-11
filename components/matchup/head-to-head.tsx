@@ -10,6 +10,7 @@ import type { MatchupPhase } from "@/lib/matchups/live";
 import type { MatchupTeam } from "@/lib/matchups/store";
 import { cn } from "@/lib/utils";
 
+import { MatchupPager } from "./matchup-pager";
 import { SideLineup } from "./side-lineup";
 import { WinBar } from "./win-bar";
 
@@ -183,13 +184,18 @@ export function HeadToHead({
   pairing,
   leagueId,
   label,
+  pager,
 }: {
   pairing: Pairing<MatchupTeam>;
   leagueId: string;
-  /** The panel's stencilled head — "Your matchup", or the two teams' names. */
+  /** The panel's stencilled head — "Your matchup", or just "Matchup". */
   label: string;
+  /** Where the arrows on the panel head go. Absent when there is only one. */
+  pager?: { hrefPrev: string; hrefNext: string; index: number; count: number };
 }) {
   const { a, b, phase, winProbability: chance } = pairing;
+
+  const arrows = pager ? <MatchupPager {...pager} /> : null;
 
   // A bye is a real week, not a missing opponent: the roster still scores, it
   // just has nothing to beat. Everything that compares two sides comes off.
@@ -197,6 +203,7 @@ export function HeadToHead({
     return (
       <Panel
         label={`${label} · week ${pairing.week} · bye`}
+        action={arrows}
         note="An odd number of teams leaves somebody without an opponent this week. The lineup still scores; there is nothing to score it against."
       >
         <div className="flex flex-col gap-4">
@@ -232,6 +239,7 @@ export function HeadToHead({
           {pairing.isPlayoffs ? " · playoffs" : ""}
         </>
       }
+      action={arrows}
       note={note}
     >
       <div className="flex flex-col gap-4">

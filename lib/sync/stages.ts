@@ -24,6 +24,7 @@ import {
 } from "@/lib/sources/espn";
 import { fetchNflState } from "@/lib/sources/sleeper";
 import { fetchFreeAgents, fetchMatchups, fetchRosters } from "@/lib/sources/yahoo";
+import type { MatchupImport } from "@/lib/sources/yahoo-parse";
 import {
   computeCycleSuggestions,
   computeTradeSuggestions,
@@ -357,7 +358,37 @@ const yahoo: StageRunner = async ({ db, userId, leagueId, context }) => {
     };
   }
 
-  const weeks = playedWeeks(context);
+  // The whole season's pairings, not just the weeks with a score on them. Who
+  // plays whom in week 12 is known in August, it is what a manager plans a
+  // trade around, and both providers will answer for it: ESPN returns the full
+  // schedule in one payload regardless of what is asked, and Yahoo's
+  // scoreboard answers a future week with the pairing and no points. Costs two
+  // more chunked requests on the Yahoo side and nothing at all on ESPN's.
+  const weeks = scheduleWeeks(context);
+  const scheduleWarnings: string[] = [];
+
+  /**
+   * The schedule, or a warning instead of one.
+   *
+   * The only part of this stage allowed to fail on its own. Everything else
+   * here — teams, rosters, the free-agent pool — is load-bearing for screens a
+   * manager uses every day, and the schedule is one screen's input. Asking for
+   * weeks that have not been played is a wider request than this stage used to
+   * make, and a league whose provider turns out to dislike some corner of it
+   * should lose its matchups for a run, not its rosters.
+   */
+  const schedule = async (pull: () => Promise<MatchupImport[]>) => {
+    try {
+      return await pull();
+    } catch (error) {
+      scheduleWarnings.push(
+        `The schedule could not be read, so matchups are as of the last successful sync: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return [];
+    }
+  };
 
   const pulled = isEspnLeague(context.source)
     ? await (async () => {
@@ -372,7 +403,7 @@ const yahoo: StageRunner = async ({ db, userId, leagueId, context }) => {
           teamCount: imported.teamCount,
           rosters: await fetchEspnRosters(userId, ref),
           freeAgents: await fetchEspnFreeAgents(userId, ref),
-          matchups: await fetchEspnMatchups(userId, ref, weeks),
+          matchups: await schedule(() => fetchEspnMatchups(userId, ref, weeks)),
           // A public league read without cookies never tells us whose team is
           // whose. Worth saying on the checklist, because the fix is a click
           // on the board rather than anything this stage can do.
@@ -389,7 +420,9 @@ const yahoo: StageRunner = async ({ db, userId, leagueId, context }) => {
           matchups:
             weeks.length === 0
               ? []
-              : await fetchMatchups(userId, context.leagueKey, weeks),
+              : await schedule(() =>
+                  fetchMatchups(userId, context.leagueKey, weeks),
+                ),
           note: null,
         };
       })();
@@ -422,7 +455,11 @@ const yahoo: StageRunner = async ({ db, userId, leagueId, context }) => {
   // actually written and stays right whichever provider wrote it.
   const refreshed = await refreshedSettings(db, leagueId, context);
 
-  return { detail: parts.join(" · "), context: refreshed };
+  return {
+    detail: parts.join(" · "),
+    context: refreshed,
+    warnings: scheduleWarnings,
+  };
 };
 
 /**

@@ -152,6 +152,7 @@ lib/schedule/
 lib/matchups/
   live.ts            banked vs still to play, and the win probability — pure
   board.ts           schedule rows × rosters → this week's pairings — pure
+  slots.ts           a lineup in the league's own seat order — pure
   store.ts           the matchup screen's read, over the start/sit board's
 lib/needs/
   needs.ts           §7's needs vector — pure, and what Phases 8–9 stand on
@@ -188,6 +189,7 @@ components/
   schedule/          the strength-of-schedule stamp the board and the rosters
                      carry, and the player page's week-by-week slate
   matchup/           the head-to-head panel, the scoreboard rail, the odds bar
+                     and the pager that walks the week's other matchups
   trade/             the balance beam, the drop zones, the verdict, the lineup delta
   needs/             the positional radar, need and depth chips, the team card
   waivers/           the ranked wire, and the λ slider that tilts it
@@ -1733,7 +1735,7 @@ which is a question about two scores and about how much football is still to be
 played.
 
 All three of those facts were already in the database and none of them had a
-screen. Sync stage 6 has written each week's scoreboard to `matchups` since
+screen. Sync stage 7 has written each week's scoreboard to `matchups` since
 Phase 2 and **nothing ever read the table**; stage 5 re-pulls the live week's
 stat lines on every run, because `settledWeeks` freezes only the weeks *behind*
 the current one; and the start/sit board deliberately hides those actuals until
@@ -1764,6 +1766,13 @@ the reason to keep watching.
 
 A player counts as played the moment a stat line exists for him, which is the
 only signal either provider gives at this grain.
+
+**A provider zero is only believed when our own lines agree with it.** Both
+providers publish a running total that updates on their own schedule, and the
+first version of this screen trusted it absolutely — so a Sunday afternoon with
+four men already scored read as `0.0`, threw away every point on the board, and
+told the phase below that the week had not started. A zero standing next to
+stat lines that say otherwise is a stale row, not a shutout.
 
 ### The odds
 
@@ -1806,20 +1815,74 @@ attached to. `banked` survives, because by then it is the final score.
 The phase itself reads the clock first and the provider second:
 
 ```
-week < current_week          → final     (the clock has moved past it)
-status = postevent           → final
-week > current_week          → upcoming
-status = midevent            → live
-any points on the board      → live
-otherwise                    → upcoming
+week < current_week                  → final   (the clock has moved past it)
+status = postevent                   → final
+week > current_week                  → upcoming
+status = midevent                    → live
+points on the board, OR a stat line  → live
+otherwise                            → upcoming
 ```
 
 The clock leads because stage 1 resolves it fresh from Sleeper on every sync,
 while `status` is whatever the last scoreboard pull happened to write. The
-points-on-the-board fallback is for ESPN, whose schedule view publishes no
+evidence line at the end is for ESPN, whose schedule view publishes no
 in-progress state at all — only whether a winner has been declared — and it is
 also what keeps the live week from reading as "live" on the Wednesday before
 anybody has kicked off.
+
+It asks **two** questions rather than one, and the second is the one that
+carries. A running total can lag a whole afternoon behind the games it is
+adding up; a stat line cannot, because it *is* the game. The first version
+asked only about points and printed `NOT STARTED` over a board with four scores
+already on it.
+
+### Seats, in the league's own order
+
+`loadLeagueRosters` sorts a roster by the **player's** position, which is the
+right order for a trade conversation and the wrong one here. It files a running
+back in the flex among the running backs and a receiver in the flex among the
+receivers, so two lineups read side by side do not line up — and the flex is
+the one seat worth seeing, because it is the only one whose shape the manager
+chose.
+
+So `bySlotOrder` re-sorts a starting lineup into the order `roster_slots` lists,
+which is the order the provider's own lineup page prints. Nothing in this app
+decides what that order should be: a league that puts its flexes after the
+receivers gets them there.
+
+Seats are matched by what they hold rather than by their name, because both
+providers are inconsistent between the settings payload and the roster rows —
+a league can call a slot `DEF` in its settings and stamp `D/ST` on the player
+sitting in it, and `W/R/T` and `FLEX` are the same seat spelled two ways.
+
+### One at full size, the rest as a scoreboard
+
+The week opens on the user's own matchup and the arrows on the panel head walk
+the rest of the ring; every rail below is a link to itself at full size. The
+summary answers "who else is in trouble" and the panel answers "how", and
+clicking into a rail and back out again to compare two of them is three
+navigations for one question.
+
+A matchup is `?m=<index>` on the same URL as the week, so the whole thing stays
+a server render and a particular matchup is something you can send to a league
+mate. The ring wraps in both directions: there is no first or last matchup in a
+week, and an arrow that greys out at the end of a list of six is a dead control
+five sixths of the time.
+
+### The whole season's pairings, not just the played ones
+
+Stage 7 asks for `scheduleWeeks` rather than `playedWeeks`. Who plays whom in
+week 12 is known in August and is what a manager plans a trade around; a
+scoreboard pull bounded by the live week could never answer it. ESPN returns
+the full schedule in one payload regardless of what is asked, so this costs
+nothing there, and Yahoo answers a future week with the pairing and no points
+for two more chunked requests.
+
+It is also the one part of stage 7 allowed to fail on its own. Everything else
+that stage writes — teams, rosters, the free-agent pool — is load-bearing for
+screens used every day, and a wider request than the stage used to make should
+cost a league its matchups for one run rather than its rosters. A failure lands
+as a stage warning and the previous sync's schedule stands.
 
 ### Orientation is a read concern
 
@@ -1845,6 +1908,10 @@ b)` is only useful if `a` is the side the reader identifies with.
 - **Nothing refreshes on its own.** The page is as live as the last sync. There
   is no polling and no Realtime subscription here; the only one in the app is
   sync progress. Pressing sync is still the thing that moves the numbers.
+- **A stale non-zero total is still trusted.** The zero rule catches a provider
+  that has not started counting. One that has counted *some* of the afternoon
+  is believed as it stands, and only the projected final beside it hints
+  otherwise.
 - **A tie has probability zero.** The margin is continuous, so the model can
   only ever say "outscores". A finished dead heat is reported as 50/50 rather
   than as the tie it is.

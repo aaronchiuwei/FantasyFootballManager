@@ -79,8 +79,22 @@ describe("liveSide", () => {
     expect(side.bankedIsProviders).toBe(false);
   });
 
-  it("keeps a provider's zero rather than treating it as no total", () => {
+  it("keeps a provider's zero when our own lines agree nothing has been scored", () => {
     const side = liveSide([player({ points: 14 })], 0);
+
+    expect(side.banked).toBe(0);
+    expect(side.bankedIsProviders).toBe(true);
+  });
+
+  it("treats a provider's zero as stale when our lines say otherwise", () => {
+    const side = liveSide([player({ actual: 18.4 }), player({ points: 14 })], 0);
+
+    expect(side.banked).toBeCloseTo(18.4, 5);
+    expect(side.bankedIsProviders).toBe(false);
+  });
+
+  it("keeps a provider's zero against stat lines that are themselves zero", () => {
+    const side = liveSide([player({ actual: 0 }), player({ points: 14 })], 0);
 
     expect(side.banked).toBe(0);
     expect(side.bankedIsProviders).toBe(true);
@@ -258,7 +272,13 @@ describe("winProbability", () => {
 });
 
 describe("matchupPhase", () => {
-  const base = { week: 5, currentWeek: 5, status: null, banked: 0 };
+  const base = {
+    week: 5,
+    currentWeek: 5,
+    status: null,
+    banked: 0,
+    playedStarters: 0,
+  };
 
   it("calls a week the clock has moved past final, whatever the row says", () => {
     expect(matchupPhase({ ...base, week: 4, status: "midevent" })).toBe("final");
@@ -286,6 +306,14 @@ describe("matchupPhase", () => {
     expect(matchupPhase({ ...base, status: "preevent", banked: 34.2 })).toBe(
       "live",
     );
+  });
+
+  it("reads a stat line as evidence even when the provider's total is still 0", () => {
+    // The case that shipped broken: four men on the board with scores, and a
+    // running total the provider had not got round to updating.
+    expect(
+      matchupPhase({ ...base, status: "preevent", banked: 0, playedStarters: 4 }),
+    ).toBe("live");
   });
 
   it("calls everything upcoming before the season has a live week", () => {

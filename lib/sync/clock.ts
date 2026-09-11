@@ -42,9 +42,12 @@ export function weeksRemainingFor({
 }
 
 /**
- * The weeks worth asking Yahoo's scoreboard about: those already under way or
- * played. Before kickoff there is no schedule to score, so the answer is none
- * and stage 6 skips the request entirely.
+ * The weeks that have actually been played, which is what a *stat* pull is
+ * worth making: there is no game log for a week nobody has played.
+ *
+ * Not what the scoreboard is asked for — that is `scheduleWeeks`. A matchup
+ * exists as a pairing long before it exists as a score, and the matchup screen
+ * wants the weeks ahead as much as the ones behind.
  */
 export function playedWeeks(context: SyncContext): number[] {
   if (!context.isRegularSeason || context.currentWeek === null) return [];
