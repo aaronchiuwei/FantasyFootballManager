@@ -97,6 +97,13 @@ export type LiveSide = {
    * rules, including the defense and kicker categories this app models more
    * loosely than it models a receiver. Our own starters' stat lines are the
    * fallback, for a week or a provider that publishes no total.
+   *
+   * With one exception, which is not theoretical: a provider total of exactly
+   * zero standing next to stat lines that say otherwise is a stale row, not a
+   * shutout. Both providers publish a running total that updates on their own
+   * schedule, and ESPN's schedule view in particular can still read 0-0 on a
+   * Sunday evening. Trusting that zero would throw away every point already
+   * scored and — worse — would tell the phase that the week had not started.
    */
   banked: number;
   /** True when `banked` is the provider's figure rather than our own sum. */
@@ -166,8 +173,11 @@ export function liveSide(
     variance += sd * sd;
   }
 
-  const bankedIsProviders = scored !== null;
-  const banked = scored ?? (ourLines === 0 ? 0 : ourTotal);
+  // A zero from the provider is only believed when our own lines agree with
+  // it. They do whenever the week genuinely has not started, which is the case
+  // that zero is supposed to describe.
+  const bankedIsProviders = scored !== null && !(scored === 0 && ourTotal > 0);
+  const banked = bankedIsProviders ? scored! : ourLines === 0 ? 0 : ourTotal;
 
   return {
     banked,
@@ -268,26 +278,35 @@ export function winProbability(a: LiveSide, b: LiveSide): number {
  * week the clock has moved past is final even if its row still says a game was
  * under way when we looked.
  *
- * The `banked` fallback at the end is there for ESPN, whose schedule view
+ * The evidence test at the end is there for ESPN, whose schedule view
  * publishes no in-progress state at all — only whether a winner has been
- * declared. Points on the board are the evidence that the week has started,
- * and they are also what keeps the live week from reading as "live" on the
- * Wednesday before anyone has kicked off.
+ * declared. It asks two questions rather than one, and the second is the one
+ * that carries: a stat line exists for somebody. A provider's running total
+ * can lag a whole afternoon behind the games it is adding up, and a week read
+ * as "not started" while four men on the board already have scores is the
+ * screen calling its own figures a lie.
+ *
+ * Both together are also what keeps the live week from reading as "live" on
+ * the Wednesday before anybody has kicked off.
  */
 export function matchupPhase({
   week,
   currentWeek,
   status,
   banked,
+  playedStarters,
 }: {
   week: number;
   currentWeek: number | null;
   status: string | null;
+  /** Both sides' banked points together. One side's early game still counts. */
   banked: number;
+  /** Starters across both sides with a stat line. The stronger of the two signals. */
+  playedStarters: number;
 }): MatchupPhase {
   if (currentWeek !== null && week < currentWeek) return "final";
   if (status === "postevent") return "final";
   if (currentWeek !== null && week > currentWeek) return "upcoming";
   if (status === "midevent") return "live";
-  return banked > 0 ? "live" : "upcoming";
+  return banked > 0 || playedStarters > 0 ? "live" : "upcoming";
 }

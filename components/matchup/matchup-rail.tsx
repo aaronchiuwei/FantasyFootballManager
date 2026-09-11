@@ -21,19 +21,23 @@ import { chanceLabel, WinBar } from "./win-bar";
  * The bar is the scan. Reading eleven pairs of numbers is work; reading eleven
  * seams against a centre line is a glance, and the row a manager stops on is
  * always the one whose seam is furthest over.
+ *
+ * The whole row is one link, to itself at full size. That is why the team
+ * names here are not links the way they are everywhere else in the app: an
+ * anchor cannot contain an anchor, and on a scoreboard the useful destination
+ * is the matchup rather than either roster in it. Both rosters are one click
+ * further on, from the panel this opens.
  */
 
 function Side({
   side,
   phase,
   leading,
-  leagueId,
   align,
 }: {
   side: MatchupSide<MatchupTeam>;
   phase: MatchupPhase;
   leading: boolean;
-  leagueId: string;
   align: "left" | "right";
 }) {
   const right = align === "right";
@@ -56,15 +60,14 @@ function Side({
         {side.team.rank ?? "--"}
       </span>
 
-      <Link
-        href={`/leagues/${leagueId}/values?team=${side.team.id}`}
+      <span
         className={cn(
-          "min-w-0 flex-1 truncate font-plate text-sm font-semibold text-foreground underline-offset-4 hover:underline",
+          "min-w-0 flex-1 truncate font-plate text-sm font-semibold text-foreground",
           right && "text-right",
         )}
       >
         {side.team.name}
-      </Link>
+      </span>
 
       <span
         data-numeric
@@ -81,17 +84,21 @@ function Side({
 
 export function MatchupRail({
   pairing,
-  leagueId,
+  href,
 }: {
   pairing: Pairing<MatchupTeam>;
-  leagueId: string;
+  /** This matchup at full size, at the top of the same page. */
+  href: string;
 }) {
   const { a, b, phase, winProbability: chance } = pairing;
 
   return (
-    <section
+    <Link
+      href={href}
       className={cn(
         "flex flex-col gap-2 rounded-xs p-3",
+        "transition-colors duration-(--motion-fast) ease-(--ease-out)",
+        "hover:bg-[color-mix(in_oklch,var(--channel)_38%,transparent)]",
         "bg-[color-mix(in_oklch,var(--board-deep)_40%,transparent)]",
         "shadow-[inset_0_1px_3px_color-mix(in_oklch,var(--board-deep)_60%,transparent)]",
         pairing.involvesUser &&
@@ -103,7 +110,6 @@ export function MatchupRail({
           side={a}
           phase={phase}
           leading={b !== null && leadFigure(a, phase) > leadFigure(b, phase)}
-          leagueId={leagueId}
           align="left"
         />
 
@@ -118,7 +124,6 @@ export function MatchupRail({
             side={b}
             phase={phase}
             leading={leadFigure(b, phase) > leadFigure(a, phase)}
-            leagueId={leagueId}
             align="right"
           />
         )}
@@ -136,6 +141,20 @@ export function MatchupRail({
           <div className="flex items-baseline justify-between gap-2">
             <Stencil data-numeric className="tabular-nums">
               {chanceLabel(chance)}
+              {/* Mid-week the headline figure is the score, so the forecast
+                  rides alongside the odds rather than disappearing. Before
+                  kickoff the headline already *is* the forecast, and after the
+                  final whistle there is nothing left to forecast.
+
+                  Held back on a phone, where three figures and a phase across
+                  one line wrap into a block that is harder to scan than the
+                  two numbers it was meant to add to. The full panel a tap away
+                  carries it either way. */}
+              {phase === "live" ? (
+                <span className="hidden sm:inline">
+                  {` · proj ${points(a.live.projected)}`}
+                </span>
+              ) : null}
             </Stencil>
 
             <Stencil className={cn(phase === "live" && "text-grease")}>
@@ -146,11 +165,16 @@ export function MatchupRail({
             </Stencil>
 
             <Stencil data-numeric className="tabular-nums">
+              {phase === "live" && b ? (
+                <span className="hidden sm:inline">
+                  {`proj ${points(b.live.projected)} · `}
+                </span>
+              ) : null}
               {chanceLabel(1 - chance)}
             </Stencil>
           </div>
         </>
       )}
-    </section>
+    </Link>
   );
 }

@@ -128,6 +128,7 @@ export function pairings<T extends PairableTeam>(
       currentWeek,
       status: row.status,
       banked,
+      playedStarters: sideA.live.played + (sideB?.live.played ?? 0),
     });
 
     // Settling is a property of the pairing, not of a side, which is why it
@@ -171,6 +172,30 @@ function topRank<T extends PairableTeam>(pairing: Pairing<T>): number {
 function compare<T extends PairableTeam>(a: Pairing<T>, b: Pairing<T>): number {
   if (a.involvesUser !== b.involvesUser) return a.involvesUser ? -1 : 1;
   return topRank(a) - topRank(b);
+}
+
+/**
+ * Which matchup the screen opens on, and which one a query string may move it
+ * to.
+ *
+ * The user's own is index 0 — `pairings` sorts it there — so the default needs
+ * no search through the list and a league where the user has claimed nothing
+ * still lands somewhere real. An index out of range is the honest fallback
+ * rather than a 404: a stale link from a week with more matchups in it should
+ * show a matchup, not an error.
+ */
+export function resolveMatchup(
+  count: number,
+  requested: string | number | null | undefined,
+): number {
+  if (count === 0) return 0;
+
+  const asked =
+    typeof requested === "number"
+      ? requested
+      : Number.parseInt(requested ?? "", 10);
+
+  return Number.isInteger(asked) && asked >= 0 && asked < count ? asked : 0;
 }
 
 /**

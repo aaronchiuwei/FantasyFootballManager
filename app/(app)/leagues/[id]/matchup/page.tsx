@@ -11,6 +11,7 @@ import { WeekPicker } from "@/components/lineup/week-picker";
 import { SyncButton } from "@/components/sync/sync-button";
 import { isManualLeague } from "@/lib/leagues/manual";
 import { resolveWeek, toWeekLeague } from "@/lib/lineup/store";
+import { resolveMatchup } from "@/lib/matchups/board";
 import { loadMatchupBoard } from "@/lib/matchups/store";
 import { latestRun } from "@/lib/sync/run";
 import { createClient } from "@/lib/supabase/server";
@@ -41,7 +42,7 @@ export default async function MatchupPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ week?: string }>;
+  searchParams: Promise<{ week?: string; m?: string }>;
 }) {
   const { id } = await params;
   const search = await searchParams;
@@ -66,8 +67,20 @@ export default async function MatchupPage({
     latestRun(supabase, league.id),
   ]);
 
-  const { mine, pairings } = board;
-  const others = pairings.filter((pairing) => pairing !== mine);
+  const { pairings } = board;
+
+  // Which one is at full size. The user's own opens by default and the arrows
+  // on the panel head walk the rest, so the summary below is a list of the
+  // ones *not* on screen rather than a list with a duplicate at the top.
+  const shownIndex = resolveMatchup(pairings.length, search.m);
+  const shown = pairings[shownIndex] ?? null;
+  const others = pairings.filter((_, index) => index !== shownIndex);
+
+  const stepHref = (index: number) =>
+    `/leagues/${league.id}/matchup?week=${week}&m=${
+      (index + pairings.length) % pairings.length
+    }`;
+
   const rostered = board.board.teams.reduce(
     (total, team) => total + team.players.length,
     0,
@@ -146,23 +159,31 @@ export default async function MatchupPage({
             </Alert>
           ) : null}
 
-          {mine ? (
-            <HeadToHead
-              pairing={mine}
-              leagueId={league.id}
-              label="Your matchup"
-            />
-          ) : (
+          {board.mine === null ? (
             <Alert>
               <Info />
               <AlertTitle>No team claimed in this league</AlertTitle>
               <AlertDescription>
-                Every matchup in the league is below all the same. Claim your
-                team on the league page and it moves to the top, at full size,
-                with both lineups spelled out.
+                Every matchup in the league is still here, and the arrows walk
+                through them. Claim your team on the league page and this opens
+                on yours instead of on the top of the table.
               </AlertDescription>
             </Alert>
-          )}
+          ) : null}
+
+          {shown ? (
+            <HeadToHead
+              pairing={shown}
+              leagueId={league.id}
+              label={shown.involvesUser ? "Your matchup" : "Matchup"}
+              pager={{
+                hrefPrev: stepHref(shownIndex - 1),
+                hrefNext: stepHref(shownIndex + 1),
+                index: shownIndex,
+                count: pairings.length,
+              }}
+            />
+          ) : null}
 
           {others.length > 0 ? (
             <Panel
@@ -174,7 +195,7 @@ export default async function MatchupPage({
                   <MatchupRail
                     key={pairing.a.team.id}
                     pairing={pairing}
-                    leagueId={league.id}
+                    href={stepHref(pairings.indexOf(pairing))}
                   />
                 ))}
               </div>

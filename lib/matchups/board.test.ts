@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { pairings, unscheduled, type MatchupRow, type PairableTeam } from "./board";
+import {
+  pairings,
+  resolveMatchup,
+  unscheduled,
+  type MatchupRow,
+  type PairableTeam,
+} from "./board";
 import type { LivePlayer } from "./live";
 
 function starter(over: Partial<LivePlayer> = {}): LivePlayer {
@@ -113,6 +119,22 @@ describe("pairings", () => {
     expect(built[0].phase).toBe("live");
   });
 
+  it("calls a week live when stat lines exist but the totals still read zero", () => {
+    // The bug this screen shipped with: both providers publish a running total
+    // on their own schedule, and a stale 0-0 read as a week nobody had played.
+    const built = pairings(
+      [row({ status: "preevent", pointsA: 0, pointsB: 0 })],
+      [
+        team("a", { starters: [starter({ actual: 18.4 }), starter()] }),
+        team("b"),
+      ],
+      CLOCK,
+    );
+
+    expect(built[0].phase).toBe("live");
+    expect(built[0].a.live.banked).toBeCloseTo(18.4, 5);
+  });
+
   it("calls a week nobody has started upcoming", () => {
     const built = pairings(
       [row({ status: "preevent", pointsA: 0, pointsB: 0 })],
@@ -196,6 +218,29 @@ describe("pairings", () => {
   it("carries the playoff flag through", () => {
     const built = pairings([row({ isPlayoffs: true })], [team("a"), team("b")], CLOCK);
     expect(built[0].isPlayoffs).toBe(true);
+  });
+});
+
+describe("resolveMatchup", () => {
+  it("opens on the user's own, which the sort has already put first", () => {
+    expect(resolveMatchup(6, undefined)).toBe(0);
+    expect(resolveMatchup(6, null)).toBe(0);
+  });
+
+  it("takes an index inside the week", () => {
+    expect(resolveMatchup(6, "3")).toBe(3);
+    expect(resolveMatchup(6, 5)).toBe(5);
+  });
+
+  it("falls back rather than erroring on a stale or nonsense index", () => {
+    expect(resolveMatchup(6, "9")).toBe(0);
+    expect(resolveMatchup(6, "-1")).toBe(0);
+    expect(resolveMatchup(6, "banana")).toBe(0);
+    expect(resolveMatchup(6, "1.5")).toBe(1);
+  });
+
+  it("answers zero for a week with no matchups at all", () => {
+    expect(resolveMatchup(0, "2")).toBe(0);
   });
 });
 
