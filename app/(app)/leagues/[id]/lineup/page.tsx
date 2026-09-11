@@ -105,6 +105,7 @@ export default async function LineupPage({
         weeks={board.weeks}
         week={week}
         currentWeek={board.currentWeek}
+        segment="lineup"
       />
 
       {rostered === 0 ? (
