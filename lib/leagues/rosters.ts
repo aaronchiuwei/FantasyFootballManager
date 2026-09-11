@@ -98,8 +98,18 @@ function positionRank(position: string | null): number {
  * Within a band the scoring positions come in their usual order and the more
  * valuable player of two at one position comes first, which is the order a
  * trade conversation happens in.
+ *
+ * Exported, and structural rather than typed to `RosterPlayer`, because one
+ * caller re-bands a roster after reading it: the start/sit board resolves a
+ * particular week's lineup, which can start a man this roster has on its bench
+ * and bench a man it has starting. The rows have to be re-sorted when that
+ * happens, or a promoted quarterback keeps the place he held among the bench
+ * and renders under the defense.
  */
-function byBandThenPosition(a: RosterPlayer, b: RosterPlayer): number {
+export function byBandThenPosition(
+  a: { band: RosterBand; position: string | null; value: number | null; name: string },
+  b: { band: RosterBand; position: string | null; value: number | null; name: string },
+): number {
   const bandDelta = BAND_ORDER.indexOf(a.band) - BAND_ORDER.indexOf(b.band);
   if (bandDelta !== 0) return bandDelta;
 
