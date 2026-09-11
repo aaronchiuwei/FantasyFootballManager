@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import { bySlotOrder, slotKey } from "./slots";
-import type { StartingSlot } from "@/lib/values/vor";
 
 type Seat = { slot: string | null; position: string | null; name: string };
 
@@ -9,17 +8,7 @@ function p(name: string, position: string | null, slot: string | null): Seat {
   return { name, position, slot };
 }
 
-/** A league that puts its two flexes after the receivers, as the screenshot did. */
-const SLOTS: StartingSlot[] = [
-  { position: "QB", count: 1, isStarting: true },
-  { position: "RB", count: 2, isStarting: true },
-  { position: "WR", count: 2, isStarting: true },
-  { position: "W/R/T", count: 2, isStarting: true },
-  { position: "TE", count: 1, isStarting: true },
-  { position: "K", count: 1, isStarting: true },
-  { position: "DEF", count: 1, isStarting: true },
-  { position: "BN", count: 6, isStarting: false },
-];
+const order = (seats: Seat[]) => bySlotOrder(seats).map((seat) => seat.name);
 
 describe("slotKey", () => {
   it("keys a flex by what it can hold, so both spellings agree", () => {
@@ -45,7 +34,7 @@ describe("slotKey", () => {
 });
 
 describe("bySlotOrder", () => {
-  it("puts the flexes where the league lists them, not with their positions", () => {
+  it("reads QB, RB, WR, TE, flex, K, DEF", () => {
     // Arriving in the roster's position-then-value order, which is what put a
     // flex running back among the running backs on the shipped screen.
     const arrived = [
@@ -61,89 +50,73 @@ describe("bySlotOrder", () => {
       p("Jaguars", "DEF", "D/ST"),
     ];
 
-    expect(bySlotOrder(arrived, SLOTS).map((seat) => seat.name)).toEqual([
+    expect(order(arrived)).toEqual([
       "Lawrence",
       "Taylor",
       "Barkley",
       "Egbuka",
       "Moore",
+      "Fannin",
       "Lloyd",
       "Pittman",
-      "Fannin",
       "Dicker",
       "Jaguars",
     ]);
   });
 
-  it("follows the league's order rather than a hardcoded one", () => {
-    const flexLast: StartingSlot[] = [
-      { position: "QB", count: 1, isStarting: true },
-      { position: "TE", count: 1, isStarting: true },
-      { position: "W/R/T", count: 1, isStarting: true },
-    ];
+  it("puts the tight end ahead of the flexes, not behind them", () => {
+    const arrived = [p("Flexed", "RB", "W/R/T"), p("End", "TE", "TE")];
+    expect(order(arrived)).toEqual(["End", "Flexed"]);
+  });
 
-    const arrived = [p("A", "QB", "QB"), p("B", "RB", "FLEX"), p("C", "TE", "TE")];
+  it("ignores what the league's settings happen to list first", () => {
+    // `roster_slots` arrives in the provider's own order, which is a fact
+    // about the payload rather than about football. Nothing here reads it.
+    const arrived = [p("Kicker", "K", "K"), p("Quarterback", "QB", "QB")];
+    expect(order(arrived)).toEqual(["Quarterback", "Kicker"]);
+  });
 
-    expect(bySlotOrder(arrived, flexLast).map((seat) => seat.name)).toEqual([
-      "A",
-      "C",
-      "B",
-    ]);
+  it("reads a flex before a superflex", () => {
+    const arrived = [p("Super", "QB", "Q/W/R/T"), p("Flexed", "RB", "W/R/T")];
+    expect(order(arrived)).toEqual(["Flexed", "Super"]);
   });
 
   it("keeps two men in one seat in the order they arrived", () => {
     const arrived = [p("First", "RB", "RB"), p("Second", "RB", "RB")];
-
-    expect(bySlotOrder(arrived, SLOTS).map((seat) => seat.name)).toEqual([
-      "First",
-      "Second",
-    ]);
+    expect(order(arrived)).toEqual(["First", "Second"]);
   });
 
-  it("ignores bench slots when ranking the starters", () => {
-    const arrived = [p("Starter", "RB", "RB"), p("Benched", "WR", "BN")];
+  it("reads both spellings of one seat as the same seat", () => {
+    const arrived = [
+      p("Written FLEX", "RB", "FLEX"),
+      p("End", "TE", "TE"),
+      p("Written W/R/T", "WR", "W/R/T"),
+    ];
 
-    // BN is not a starting slot, so the man sitting in one sorts after every
-    // seat the league does list rather than into the middle of the lineup.
-    expect(bySlotOrder(arrived, SLOTS).map((seat) => seat.name)).toEqual([
-      "Starter",
-      "Benched",
-    ]);
+    expect(order(arrived)).toEqual(["End", "Written FLEX", "Written W/R/T"]);
   });
 
-  it("sorts a seat the league does not list after every seat it does", () => {
+  it("sorts a seat it cannot name after every seat it can", () => {
     const arrived = [
       p("Odd", "WR", "OP"),
       p("Quarterback", "QB", "QB"),
       p("Defense", "DEF", "D/ST"),
     ];
 
-    expect(bySlotOrder(arrived, SLOTS).map((seat) => seat.name)).toEqual([
-      "Quarterback",
-      "Defense",
-      "Odd",
-    ]);
+    expect(order(arrived)).toEqual(["Quarterback", "Defense", "Odd"]);
   });
 
-  it("orders unlisted seats among themselves by position", () => {
+  it("orders unnamed seats among themselves by position", () => {
     const arrived = [p("Kicker", "K", "XX"), p("Back", "RB", "XX")];
-
-    expect(bySlotOrder(arrived, []).map((seat) => seat.name)).toEqual([
-      "Back",
-      "Kicker",
-    ]);
+    expect(order(arrived)).toEqual(["Back", "Kicker"]);
   });
 
   it("tolerates a player with no slot and no position at all", () => {
     const arrived = [p("Nobody", null, null), p("Quarterback", "QB", "QB")];
-
-    expect(bySlotOrder(arrived, SLOTS).map((seat) => seat.name)).toEqual([
-      "Quarterback",
-      "Nobody",
-    ]);
+    expect(order(arrived)).toEqual(["Quarterback", "Nobody"]);
   });
 
   it("returns an empty lineup unchanged", () => {
-    expect(bySlotOrder([], SLOTS)).toEqual([]);
+    expect(bySlotOrder([])).toEqual([]);
   });
 });

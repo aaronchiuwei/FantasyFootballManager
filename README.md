@@ -157,7 +157,7 @@ lib/schedule/
 lib/matchups/
   live.ts            banked vs still to play, and the win probability — pure
   board.ts           schedule rows × rosters → this week's pairings — pure
-  slots.ts           a lineup in the league's own seat order — pure
+  slots.ts           a lineup in seat order: QB, RB, WR, TE, flex, K, DEF — pure
   manual-input.ts    a hand-typed week, validated — pure
   manual.ts          writing a manual league's schedule, one week at a time
   store.ts           the matchup screen's read, over the start/sit board's
@@ -1904,7 +1904,7 @@ adding up; a stat line cannot, because it *is* the game. The first version
 asked only about points and printed `NOT STARTED` over a board with four scores
 already on it.
 
-### Seats, in the league's own order
+### Seats, in seat order
 
 `loadLeagueRosters` sorts a roster by the **player's** position, which is the
 right order for a trade conversation and the wrong one here. It files a running
@@ -1913,10 +1913,24 @@ receivers, so two lineups read side by side do not line up — and the flex is
 the one seat worth seeing, because it is the only one whose shape the manager
 chose.
 
-So `bySlotOrder` re-sorts a starting lineup into the order `roster_slots` lists,
-which is the order the provider's own lineup page prints. Nothing in this app
-decides what that order should be: a league that puts its flexes after the
-receivers gets them there.
+So `bySlotOrder` re-sorts a starting lineup by seat, in one fixed order:
+
+```
+QB · RB · WR · TE · flex · K · DEF
+```
+
+Fixed, and deliberately **not** the league's own. `roster_slots` arrives in
+whatever order a provider's settings payload happened to list it, which is a
+fact about the payload rather than about football — Yahoo commonly puts its
+flex between the receivers and the tight end, which reads as a lineup with a
+hole in it. The order above is the one every fantasy site prints and the one a
+manager already has in their head: the four scoring positions in depth-chart
+order, then whatever is left over, then the two that are nobody's decision.
+
+A league with both a flex and a superflex gets the narrower first. `W/R/T`
+takes three positions and `Q/W/R/T` takes four, so the one with fewer ways to
+fill it is the more constrained decision and reads first — exactly as RB reads
+before the flex that could also have held him.
 
 Seats are matched by what they hold rather than by their name, because both
 providers are inconsistent between the settings payload and the roster rows —

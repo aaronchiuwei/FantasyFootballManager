@@ -1,5 +1,5 @@
 /**
- * A lineup in the order the league itself lists it.
+ * A lineup in the order a lineup is read in.
  *
  * `loadLeagueRosters` sorts a roster by the *player's* position, which is the
  * right order for a trade conversation and the wrong one for a matchup. It
@@ -8,16 +8,22 @@
  * cannot see which seat anyone is in — and the flex is exactly the seat worth
  * seeing, because it is the only one he chose the shape of.
  *
- * So this re-sorts a starting lineup into the league's own slot order: the
- * order `roster_slots` lists, which is the order the provider's own lineup
- * page prints. Nothing here decides what that order should be. A league that
- * puts its flex after the receivers gets it there; a league that puts it after
- * the tight end gets it there.
+ * So this re-sorts a starting lineup by *seat*, in one fixed order:
+ *
+ *     QB · RB · WR · TE · flex · K · DEF
+ *
+ * Fixed, and not the league's own. `roster_slots` arrives in whatever order a
+ * provider's settings payload happened to list it, which is a fact about the
+ * payload rather than about football — Yahoo commonly puts its flex between
+ * the receivers and the tight end, which reads as a lineup with a hole in it.
+ * The order above is the one every fantasy site prints and the one a manager
+ * already has in their head: the four scoring positions in depth-chart order,
+ * then whatever is left over, then the two that are nobody's decision.
  *
  * Pure, and sorting rather than grouping: the input is already ordered
  * sensibly within a position, and a stable sort keeps that as the tiebreak.
  */
-import { eligiblePositions, type StartingSlot } from "@/lib/values/vor";
+import { eligiblePositions } from "@/lib/values/vor";
 
 /**
  * Spellings that name one seat. Both providers are inconsistent about these
@@ -49,48 +55,77 @@ export function slotKey(slot: string): string {
   return ALIASES[upper] ?? upper;
 }
 
-/** Where a roster's own order puts a player whose seat the league does not list. */
-const FALLBACK_ORDER = ["QB", "RB", "WR", "TE", "K", "DEF"];
+/** The seat order, as a rank per canonical slot name. */
+const ORDER: Record<string, number> = {
+  QB: 0,
+  RB: 1,
+  WR: 2,
+  TE: 3,
+  K: 5,
+  DEF: 6,
+};
+
+/** Between the tight end and the kicker: every seat that holds more than one position. */
+const FLEX = 4;
+
+/** A seat this app cannot name. After everything it can. */
+const UNNAMED = 7;
+
+/** Where an unnamed seat's occupant falls among the other unnamed ones. */
+const BY_POSITION = ["QB", "RB", "WR", "TE", "K", "DEF"];
 
 /**
- * Sort a starting lineup into the league's own slot order.
+ * A seat's place in the order, and its place among seats that share it.
+ *
+ * Two ranks rather than one because the flexes are a group rather than a seat:
+ * a league with both a flex and a superflex has two kinds of leftover seat,
+ * and the narrower comes first — `W/R/T` takes three positions and `Q/W/R/T`
+ * takes four, so the one with fewer ways to fill it is the more constrained
+ * decision and reads first, exactly as RB reads before the flex that could
+ * also have held him.
+ */
+function rankOf(slot: string | null, position: string | null): [number, number] {
+  if (slot === null) return [UNNAMED, byPosition(position)];
+
+  const named = ORDER[slotKey(slot)];
+  if (named !== undefined) return [named, 0];
+
+  const width = eligiblePositions(slot).length;
+  if (width > 1) return [FLEX, width];
+
+  return [UNNAMED, byPosition(position)];
+}
+
+function byPosition(position: string | null): number {
+  const index = BY_POSITION.indexOf((position ?? "").toUpperCase());
+  return index === -1 ? BY_POSITION.length : index;
+}
+
+/**
+ * Sort a starting lineup into seat order.
  *
  * Players sharing a seat — two running backs, two flexes — share a rank and
  * keep the order they arrived in, which is the roster's position-then-value
- * order. A player in a seat `roster_slots` does not list sorts after every one
- * it does, by position, rather than vanishing to the end in arrival order: an
- * unlisted seat is a settings gap, and the lineup is still a lineup.
+ * order, so the better of two backs is still the one listed first. A player in
+ * a seat this app cannot name sorts after every one it can, by his own
+ * position, rather than vanishing to the end in arrival order: an unreadable
+ * slot is a gap in what we know, and the lineup is still a lineup.
  */
 export function bySlotOrder<T extends { slot: string | null; position: string | null }>(
   starters: T[],
-  slots: StartingSlot[],
 ): T[] {
-  const ranks = new Map<string, number>();
-
-  for (const slot of slots) {
-    if (!slot.isStarting || slot.count <= 0) continue;
-    const key = slotKey(slot.position);
-    // First mention wins. A league that lists a seat twice rather than
-    // carrying a count still reads in the order it listed them.
-    if (!ranks.has(key)) ranks.set(key, ranks.size);
-  }
-
-  const unlisted = ranks.size;
-
-  const rank = (player: T): number => {
-    const seat = player.slot === null ? null : ranks.get(slotKey(player.slot));
-    if (seat !== undefined && seat !== null) return seat;
-
-    const position = (player.position ?? "").toUpperCase();
-    const index = FALLBACK_ORDER.indexOf(position);
-    return unlisted + (index === -1 ? FALLBACK_ORDER.length : index);
-  };
-
   // Decorated rather than compared in place: `Array.prototype.sort` is stable
   // in every engine this runs on, and the index tiebreak makes that explicit
   // rather than relied upon.
   return starters
-    .map((player, index) => ({ player, index, rank: rank(player) }))
-    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map((player, index) => ({
+      player,
+      index,
+      rank: rankOf(player.slot, player.position),
+    }))
+    .sort(
+      (a, b) =>
+        a.rank[0] - b.rank[0] || a.rank[1] - b.rank[1] || a.index - b.index,
+    )
     .map((entry) => entry.player);
 }
