@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isGameDay,
   liveSide,
   matchupPhase,
+  nflToday,
   normalCdf,
   playerSd,
   settled,
@@ -319,5 +321,49 @@ describe("matchupPhase", () => {
   it("calls everything upcoming before the season has a live week", () => {
     expect(matchupPhase({ ...base, currentWeek: null })).toBe("upcoming");
     expect(matchupPhase({ ...base, currentWeek: null, week: 1 })).toBe("upcoming");
+  });
+});
+
+describe("nflToday", () => {
+  it("reads the date where the NFL keeps time, not the server's", () => {
+    // 01:30 UTC on Monday is still Sunday evening in New York, which is the
+    // middle of the late window — and the whole point of the gate.
+    const lateSunday = new Date("2026-09-14T01:30:00Z");
+
+    expect(lateSunday.toISOString().slice(0, 10)).toBe("2026-09-14");
+    expect(nflToday(lateSunday)).toBe("2026-09-13");
+  });
+
+  it("gives a plain YYYY-MM-DD", () => {
+    expect(nflToday(new Date("2026-09-13T17:00:00Z"))).toBe("2026-09-13");
+  });
+});
+
+describe("isGameDay", () => {
+  const slate = ["2026-09-10", "2026-09-13", "2026-09-14"];
+
+  it("is true on a day the week has football on", () => {
+    expect(isGameDay(slate, "2026-09-13")).toBe(true);
+    expect(isGameDay(slate, "2026-09-10")).toBe(true);
+  });
+
+  it("is false on the Friday and Saturday in between", () => {
+    // The week reads as live all the way from Thursday night, which is the
+    // state this exists to tell apart from football actually being played.
+    expect(isGameDay(slate, "2026-09-11")).toBe(false);
+    expect(isGameDay(slate, "2026-09-12")).toBe(false);
+  });
+
+  it("is false when the slate was never synced", () => {
+    expect(isGameDay([], "2026-09-13")).toBe(false);
+  });
+
+  it("ignores a row with no kickoff rather than counting it", () => {
+    expect(isGameDay([null, null], "2026-09-13")).toBe(false);
+    expect(isGameDay([null, "2026-09-13"], "2026-09-13")).toBe(true);
+  });
+
+  it("reads a timestamp as the day it falls on", () => {
+    expect(isGameDay(["2026-09-13T17:00:00Z"], "2026-09-13")).toBe(true);
   });
 });

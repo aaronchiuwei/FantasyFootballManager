@@ -18,12 +18,18 @@ import { cn } from "@/lib/utils";
  * nobody watches, so during a live week — and only during a live week — this
  * asks for the two things that move and re-renders the page around them.
  *
- * Three rules keep it from being a nuisance. It stops when the tab is hidden,
- * because nobody is reading a background tab and the request still costs
- * somebody's rate limit. It gives up after three consecutive failures rather
- * than retrying into a wall. And it can be paused, because it makes requests
- * on the user's own provider account and anything that does that should have
- * an off switch in reach.
+ * It starts **paused**. The screen upstairs only mounts this at all on a day
+ * with football on it, in a week that has started — but "we could poll" and
+ * "please poll" are different statements, and a page that begins making
+ * requests against somebody's Yahoo account because they opened a tab is
+ * making the second one on their behalf. The choice is remembered, so turning
+ * it on is a thing you do once a Sunday rather than once a page.
+ *
+ * Three more rules keep it from being a nuisance once it is on. It stops when
+ * the tab is hidden, because nobody is reading a background tab and the
+ * request still costs somebody's rate limit. It gives up after three
+ * consecutive failures rather than retrying into a wall. And it can be paused
+ * again at any point.
  */
 
 /** How often to ask. The server floors it at 45s regardless. */
@@ -51,7 +57,7 @@ export function LiveRefresh({
 }) {
   const router = useRouter();
 
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useState(false);
   const [at, setAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -64,9 +70,9 @@ export function LiveRefresh({
 
   useEffect(() => {
     try {
-      if (window.localStorage.getItem(REMEMBERED) === "off") setRunning(false);
+      if (window.localStorage.getItem(REMEMBERED) === "on") setRunning(true);
     } catch {
-      // A browser with site data blocked still gets a working page.
+      // A browser with site data blocked still gets a working page, paused.
     }
   }, []);
 
@@ -170,7 +176,9 @@ export function LiveRefresh({
               : `Retrying · ${error}`
             : running
               ? `Live · updated ${ago(at)}`
-              : `Paused · updated ${ago(at)}`}
+              : at === null
+                ? "Games on today · live updates off"
+                : `Paused · updated ${ago(at)}`}
         </Stencil>
       </span>
 
@@ -191,10 +199,10 @@ export function LiveRefresh({
         size="sm"
         variant="ghost"
         onClick={toggle}
-        aria-label={running ? "Pause live updates" : "Resume live updates"}
+        aria-label={running ? "Pause live updates" : "Turn on live updates"}
       >
         {running ? <Pause aria-hidden /> : <Play aria-hidden />}
-        {running ? "Pause" : "Resume"}
+        {running ? "Pause" : at === null ? "Go live" : "Resume"}
       </Button>
     </div>
   );
