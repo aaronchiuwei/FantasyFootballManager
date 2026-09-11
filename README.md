@@ -156,6 +156,7 @@ lib/schedule/
   store.ts           sync stage 6 — the slate and the aggregates; the two boards' read
 lib/matchups/
   live.ts            banked vs still to play, and the win probability — pure
+  live-refresh.ts    the two things that move on a Sunday, re-pulled
   board.ts           schedule rows × rosters → this week's pairings — pure
   slots.ts           a lineup in seat order: QB, RB, WR, TE, flex, K, DEF — pure
   manual-input.ts    a hand-typed week, validated — pure
@@ -1997,6 +1998,51 @@ before they are written, for the reason the Yahoo parser sorts by team key: the
 primary key is `(league, week, team_a)`, so one pairing has to produce one row
 however it was entered.
 
+### Live, on a timer
+
+Everything else here is as fresh as the last time somebody pressed sync, and
+that is the right bargain: a trade value does not move while you are looking at
+it. **A score does.** A matchup screen that needs a button pressed to tell you
+your flex just scored is a screen nobody watches.
+
+A full sync is the wrong instrument — nine stages, the player master,
+twenty-four FantasyCalc boards, a season of projections, the value engine, the
+needs vectors and two suggestion searches, none of which moves while a game is
+being played. Exactly two things do: the stat lines of the men on the field,
+and the running total the league is keeping. `refreshLiveWeek` pulls those and
+nothing else, which is one Sleeper request and one scoreboard request against a
+sync's several dozen, and that is what makes it cheap enough to run on a timer.
+
+It is deliberately **not** a sync run. No `sync_runs` row, no stage chain, no
+progress to subscribe to — all of that exists to make a minutes-long job
+legible, and this either lands in a second or is not worth reporting.
+
+**Two clients, at two privileges.** `player_stats` and `stat_coverage` are
+global tables every league reads and no user owns; their policies grant
+`select` and nothing else, so the stat pull needs the service role exactly as
+sync stage 5 does. Everything else runs on the caller's own client, which is
+what makes the league read an authorization check rather than a branch — a
+league this user does not own returns no row, and the refresh stops there
+before either client writes anything.
+
+**Only the live week.** Anything behind it is finished and anything ahead has
+not been played, so refreshing either spends a request to rewrite what is
+already there — and a caller free to name any week is a caller free to turn a
+page timer into a loop over the whole season.
+
+Four things keep the timer from being a nuisance:
+
+| | |
+|---|---|
+| A 45s server-side floor | `stat_coverage.fetched_at` and `matchups.updated_at` say when each half was last written, so a hammered tab is harmless |
+| Stops when the tab is hidden | nobody is reading a background tab, and the request still costs somebody's rate limit |
+| Gives up after three failures | a lapsed Yahoo token should say so once, not retry into a wall every minute |
+| Can be paused | it makes requests against the user's own provider account, and anything that does that needs an off switch in reach |
+
+The poller is the only client component on this screen, and the page stays a
+server render underneath it: `router.refresh()` re-runs the server components
+against the rows just written, and no state is lost because the page has none.
+
 ### Orientation is a read concern
 
 Rows are stored with their two sides ordered by provider team key, so that a
@@ -2018,9 +2064,13 @@ b)` is only useful if `a` is the side the reader identifies with.
   the same good afternoon; so, in a shootout, do both sides. Adding variances as
   though they were independent pulls probabilities slightly away from 50% — a
   little too confident, and never in a direction that flips a call.
-- **Nothing refreshes on its own.** The page is as live as the last sync. There
-  is no polling and no Realtime subscription here; the only one in the app is
-  sync progress. Pressing sync is still the thing that moves the numbers.
+- **The timer only runs while a matchup is live.** A week nobody has kicked off
+  in and a week already settled both return the same rows every time, so the
+  poller is not mounted at all — which also means a week that *should* be live
+  but has no evidence of play yet stays still until something lands.
+- **Nothing pushes.** This is polling, not a subscription: the only Realtime
+  channel in the app is sync progress. A score can be up to a minute old, plus
+  whatever Sleeper's own cadence adds.
 - **A stale non-zero total is still trusted.** The zero rule catches a provider
   that has not started counting. One that has counted *some* of the afternoon
   is believed as it stands, and only the projected final beside it hints
