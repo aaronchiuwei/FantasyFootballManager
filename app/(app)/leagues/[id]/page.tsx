@@ -206,15 +206,16 @@ export default async function LeaguePage({
       icon: Swords,
       label: "Matchup",
       title: "This week head to head",
-      state: manual
-        ? "A hand-kept league has no schedule, so nothing here knows who plays whom. Every other weekly reading works without one."
-        : matchupCount === 0
-          ? "No schedule read yet. A sync pairs every team off for the weeks that are under way or already played."
+      state:
+        matchupCount === 0
+          ? manual
+            ? "No schedule yet. A hand-kept league has nobody to ask who plays whom, so the pairings are typed in a week at a time on this screen."
+            : "No schedule read yet. A sync pairs every team off for every week the league plays."
           : league.current_week
             ? `Week ${league.current_week}: what each side has banked, who is left to play, and the odds between them.`
             : `${matchupCount?.toLocaleString()} matchups read. The board opens on the live week once the season has one.`,
-      cta: !manual && matchupCount ? "Open" : "Details",
-      ready: !manual && Boolean(matchupCount),
+      cta: matchupCount ? "Open" : manual ? "Set it up" : "Details",
+      ready: Boolean(matchupCount),
     },
     {
       href: `/leagues/${league.id}/lineup`,

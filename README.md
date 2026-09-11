@@ -153,6 +153,8 @@ lib/matchups/
   live.ts            banked vs still to play, and the win probability — pure
   board.ts           schedule rows × rosters → this week's pairings — pure
   slots.ts           a lineup in the league's own seat order — pure
+  manual-input.ts    a hand-typed week, validated — pure
+  manual.ts          writing a manual league's schedule, one week at a time
   store.ts           the matchup screen's read, over the start/sit board's
 lib/needs/
   needs.ts           §7's needs vector — pure, and what Phases 8–9 stand on
@@ -188,8 +190,9 @@ components/
   values/            value badges, the values board
   schedule/          the strength-of-schedule stamp the board and the rosters
                      carry, and the player page's week-by-week slate
-  matchup/           the head-to-head panel, the scoreboard rail, the odds bar
-                     and the pager that walks the week's other matchups
+  matchup/           the head-to-head panel, the scoreboard rail, the odds bar,
+                     the pager that walks the week's other matchups, and the
+                     schedule editor a hand-kept league types its own into
   trade/             the balance beam, the drop zones, the verdict, the lineup delta
   needs/             the positional radar, need and depth chips, the team card
   waivers/           the ranked wire, and the λ slider that tilts it
@@ -1897,6 +1900,37 @@ that stage writes — teams, rosters, the free-agent pool — is load-bearing fo
 screens used every day, and a wider request than the stage used to make should
 cost a league its matchups for one run rather than its rosters. A failure lands
 as a stage warning and the previous sync's schedule stands.
+
+### A hand-kept league types its own
+
+`matchups` rows used to come from stage 7 and nowhere else, so a manual league
+got an honest empty state and a dead end. The editor under the board is that
+dead end turned into a form: one row per matchup, two selectors each, and a
+team already spoken for drops out of every other row's list — the validation
+made visible rather than a sentence printed after a failed save. The server
+checks it again, because a form is not a place to keep an invariant.
+
+It sits on this screen rather than on `manage` with the rest of the manual
+editing, because a schedule is the one thing about a league that is *per week*,
+and the week picker, the pairings it already has and the thing being edited are
+all here. On manage it would need a second week picker and a reason to look in
+two places.
+
+**No scores are typed in.** A manual league's rosters and the weekly stat grid
+are already here, so a null `points_a` is exactly what makes `liveSide` add the
+stat lines up itself — entering the schedule is enough to get live scoring, and
+asking anybody to key in points on a Sunday would be asking for work the app is
+already doing. `status` is null for the same reason: there is no provider to
+have an opinion, and the season clock plus the stat lines settle the phase
+without one.
+
+A week is replaced rather than merged. The editor posts the whole week
+including its empty rows, so what it means is "this is the week", and an upsert
+would leave a pairing the manager had just dissolved sitting in the table with
+nothing pointing at it. The two sides of each pairing are sorted by team id
+before they are written, for the reason the Yahoo parser sorts by team key: the
+primary key is `(league, week, team_a)`, so one pairing has to produce one row
+however it was entered.
 
 ### Orientation is a read concern
 
