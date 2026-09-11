@@ -230,15 +230,17 @@ export function TeamRosterColumn({
               ? "--"
               : Math.round(roster.value).toLocaleString()}
           </p>
-          {/* The lineup's projection, not the roster's: a team scores with the
-              players it starts, and the bench is depth rather than points. */}
+          {/* The *best* lineup's projection, not the roster's and not the one
+              its manager happens to have out: a team scores with the players
+              it starts, the bench is depth rather than points, and how good a
+              roster is cannot depend on somebody's Tuesday. */}
           <Stencil
             data-numeric
             className="block tabular-nums"
             title={
               roster?.startingPoints == null
                 ? "Nothing projects this lineup yet."
-                : `Rest-of-season projected points from the ${roster.starters} players in a starting slot.`
+                : `Rest-of-season projected points from the best lineup these ${roster.starters} seats could hold.`
             }
           >
             {roster?.startingPoints == null

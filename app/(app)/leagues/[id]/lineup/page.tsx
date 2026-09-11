@@ -5,15 +5,20 @@ import { AlertTriangle, Info } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
 import { Panel } from "@/components/board/panel";
+import { LineupBoard } from "@/components/leagues/lineup-board";
 import { ProjectionBoard } from "@/components/lineup/projection-board";
 import { StartSitCalls } from "@/components/lineup/start-sit-calls";
 import { TeamWeekColumn } from "@/components/lineup/team-week-column";
 import { WeekPicker } from "@/components/lineup/week-picker";
 import { SyncButton } from "@/components/sync/sync-button";
 import { isManualLeague } from "@/lib/leagues/manual";
+import { seats } from "@/lib/lineup/assign";
+import { loadLineupContext, loadLineupRoster } from "@/lib/lineup/manual";
 import { loadWeekBoard, resolveWeek, toWeekLeague } from "@/lib/lineup/store";
 import { latestRun } from "@/lib/sync/run";
 import { createClient } from "@/lib/supabase/server";
+
+import { autoFillLineupAction, seatPlayerAction } from "./actions";
 
 export const metadata: Metadata = { title: "Start and sit" };
 
@@ -71,6 +76,29 @@ export default async function LineupPage({
   ]);
 
   const mine = board.teams.find((team) => team.isUsersTeam) ?? null;
+
+  /**
+   * A hand-kept league sets its own lineup, here, for the week on screen.
+   *
+   * Only here. An imported league's lineup belongs to its provider — stage 7
+   * overwrites it on every sync — so this screen tells that manager what to
+   * change and leaves the changing to Yahoo or ESPN.
+   */
+  const editable =
+    manual && mine
+      ? await (async () => {
+          const context = await loadLineupContext(supabase, league.id, week);
+          return {
+            team: mine,
+            roster: await loadLineupRoster(supabase, {
+              leagueId: league.id,
+              teamId: mine.id,
+              ...context,
+            }),
+            slots: context.slots,
+          };
+        })()
+      : null;
   const rostered = board.teams.reduce(
     (total, team) => total + team.players.length,
     0,
@@ -165,6 +193,32 @@ export default async function LineupPage({
                 simply be off.
               </AlertDescription>
             </Alert>
+          ) : null}
+
+          {editable ? (
+            <LineupBoard
+              key={`${editable.team.id}:${week}`}
+              teamName={editable.team.name}
+              week={week}
+              seats={seats(editable.roster.players, editable.slots)}
+              roster={editable.roster.players}
+              basis={editable.roster.basis}
+              isSet={editable.roster.stored.size > 0}
+              actions={{
+                autoFill: autoFillLineupAction.bind(
+                  null,
+                  league.id,
+                  editable.team.id,
+                  week,
+                ),
+                seat: seatPlayerAction.bind(
+                  null,
+                  league.id,
+                  editable.team.id,
+                  week,
+                ),
+              }}
+            />
           ) : null}
 
           {mine ? (

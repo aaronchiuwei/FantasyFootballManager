@@ -1,6 +1,8 @@
 import "server-only";
 
+import { bestLineup } from "@/lib/needs/lineup";
 import type { Db } from "@/lib/supabase/db";
+import type { StartingSlot } from "@/lib/values/vor";
 
 /**
  * Every roster in a league, read whole.
@@ -134,6 +136,17 @@ type RosterRow = {
 export async function loadLeagueRosters(
   db: Db,
   leagueId: string,
+  /**
+   * The league's starting slots. Given, the lineup figure below is the best
+   * lineup the roster could field; withheld, it is what the stored slots say.
+   *
+   * Optional because two callers want different things from one read. The
+   * start/sit board resolves its own lineup for a particular week and would
+   * only have to undo an answer computed here; the overview is asking how good
+   * a *roster* is, and the arrangement its manager happens to have out on a
+   * Tuesday is not part of that question.
+   */
+  slots?: StartingSlot[],
 ): Promise<Map<string, TeamRoster>> {
   const { data, error } = await db
     .from("rosters")
@@ -185,6 +198,23 @@ export async function loadLeagueRosters(
       players.sort(byBandThenPosition);
 
       const priced = players.filter((player) => player.value !== null);
+
+      // The lineup this roster *could* field, not the one it has out. Every
+      // other judgement in this app is made that way — the needs vector, both
+      // suggestion searches and the trade delta all solve from scratch — and a
+      // stored arrangement is a fact about somebody's Tuesday rather than
+      // about how good their team is.
+      const best = slots
+        ? bestLineup(
+            players.map((player) => ({
+              playerId: player.playerId,
+              position: player.position,
+              points: player.rosPoints,
+            })),
+            slots,
+          )
+        : null;
+
       const starting = players.filter((player) => player.band === "starting");
       const projected = starting.filter((player) => player.rosPoints !== null);
 
@@ -193,20 +223,23 @@ export async function loadLeagueRosters(
         {
           teamId,
           players,
-          starters: starting.length,
+          starters: best ? best.slots.length - best.empty : starting.length,
           value:
             priced.length === 0
               ? null
               : priced.reduce((sum, player) => sum + (player.value ?? 0), 0),
           unpriced: players.length - priced.length,
-          startingPoints:
-            projected.length === 0
+          startingPoints: best
+            ? best.points
+            : projected.length === 0
               ? null
               : projected.reduce(
                   (sum, player) => sum + (player.rosPoints ?? 0),
                   0,
                 ),
-          unprojected: starting.length - projected.length,
+          unprojected: best
+            ? best.unprojected
+            : starting.length - projected.length,
         },
       ];
     }),

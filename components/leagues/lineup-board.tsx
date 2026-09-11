@@ -15,16 +15,21 @@ import { cn } from "@/lib/utils";
 /**
  * The lineup, as a lineup.
  *
- * The roster editor next door asks the question the other way round — for each
- * of fifteen players, which slot is he in — and that is the right shape for
- * building a roster and the wrong one for setting a lineup. Nobody chooses a
- * lineup by going through their bench; they go down the seats and ask who is
- * in this one. Seven rows with a name in each is that question, and the sum at
- * the bottom is the answer it adds up to.
+ * The roster editor on the manage screen asks the question the other way round
+ * — for each of fifteen players, which slot is he in — and that is the right
+ * shape for building a roster and the wrong one for setting a lineup. Nobody
+ * chooses a lineup by going through their bench; they go down the seats and
+ * ask who is in this one. Ten rows with a name in each is that question, and
+ * the sum at the bottom is the answer it adds up to.
  *
- * The button at the top is the same question answered by the solver that has
- * been on the start/sit board since Phase 11. It was advice nobody could take
- * until there was somewhere to write it.
+ * It lives on the start/sit screen because a lineup is a decision about a
+ * week, and this is the screen with a week on it. The button at the top is the
+ * same question answered by the solver already drawing the advice below.
+ *
+ * `isSet` is the difference between a lineup and a suggestion. Until somebody
+ * sets a week, what is on screen is the best lineup the roster could field —
+ * a real answer, and not one anybody committed to. Saying so is the whole
+ * reason a manager can leave fourteen weeks alone and trust them.
  */
 
 export type LineupEntry = {
@@ -65,6 +70,7 @@ export function LineupBoard({
   roster,
   basis,
   week,
+  isSet,
   disabled = false,
   actions,
 }: {
@@ -75,6 +81,8 @@ export function LineupBoard({
   /** What the figures are: this week's projection, or rest of season. */
   basis: "week" | "season";
   week: number | null;
+  /** Whether anybody has actually set this week, or this is still the solver's. */
+  isSet: boolean;
   disabled?: boolean;
   actions: LineupActions;
 }) {
@@ -112,11 +120,22 @@ export function LineupBoard({
 
   return (
     <Panel
-      label={`Lineup · ${teamName}`}
-      note={`Who starts where. The figure on a name is ${
+      label={
+        <>
+          {`Lineup · week ${week} · ${teamName} · `}
+          <span className={cn(!isSet && "text-grease")}>
+            {isSet ? "set" : "best available"}
+          </span>
+        </>
+      }
+      note={`${
+        isSet
+          ? `This is the lineup set for week ${week}.`
+          : `Nobody has set week ${week}, so this is the best lineup this roster could field — which is what every screen will score it as until you change something.`
+      } The figure on a name is ${
         basis === "week"
           ? `what he is projected for in week ${week}, in this league's scoring`
-          : "his rest-of-season projection — no weekly grid has been pulled yet, so the lineup is solved on the season instead"
+          : "his rest-of-season projection — no weekly grid has been pulled for this week, so the lineup is solved on the season instead"
       }. Changing a seat moves whoever was in it: into the seat the new man came from where he fits it, and to the bench where he does not.`}
       action={
         <Button
