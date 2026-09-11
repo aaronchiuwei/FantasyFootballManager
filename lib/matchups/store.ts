@@ -36,10 +36,10 @@ import { bySlotOrder } from "./slots";
 export type MatchupTeam = WeekTeam & {
   /**
    * `lineup.current.starters`, lifted so the pure builder can see it — and
-   * re-sorted into the league's own slot order, which is the order this screen
-   * draws them in. The roster's own order is by the player's position, which
-   * files a flex running back among the running backs; two lineups read side
-   * by side need the seats to line up.
+   * re-sorted into seat order, which is the order this screen draws them in.
+   * The roster's own order is by the player's position, which files a flex
+   * running back among the running backs; two lineups read side by side need
+   * the seats to line up.
    */
   starters: WeekTeam["lineup"]["current"]["starters"];
 };
@@ -116,7 +116,7 @@ export async function loadMatchupBoard(
 
   const teams: MatchupTeam[] = board.teams.map((team) => ({
     ...team,
-    starters: bySlotOrder(team.lineup.current.starters, league.rosterSlots),
+    starters: bySlotOrder(team.lineup.current.starters),
   }));
 
   const built = pairings(rows, teams, { currentWeek: board.currentWeek });
