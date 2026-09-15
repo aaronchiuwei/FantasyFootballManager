@@ -32,23 +32,56 @@ export class YahooApiError extends Error {
  * A 401 that survived a *successful* token refresh.
  *
  * The link cannot be expired — Yahoo minted a token for it moments ago — so
- * this is about what the app is allowed to read, not about the credential.
+ * this is about what the grant is allowed to read, not about the credential.
  * Calling it an expired link sends the user round the consent screen again and
  * lands them back here, which is the loop this class exists to break: the
- * usual cause is a Yahoo app registered without Fantasy Sports read.
+ * grant carries no Fantasy Sports scope at all.
  */
 export class YahooAccessDenied extends YahooApiError {
   constructor(detail: string) {
     super(
       "Yahoo refused to read your fantasy leagues with a token it had just " +
-        "issued, so the link itself is fine. That is a permission on the Yahoo " +
-        "app rather than an expired link: its registration at " +
-        "developer.yahoo.com needs Fantasy Sports read access, and granting it " +
-        "only takes effect once you connect again." +
+        "issued, so the link itself is fine — the grant it carries has no " +
+        "Fantasy Sports read scope on it. That is settled on the Yahoo app " +
+        "rather than here, and since Yahoo closed self-serve access to this " +
+        "API in 2026 it is their review team that grants it, at " +
+        "sports.yahoo.com/developer/access, rather than a checkbox on the " +
+        "app's registration." +
         (detail ? ` Yahoo said: ${detail}` : ""),
       401,
     );
     this.name = "YahooAccessDenied";
+  }
+}
+
+/**
+ * A 403 from the Fantasy API: Yahoo knows the app and refuses it outright.
+ *
+ * Distinct from `YahooAccessDenied` in what it says about the grant. A 401
+ * means the token was let in and found wanting; a 403 is refused at the door,
+ * identically for a public resource and a private one, so it is the *app* being
+ * turned away rather than anything the user consented to.
+ *
+ * Yahoo closed self-serve access to the Fantasy Sports API in 2026 — the
+ * permission left the registration form and apps that still held it began
+ * being refused in July — and approval is now granted per app by review. That
+ * makes reconnecting actively misleading advice here: the consent screen still
+ * appears, still grants the scope, and the API still answers 403.
+ */
+export class YahooAppNotApproved extends YahooApiError {
+  constructor(detail: string) {
+    super(
+      "Yahoo will not serve the Fantasy Sports API to this app. Your link is " +
+        "not the problem — the token, the consent and the scope are all in " +
+        "order — so reconnecting will not shift it. Yahoo closed self-serve " +
+        "access to this API in 2026 and now approves each app by review: apply " +
+        "at sports.yahoo.com/developer/access, quoting the app's ID. Until " +
+        "that approval comes through, a league can still come from ESPN or be " +
+        "set up by hand." +
+        (detail ? ` Yahoo said: ${detail}` : ""),
+      403,
+    );
+    this.name = "YahooAppNotApproved";
   }
 }
 
@@ -98,6 +131,13 @@ export async function yahooGet(userId: string, path: string): Promise<Plain> {
     throw refreshed
       ? new YahooAccessDenied(body.slice(0, 200))
       : new YahooReauthRequired("Yahoo rejected the access token");
+  }
+
+  // Refused at the door rather than let in and found wanting. No token this
+  // app can present will change the answer, so this must not fall through to
+  // the generic failure below and read as something a retry might fix.
+  if (response.status === 403) {
+    throw new YahooAppNotApproved((await response.text()).slice(0, 200));
   }
 
   if (!response.ok) {
