@@ -104,7 +104,12 @@ async function persistTokens(userId: string, tokens: TokenResponse) {
       access_token_enc: encryptSecret(tokens.access_token),
       refresh_token_enc: encryptSecret(tokens.refresh_token),
       expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
-      yahoo_guid: tokens.xoauth_yahoo_guid ?? null,
+      // Only the authorization-code exchange carries the guid; a refresh omits
+      // it. Writing `null` on the way past would erase what the first exchange
+      // learned, so an absent guid leaves the stored one alone.
+      ...(tokens.xoauth_yahoo_guid
+        ? { yahoo_guid: tokens.xoauth_yahoo_guid }
+        : {}),
       needs_reauth: false,
     },
     { onConflict: "user_id" },

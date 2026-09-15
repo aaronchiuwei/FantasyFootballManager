@@ -134,7 +134,11 @@ export default async function LeaguesPage({
         </Alert>
       ) : null}
 
-      {connected && !discoveryError ? (
+      {/* The `connected` flag is a search param, so it outlives the link it
+          announces: disconnecting revalidates this page at the same URL. Ask
+          the stored connection too, and the banner cannot contradict the panel
+          below it. */}
+      {connected && connection.connected && !discoveryError ? (
         <Alert>
           <CheckCircle2 />
           <AlertTitle>Yahoo connected</AlertTitle>
