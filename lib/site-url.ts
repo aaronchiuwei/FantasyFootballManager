@@ -4,7 +4,7 @@
  */
 export function getSiteUrl() {
   const raw =
-    process.env.NEXT_PUBLIC_SITE_URL ??
+    process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
     // The project's stable production domain. Preferred over `VERCEL_URL`,
     // which names *this deployment* — a `project-hash-team.vercel.app` address
     // that Vercel Authentication protects by default. The sync pipeline calls
